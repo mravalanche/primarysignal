@@ -19,6 +19,7 @@ services:
       start_period: 5s
     volumes:
       - database-data:/var/lib/postgresql
+      - ./deploy/postgres/initdb/010_queue_capability_roles.sql:/docker-entrypoint-initdb.d/010_queue_capability_roles.sql:ro
     networks:
       - application
 

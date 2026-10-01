@@ -8,7 +8,7 @@ through a later ADR that replaces them.
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-modular-monolith-and-multi-entrypoint-image.md) | Modular monolith and multi-entrypoint image | Proposed |
-| [0002](0002-postgresql-job-queue.md) | PostgreSQL job queue | Proposed |
+| [0002](0002-postgresql-job-queue.md) | PostgreSQL job queue | Accepted |
 | [0003](0003-content-identity-model.md) | Content identity model | Proposed |
 | [0004](0004-publication-lifecycle-and-digests.md) | Publication lifecycle and immutable digests | Proposed |
 | [0005](0005-public-projection-and-database-roles.md) | Public projection and separate database roles | Proposed |

@@ -52,6 +52,28 @@ The pre-commit hook runs the offline gate and secret scan. Before pushing, run
 `uv run poe check` to add Python and frontend advisory audits and the package
 build.
 
+### Database capability roles
+
+Fresh Compose database volumes create two fixed, non-login queue capability
+roles from `deploy/postgres/initdb/010_queue_capability_roles.sql`. Login roles,
+passwords and role membership remain deployment-owned. PostgreSQL only runs
+files in `docker-entrypoint-initdb.d` while creating a new data directory.
+
+For an existing development volume, apply the role bootstrap from inside the
+database container. The command uses the container's existing environment and
+does not put a password on the command line:
+
+```sh
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/010_queue_capability_roles.sql'
+```
+
+Run this before applying migrations. The migrations grant the capability roles
+access to queue columns only; they do not create login roles or grant role
+membership. The bootstrap fails closed if either cluster-wide role name is
+already in use, owns objects, or has any memberships. Apply it before granting
+the capabilities to local runtime logins or running the grant migration. A
+later rerun intentionally fails once grants or memberships exist.
+
 ## Security
 
 Please report security issues privately. See [SECURITY.md](SECURITY.md).

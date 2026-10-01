@@ -65,7 +65,14 @@ def test_metadata_contains_versioned_identity_and_provenance_contract() -> None:
             "extractor_version",
             "fetched_at",
         },
-        "jobs": {"job_type", "payload_version", "deduplication_key", "lease_expires_at"},
+        "jobs": {
+            "job_type",
+            "payload_version",
+            "deduplication_key",
+            "lease_token",
+            "lease_expires_at",
+        },
+        "job_attempts": {"attempt_number", "initial_lease_expires_at"},
     }
 
     for table_name, columns in required_columns.items():

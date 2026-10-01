@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     Text,
     UniqueConstraint,
+    Uuid,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,10 +32,10 @@ class Job(UUIDPrimaryKeyMixin, UpdatedAtMixin, Base):
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="object_payload"),
         CheckConstraint("octet_length(payload::text) <= 65536", name="bounded_payload"),
         CheckConstraint("priority BETWEEN -100 AND 100", name="priority_range"),
-        CheckConstraint("max_attempts > 0", name="positive_max_attempts"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 20", name="bounded_max_attempts"),
         CheckConstraint("attempt_count BETWEEN 0 AND max_attempts", name="attempt_count_range"),
         CheckConstraint(
-            "(status = 'running' AND worker_id IS NOT NULL AND lease_expires_at IS NOT NULL) OR (status <> 'running' AND worker_id IS NULL AND lease_expires_at IS NULL)",
+            "(status = 'running' AND worker_id IS NOT NULL AND lease_token IS NOT NULL AND lease_expires_at IS NOT NULL AND heartbeat_at IS NOT NULL) OR (status <> 'running' AND worker_id IS NULL AND lease_token IS NULL AND lease_expires_at IS NULL AND heartbeat_at IS NULL)",
             name="lease_lifecycle",
         ),
         CheckConstraint(
@@ -44,6 +45,26 @@ class Job(UUIDPrimaryKeyMixin, UpdatedAtMixin, Base):
         CheckConstraint(
             "last_error_detail IS NULL OR char_length(last_error_detail) <= 2048",
             name="bounded_error_detail",
+        ),
+        CheckConstraint(
+            "job_type ~ '^[a-z][a-z0-9_.-]*$' AND char_length(job_type) <= 64",
+            name="valid_job_type",
+        ),
+        CheckConstraint(
+            "queue ~ '^[a-z][a-z0-9_.-]*$' AND char_length(queue) <= 64",
+            name="valid_queue",
+        ),
+        CheckConstraint(
+            "deduplication_key IS NULL OR char_length(deduplication_key) BETWEEN 1 AND 256",
+            name="bounded_deduplication_key",
+        ),
+        CheckConstraint(
+            "worker_id IS NULL OR char_length(worker_id) BETWEEN 1 AND 128",
+            name="bounded_worker_id",
+        ),
+        CheckConstraint(
+            "last_error_code IS NULL OR (last_error_code ~ '^[a-z][a-z0-9_.-]*$' AND char_length(last_error_code) <= 64)",
+            name="valid_last_error_code",
         ),
         Index(
             "ix_jobs_claim",
@@ -90,6 +111,7 @@ class Job(UUIDPrimaryKeyMixin, UpdatedAtMixin, Base):
         Integer, nullable=False, default=5, server_default="5"
     )
     worker_id: Mapped[str | None] = mapped_column(Text)
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -116,6 +138,11 @@ class JobAttempt(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         CheckConstraint(
             "error_detail IS NULL OR char_length(error_detail) <= 2048", name="bounded_error_detail"
         ),
+        CheckConstraint("char_length(worker_id) BETWEEN 1 AND 128", name="bounded_worker_id"),
+        CheckConstraint(
+            "error_code IS NULL OR (error_code ~ '^[a-z][a-z0-9_.-]*$' AND char_length(error_code) <= 64)",
+            name="valid_error_code",
+        ),
         UniqueConstraint("job_id", "attempt_number"),
         Index("ix_job_attempts_job_started", "job_id", "started_at"),
     )
@@ -130,6 +157,8 @@ class JobAttempt(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    initial_lease_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     error_code: Mapped[str | None] = mapped_column(Text)
     error_detail: Mapped[str | None] = mapped_column(Text)
