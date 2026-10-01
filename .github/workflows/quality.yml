@@ -67,6 +67,11 @@ jobs:
       - name: Install locked frontend build dependencies
         run: npm ci --ignore-scripts
 
+      - name: Bootstrap test database capability roles
+        env:
+          PRIMARY_SIGNAL_TEST_DATABASE_URL: postgresql+psycopg://postgres:primary_signal_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
+        run: uv run --offline --locked python scripts/bootstrap_test_database_roles.py
+
       - name: Run offline quality gate
         env:
           PRIMARY_SIGNAL_TEST_DATABASE_URL: postgresql+psycopg://postgres:primary_signal_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
