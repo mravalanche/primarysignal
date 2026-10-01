@@ -136,7 +136,9 @@ def test_blank_postgresql_database_migrates_to_head(
         command.upgrade(config, "head")
         command.downgrade(config, "base")
         with engine.connect() as connection:
-            assert inspect(connection).get_table_names(schema="primary_signal") == []
+            assert inspect(connection).get_table_names(schema="primary_signal") == [
+                "alembic_version"
+            ]
         command.upgrade(config, "head")
     finally:
         with engine.connect() as connection:
