@@ -5,21 +5,21 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import TypeAdapter
 from sqlalchemy import Connection, Select, Table, and_, bindparam, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import RowMapping
 
-from primary_signal.jobs.contracts import JobFailure, JobPayload, WorkerId
-from primary_signal.jobs.models import Job, JobAttempt
-from primary_signal.jobs.registry import (
+from primary_signal.jobs.catalogue import (
     InvalidJobPayload,
-    JobDefinition,
-    JobRegistry,
+    JobCatalogue,
+    JobContract,
     UnknownJobContract,
 )
+from primary_signal.jobs.contracts import JobFailure, JobPayload, WorkerId
+from primary_signal.jobs.models import Job, JobAttempt
 
 _jobs = cast(Table, Job.__table__)
 _attempts = cast(Table, JobAttempt.__table__)
@@ -54,6 +54,18 @@ class EnqueueResult:
     created: bool
 
 
+@dataclass(frozen=True, slots=True)
+class FailureDisposition:
+    status: Literal["queued", "dead"]
+    retry_at: datetime | None
+
+    def __post_init__(self) -> None:
+        if self.status not in {"queued", "dead"}:
+            raise ValueError("failure disposition status must be queued or dead")
+        if (self.status == "queued") != (self.retry_at is not None):
+            raise ValueError("only a queued failure disposition has a retry time")
+
+
 def _lease_interval(seconds: int) -> Any:
     # PostgreSQL's make_interval keeps the duration a bound value rather than
     # interpolating SQL text.
@@ -79,12 +91,12 @@ class JobRepository:
     def __init__(
         self,
         connection: Connection,
-        registry: JobRegistry,
+        catalogue: JobCatalogue,
         *,
         random_value: Callable[[], float] = random.random,
     ) -> None:
         self._connection = connection
-        self._registry = registry
+        self._catalogue = catalogue
         self._random_value = random_value
 
     def enqueue(
@@ -98,11 +110,11 @@ class JobRepository:
         deduplication_key: str | None = None,
         run_after: datetime | None = None,
     ) -> EnqueueResult:
-        definition = self._registry.get(job_type, payload_version)
+        definition = self._catalogue.get(job_type, payload_version)
         raw_payload: object = (
             payload.model_dump(mode="json") if isinstance(payload, JobPayload) else dict(payload)
         )
-        validated = self._registry.validate(job_type, payload_version, raw_payload)
+        validated = self._catalogue.validate(job_type, payload_version, raw_payload)
         if not -100 <= priority <= 100:
             raise ValueError("priority must be between -100 and 100")
         if not 1 <= max_attempts <= 20:
@@ -156,8 +168,8 @@ class JobRepository:
     def claim(self, *, queue: str, worker_id: str, lease_seconds: int = 120) -> JobLease | None:
         if not 1 <= lease_seconds <= 3600:
             raise ValueError("lease duration must be between 1 and 3600 seconds")
-        if not self._registry.supports_queue(queue):
-            raise ValueError("queue is not registered in this process")
+        if not self._catalogue.supports_queue(queue):
+            raise ValueError("queue is not present in the job catalogue")
         TypeAdapter(WorkerId).validate_python(worker_id, strict=True)
 
         candidate = self._claim_candidate(queue)
@@ -166,8 +178,8 @@ class JobRepository:
             return None
 
         try:
-            definition = self._registry.get(row["job_type"], row["payload_version"])
-            payload = self._registry.validate(
+            definition = self._catalogue.get(row["job_type"], row["payload_version"])
+            payload = self._catalogue.validate(
                 row["job_type"], row["payload_version"], row["payload"]
             )
         except UnknownJobContract, InvalidJobPayload:
@@ -257,8 +269,8 @@ class JobRepository:
             raise LostLease("job completion fence did not match")
         self._finish_attempt(lease, status="succeeded")
 
-    def fail(self, lease: JobLease, failure: JobFailure) -> str:
-        definition = self._registry.get(lease.job_type, lease.payload_version)
+    def fail(self, lease: JobLease, failure: JobFailure) -> FailureDisposition:
+        definition = self._catalogue.get(lease.job_type, lease.payload_version)
         retry = definition.retry.permits(
             failure.code
         ) and lease.attempt_number < self._max_attempts(lease)
@@ -280,17 +292,23 @@ class JobRepository:
             values["run_after"] = func.clock_timestamp() + _lease_interval(max(1, round(delay)))
         else:
             values["completed_at"] = func.clock_timestamp()
-        changed = self._connection.execute(
-            update(_jobs).where(_fence(lease, require_unexpired=True)).values(**values)
-        ).rowcount
-        if changed != 1:
+        run_after = self._connection.execute(
+            update(_jobs)
+            .where(_fence(lease, require_unexpired=True))
+            .values(**values)
+            .returning(_jobs.c.run_after)
+        ).scalar_one_or_none()
+        if run_after is None:
             raise LostLease("job failure fence did not match")
         self._finish_attempt(
             lease,
             status="retry" if retry else "dead",
             failure=failure,
         )
-        return status
+        return FailureDisposition(
+            status=status,
+            retry_at=cast(datetime, run_after) if retry else None,
+        )
 
     def cancel_queued(self, job_id: uuid.UUID) -> bool:
         changed = self._connection.execute(
@@ -406,9 +424,9 @@ class JobRepository:
         attempt_number = cast(int, row["attempt_count"])
         worker_id = cast(str, row["worker_id"])
         lease_token = cast(uuid.UUID, row["lease_token"])
-        definition: JobDefinition[Any] | None
+        definition: JobContract[Any] | None
         try:
-            definition = self._registry.get(
+            definition = self._catalogue.get(
                 cast(str, row["job_type"]), cast(int, row["payload_version"])
             )
         except UnknownJobContract:

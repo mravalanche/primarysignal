@@ -12,9 +12,9 @@ from alembic.config import Config
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 
+from primary_signal.jobs.catalogue import build_default_catalogue
 from primary_signal.jobs.contracts import JobFailure, PollFeedV1
-from primary_signal.jobs.registry import build_default_registry
-from primary_signal.jobs.repository import JobRepository
+from primary_signal.jobs.repository import FailureDisposition, JobRepository
 from primary_signal.jobs.transactions import TransactionalJobQueue
 
 SUBMIT_ROLE = "primary_signal_cap_queue_submit"
@@ -98,11 +98,8 @@ def _set_role(connection: Connection, role: str) -> None:
     connection.execute(text(f"SET LOCAL ROLE {role}"))
 
 
-def _registry():
-    return build_default_registry(
-        poll_feed=lambda payload: None,
-        retrieve_article=lambda payload: None,
-    )
+def _catalogue():
+    return build_default_catalogue()
 
 
 def _assert_bootstrap_refuses_contaminated_role(
@@ -260,7 +257,7 @@ def test_submit_role_can_enqueue_and_find_but_cannot_consume(privilege_engine: E
         transaction = connection.begin()
         try:
             _set_role(connection, SUBMIT_ROLE)
-            repository = JobRepository(connection, _registry())
+            repository = JobRepository(connection, _catalogue())
             dedupe = f"test:{uuid.uuid7()}"
             first = repository.enqueue(
                 job_type="feeds.poll",
@@ -328,7 +325,7 @@ def test_consume_role_can_run_lifecycle_but_cannot_enqueue_or_admin(
                 {"id": job_id, "feed_id": str(uuid.uuid7())},
             )
             _set_role(connection, CONSUME_ROLE)
-            repository = JobRepository(connection, _registry())
+            repository = JobRepository(connection, _catalogue())
             lease = repository.claim(queue="ingestion", worker_id=worker_id)
             assert lease is not None
             assert lease.job_id == job_id
@@ -446,8 +443,8 @@ def test_actual_scheduler_and_processor_logins_enforce_queue_boundary(
     restricted_engines: tuple[Engine, Engine],
 ) -> None:
     scheduler_engine, processor_engine = restricted_engines
-    scheduler = TransactionalJobQueue(scheduler_engine, _registry())
-    processor = TransactionalJobQueue(processor_engine, _registry(), random_value=lambda: 0.0)
+    scheduler = TransactionalJobQueue(scheduler_engine, _catalogue())
+    processor = TransactionalJobQueue(processor_engine, _catalogue(), random_value=lambda: 0.0)
     created_ids: set[uuid.UUID] = set()
 
     dedupe = f"restricted-scheduler:{uuid.uuid7()}"
@@ -481,7 +478,32 @@ def test_actual_scheduler_and_processor_logins_enforce_queue_boundary(
     first_attempt = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
     assert first_attempt is not None
     assert processor.heartbeat(first_attempt) > first_attempt.lease_expires_at
-    assert processor.fail(first_attempt, JobFailure(code="dependency_timeout")) == "queued"
+    failure_successors: list[uuid.UUID] = []
+
+    def enqueue_failure_successor(
+        _connection: Connection,
+        repository: JobRepository,
+        _disposition: FailureDisposition,
+    ) -> None:
+        failure_successors.append(
+            repository.enqueue(
+                job_type="feeds.poll",
+                payload_version=1,
+                payload=PollFeedV1(feed_id=uuid.uuid7()),
+                deduplication_key=f"restricted-failure-successor:{uuid.uuid7()}",
+            ).job_id
+        )
+
+    first_failure = processor.fail(
+        first_attempt,
+        JobFailure(code="dependency_timeout"),
+        on_failure=enqueue_failure_successor,
+    )
+    assert first_failure.status == "queued"
+    assert first_failure.retry_at is not None
+    assert len(failure_successors) == 1
+    created_ids.add(failure_successors[0])
+    assert processor.cancel_queued(failure_successors[0])
     with privilege_engine.begin() as admin:
         admin.execute(
             text("UPDATE primary_signal.jobs SET run_after=clock_timestamp() WHERE id=:job_id"),
@@ -489,7 +511,9 @@ def test_actual_scheduler_and_processor_logins_enforce_queue_boundary(
         )
     second_attempt = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
     assert second_attempt is not None
-    assert processor.fail(second_attempt, JobFailure(code="dependency_timeout")) == "dead"
+    second_failure = processor.fail(second_attempt, JobFailure(code="dependency_timeout"))
+    assert second_failure.status == "dead"
+    assert second_failure.retry_at is None
 
     permanent = processor.enqueue(
         job_type="feeds.poll",
@@ -499,7 +523,9 @@ def test_actual_scheduler_and_processor_logins_enforce_queue_boundary(
     created_ids.add(permanent.job_id)
     permanent_lease = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
     assert permanent_lease is not None
-    assert processor.fail(permanent_lease, JobFailure(code="bad_payload")) == "dead"
+    permanent_failure = processor.fail(permanent_lease, JobFailure(code="bad_payload"))
+    assert permanent_failure.status == "dead"
+    assert permanent_failure.retry_at is None
 
     expired = processor.enqueue(
         job_type="feeds.poll",

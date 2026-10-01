@@ -8,10 +8,11 @@ from unittest.mock import MagicMock, call
 import pytest
 from sqlalchemy import Connection, Engine
 
+from primary_signal.jobs.catalogue import build_default_catalogue
 from primary_signal.jobs.contracts import JobFailure, PollFeedV1
-from primary_signal.jobs.registry import build_default_registry
 from primary_signal.jobs.repository import (
     EnqueueResult,
+    FailureDisposition,
     JobLease,
     JobRepository,
     LostLease,
@@ -41,13 +42,10 @@ def _queue() -> tuple[TransactionalJobQueue, MagicMock, MagicMock, MagicMock, Ma
     engine.begin.return_value = transaction
     repository = MagicMock(spec=JobRepository)
     factory = MagicMock(return_value=repository)
-    registry = build_default_registry(
-        poll_feed=lambda payload: None,
-        retrieve_article=lambda payload: None,
-    )
+    catalogue = build_default_catalogue()
     queue = TransactionalJobQueue(
         cast(Engine, engine),
-        registry,
+        catalogue,
         repository_factory=factory,
         random_value=lambda: 0.25,
     )
@@ -171,6 +169,88 @@ def test_success_lost_lease_escapes_before_prepared_changes() -> None:
     prepared.assert_not_called()
     exit_args = transaction.__exit__.call_args.args
     assert exit_args[:2] == (LostLease, lost_lease)
+    assert exit_args[2] is not None
+    engine.begin.assert_called_once_with()
+
+
+def test_failure_callback_shares_context_and_receives_database_disposition() -> None:
+    queue, engine, transaction, connection, repository = _queue()
+    lease = _lease()
+    failure = JobFailure(code="upstream_timeout")
+    retry_at = datetime.now(UTC)
+    disposition = FailureDisposition(status="queued", retry_at=retry_at)
+    events: list[str] = []
+
+    def record_failure(current_lease: JobLease, current_failure: JobFailure) -> object:
+        assert current_lease is lease
+        assert current_failure is failure
+        events.append("fail")
+        return disposition
+
+    repository.fail.side_effect = record_failure
+
+    def prepare(
+        current_connection: Connection,
+        current_repository: JobRepository,
+        current_disposition: FailureDisposition,
+    ) -> None:
+        assert current_connection is connection
+        assert current_repository is repository
+        assert current_disposition is disposition
+        events.append("domain-write")
+
+    assert queue.fail(lease, failure, on_failure=prepare) is disposition
+    assert events == ["fail", "domain-write"]
+    repository.fail.assert_called_once_with(lease, failure)
+    _assert_transaction(engine, transaction, connection)
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["job failure fence did not match", "job attempt fence did not match"],
+)
+def test_failure_lost_fence_escapes_before_prepared_changes(message: str) -> None:
+    queue, engine, transaction, _connection, repository = _queue()
+    lease = _lease()
+    prepared = MagicMock()
+    lost_lease = LostLease(message)
+    repository.fail.side_effect = lost_lease
+
+    with pytest.raises(LostLease) as raised:
+        queue.fail(lease, JobFailure(code="bad_payload"), on_failure=prepared)
+
+    assert raised.value is lost_lease
+    prepared.assert_not_called()
+    exit_args = transaction.__exit__.call_args.args
+    assert exit_args[:2] == (LostLease, lost_lease)
+    assert exit_args[2] is not None
+    engine.begin.assert_called_once_with()
+
+
+def test_failure_callback_error_rolls_back_finalisation() -> None:
+    queue, engine, transaction, _connection, repository = _queue()
+    disposition = FailureDisposition(status="dead", retry_at=None)
+    repository.fail.return_value = disposition
+    error = RuntimeError("failure mutation failed")
+
+    def fail_preparation(
+        current_connection: Connection,
+        current_repository: JobRepository,
+        current_disposition: FailureDisposition,
+    ) -> None:
+        raise error
+
+    with pytest.raises(RuntimeError) as raised:
+        queue.fail(
+            _lease(),
+            JobFailure(code="bad_payload"),
+            on_failure=fail_preparation,
+        )
+
+    assert raised.value is error
+    repository.fail.assert_called_once()
+    exit_args = transaction.__exit__.call_args.args
+    assert exit_args[:2] == (RuntimeError, error)
     assert exit_args[2] is not None
     engine.begin.assert_called_once_with()
 

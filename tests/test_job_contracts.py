@@ -6,14 +6,15 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from primary_signal.jobs.contracts import JobFailure, JobPayload, PollFeedV1
-from primary_signal.jobs.registry import (
+from primary_signal.jobs.catalogue import (
     InvalidJobPayload,
-    JobDefinition,
-    JobRegistry,
+    JobCatalogue,
+    JobContract,
     UnknownJobContract,
-    build_default_registry,
+    build_default_catalogue,
 )
+from primary_signal.jobs.contracts import JobFailure, JobPayload, PollFeedV1, RetrieveArticleV1
+from primary_signal.jobs.handlers import JobHandlerBinding, JobHandlers, UnknownJobHandler
 from primary_signal.jobs.retry import RetryPolicy
 
 
@@ -21,45 +22,122 @@ def _ignore(payload: JobPayload) -> None:
     del payload
 
 
-def test_default_registry_validates_exact_contract_and_queue() -> None:
-    registry = build_default_registry(
-        poll_feed=lambda payload: None, retrieve_article=lambda payload: None
-    )
+def test_default_catalogue_validates_exact_contract_and_queue() -> None:
+    catalogue = build_default_catalogue()
     feed_id = uuid.uuid4()
 
-    payload = registry.validate("feeds.poll", 1, {"feed_id": str(feed_id)})
+    payload = catalogue.validate("feeds.poll", 1, {"feed_id": str(feed_id)})
 
     assert payload == PollFeedV1(feed_id=feed_id)
-    assert registry.supports_queue("ingestion")
-    assert not registry.supports_queue("arbitrary")
+    assert catalogue.supports_queue("ingestion")
+    assert not catalogue.supports_queue("arbitrary")
     with pytest.raises(InvalidJobPayload, match="registered contract"):
-        registry.validate("feeds.poll", 1, {"feed_id": str(feed_id), "extra": True})
+        catalogue.validate("feeds.poll", 1, {"feed_id": str(feed_id), "extra": True})
     with pytest.raises(UnknownJobContract, match="unsupported job contract"):
-        registry.validate("feeds.poll", 2, {"feed_id": str(feed_id)})
+        catalogue.validate("feeds.poll", 2, {"feed_id": str(feed_id)})
 
 
-def test_registry_rejects_duplicates_and_invalid_machine_names() -> None:
-    definition = JobDefinition(
+def test_catalogue_rejects_duplicates_and_invalid_contracts() -> None:
+    contract = JobContract(
         job_type="feeds.poll",
         payload_version=1,
         queue="ingestion",
         payload_model=PollFeedV1,
-        handler=_ignore,
         retry=RetryPolicy(),
     )
     with pytest.raises(ValueError, match="duplicate job contract"):
-        JobRegistry((definition, definition))
+        JobCatalogue((contract, contract))
 
-    invalid = JobDefinition(
+    invalid = JobContract(
         job_type="Bad Job",
         payload_version=1,
         queue="ingestion",
         payload_model=PollFeedV1,
-        handler=_ignore,
         retry=RetryPolicy(),
     )
     with pytest.raises(ValidationError):
-        JobRegistry((invalid,))
+        JobCatalogue((invalid,))
+
+    invalid_version = JobContract(
+        job_type="feeds.poll",
+        payload_version=0,
+        queue="ingestion",
+        payload_model=PollFeedV1,
+        retry=RetryPolicy(),
+    )
+    with pytest.raises(ValueError, match="payload version"):
+        JobCatalogue((invalid_version,))
+
+
+def test_handlers_reject_unknown_and_duplicate_bindings() -> None:
+    catalogue = build_default_catalogue()
+    binding = JobHandlerBinding(
+        job_type="feeds.poll",
+        payload_version=1,
+        handler=_ignore,
+    )
+
+    with pytest.raises(ValueError, match="duplicate job handler"):
+        JobHandlers(catalogue, (binding, binding))
+    with pytest.raises(UnknownJobContract, match="unsupported job contract"):
+        JobHandlers(
+            catalogue,
+            (
+                JobHandlerBinding(
+                    job_type="feeds.unknown",
+                    payload_version=1,
+                    handler=_ignore,
+                ),
+            ),
+        )
+
+
+def test_handlers_require_every_contract_for_consumed_queue() -> None:
+    catalogue = JobCatalogue(
+        (
+            JobContract(
+                job_type="feeds.poll",
+                payload_version=1,
+                queue="ingestion",
+                payload_model=PollFeedV1,
+                retry=RetryPolicy(),
+            ),
+            JobContract(
+                job_type="articles.retrieve",
+                payload_version=1,
+                queue="ingestion",
+                payload_model=RetrieveArticleV1,
+                retry=RetryPolicy(),
+            ),
+        )
+    )
+    handlers = JobHandlers(
+        catalogue,
+        (
+            JobHandlerBinding(
+                job_type="feeds.poll",
+                payload_version=1,
+                handler=_ignore,
+            ),
+        ),
+    )
+
+    assert handlers.get("feeds.poll", 1) is _ignore
+    with pytest.raises(UnknownJobHandler, match=r"articles\.retrieve v1"):
+        handlers.require_complete_queue("ingestion")
+    with pytest.raises(UnknownJobHandler, match="no handler bound"):
+        handlers.get("articles.retrieve", 1)
+    with pytest.raises(ValueError, match="unknown job queue"):
+        handlers.require_complete_queue("missing")
+
+    complete = JobHandlers(
+        catalogue,
+        (
+            JobHandlerBinding("feeds.poll", 1, _ignore),
+            JobHandlerBinding("articles.retrieve", 1, _ignore),
+        ),
+    )
+    assert complete.require_complete_queue("ingestion") is None
 
 
 class _BoundedPayload(JobPayload):
