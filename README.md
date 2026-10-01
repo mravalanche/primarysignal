@@ -52,6 +52,27 @@ The pre-commit hook runs the offline gate and secret scan. Before pushing, run
 `uv run poe check` to add Python and frontend advisory audits and the package
 build.
 
+### Feed scheduler
+
+The scheduler queues due feed polls and does no network work itself. It runs
+continuously by default, or performs one pass for operational checks:
+
+```sh
+uv run primary-signal-scheduler
+uv run primary-signal-scheduler --once
+```
+
+It uses the `PRIMARY_SIGNAL_DATABASE_*` connection settings and its own
+`PRIMARY_SIGNAL_SCHEDULER_*` tuning settings. The defaults are a batch of 100,
+a 30-second idle poll interval, and equal-jitter database retries starting
+between half a second and one second, capped at 60 seconds. The database login
+must hold the queue-submit and feed-scheduling capability roles described below.
+`SIGINT` and `SIGTERM`
+stop idle waits immediately and let an in-flight bounded database operation
+finish before the process exits. A statement timeout applies to each statement,
+not the whole batch, so production wiring also needs a whole-pass time budget
+and shutdown grace that covers it.
+
 ### Database capability roles
 
 Fresh Compose database volumes create two fixed, non-login queue capabilities

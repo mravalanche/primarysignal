@@ -54,3 +54,25 @@ class Settings(BaseSettings):
         ):
             raise ValueError("debug and API documentation must be disabled in production")
         return self
+
+
+class SchedulerSettings(BaseSettings):
+    """Tuning for the feed scheduler process."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="PRIMARY_SIGNAL_SCHEDULER_",
+        case_sensitive=False,
+        extra="ignore",
+        frozen=True,
+    )
+
+    batch_size: int = Field(default=100, ge=1, le=500)
+    poll_interval_seconds: float = Field(default=30.0, ge=0.1, le=3_600.0)
+    retry_initial_seconds: float = Field(default=1.0, ge=0.1, le=3_600.0)
+    retry_max_seconds: float = Field(default=60.0, ge=0.1, le=3_600.0)
+
+    @model_validator(mode="after")
+    def require_ordered_retry_bounds(self) -> Self:
+        if self.retry_initial_seconds > self.retry_max_seconds:
+            raise ValueError("scheduler retry initial delay must not exceed its maximum")
+        return self

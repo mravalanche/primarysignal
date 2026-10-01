@@ -71,6 +71,34 @@ def test_json_logging_uses_allowlisted_fields() -> None:
     assert "arbitrary_private_value" not in handler.documents[0]
 
 
+def test_scheduler_numeric_fields_are_allowlisted_and_bounded() -> None:
+    logger = logging.getLogger("tests.scheduler-log")
+    logger.propagate = False
+    handler = CapturingHandler()
+    logger.handlers = [handler]
+    logger.setLevel(logging.INFO)
+
+    log_event(
+        logger,
+        logging.INFO,
+        "scheduler.pass.completed",
+        selected=4,
+        enqueued=3,
+        already_active=1,
+        batch_size=100,
+        retry_seconds=float("inf"),
+        retry_attempt=-1,
+    )
+
+    document = handler.documents[0]
+    assert document["selected"] == 4
+    assert document["enqueued"] == 3
+    assert document["already_active"] == 1
+    assert document["batch_size"] == 100
+    assert "retry_seconds" not in document
+    assert "retry_attempt" not in document
+
+
 def test_formatter_never_emits_arbitrary_log_messages() -> None:
     record = logging.LogRecord(
         "third.party",
