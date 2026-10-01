@@ -1,0 +1,62 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+.envrc
+.netrc
+.pypirc
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+credentials.json
+service-account.json
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit.xml
+test-results/
+.venv/
+venv/
+dist/
+build/
+
+# Frontend
+node_modules/
+.npm/
+.pnpm-store/
+
+# Runtime and local data
+*.log
+*.pid
+*.db
+*.sqlite
+*.sqlite3
+*.tfstate
+*.tfstate.*
+data/
+backups/
+tmp/
+compose.override.yml
+compose.override.yaml
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
