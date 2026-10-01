@@ -12,9 +12,9 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, func, insert, select, text, update
 
+from primary_signal.jobs.catalogue import build_default_catalogue
 from primary_signal.jobs.contracts import JobFailure, PollFeedV1
 from primary_signal.jobs.models import Job, JobAttempt
-from primary_signal.jobs.registry import build_default_registry
 from primary_signal.jobs.repository import EnqueueResult, JobRepository, LostLease
 
 
@@ -48,11 +48,8 @@ def job_engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[Engine]:
         engine.dispose()
 
 
-def _registry():
-    return build_default_registry(
-        poll_feed=lambda payload: None,
-        retrieve_article=lambda payload: None,
-    )
+def _catalogue():
+    return build_default_catalogue()
 
 
 def _worker_id() -> str:
@@ -66,7 +63,7 @@ def test_enqueue_deduplicates_active_jobs(job_engine: Engine) -> None:
 
     with job_engine.connect() as connection:
         transaction = connection.begin()
-        repository = JobRepository(connection, _registry())
+        repository = JobRepository(connection, _catalogue())
         try:
             first = repository.enqueue(
                 job_type="feeds.poll",
@@ -103,7 +100,7 @@ def test_concurrent_enqueues_share_one_active_job(job_engine: Engine) -> None:
     def enqueue_once() -> EnqueueResult:
         with job_engine.begin() as connection:
             ready.wait(timeout=5)
-            return JobRepository(connection, _registry()).enqueue(
+            return JobRepository(connection, _catalogue()).enqueue(
                 job_type="feeds.poll",
                 payload_version=1,
                 payload=payload,
@@ -127,7 +124,7 @@ def test_concurrent_enqueues_share_one_active_job(job_engine: Engine) -> None:
 def test_recovery_fences_out_the_stale_worker(job_engine: Engine) -> None:
     with job_engine.connect() as connection:
         transaction = connection.begin()
-        repository = JobRepository(connection, _registry(), random_value=lambda: 0.5)
+        repository = JobRepository(connection, _catalogue(), random_value=lambda: 0.5)
         try:
             job_id = repository.enqueue(
                 job_type="feeds.poll",
@@ -169,7 +166,7 @@ def test_recovery_fences_out_the_stale_worker(job_engine: Engine) -> None:
 def test_cancel_only_affects_queued_jobs(job_engine: Engine) -> None:
     with job_engine.connect() as connection:
         transaction = connection.begin()
-        repository = JobRepository(connection, _registry())
+        repository = JobRepository(connection, _catalogue())
         try:
             queued_id = repository.enqueue(
                 job_type="feeds.poll",
@@ -201,7 +198,7 @@ def test_cancel_only_affects_queued_jobs(job_engine: Engine) -> None:
 def test_claimers_skip_rows_locked_by_another_worker(job_engine: Engine) -> None:
     with job_engine.begin() as setup:
         job_id = (
-            JobRepository(setup, _registry())
+            JobRepository(setup, _catalogue())
             .enqueue(
                 job_type="feeds.poll",
                 payload_version=1,
@@ -215,10 +212,10 @@ def test_claimers_skip_rows_locked_by_another_worker(job_engine: Engine) -> None
     first_transaction = first_connection.begin()
     second_transaction = second_connection.begin()
     try:
-        first = JobRepository(first_connection, _registry()).claim(
+        first = JobRepository(first_connection, _catalogue()).claim(
             queue="ingestion", worker_id=_worker_id()
         )
-        second = JobRepository(second_connection, _registry()).claim(
+        second = JobRepository(second_connection, _catalogue()).claim(
             queue="ingestion", worker_id=_worker_id()
         )
 
@@ -239,10 +236,10 @@ def test_claimers_skip_rows_locked_by_another_worker(job_engine: Engine) -> None
 def test_reclaimed_job_rejects_all_writes_from_the_previous_worker(
     job_engine: Engine,
 ) -> None:
-    registry = _registry()
+    catalogue = _catalogue()
     with job_engine.begin() as connection:
         job_id = (
-            JobRepository(connection, registry)
+            JobRepository(connection, catalogue)
             .enqueue(
                 job_type="feeds.poll",
                 payload_version=1,
@@ -252,7 +249,7 @@ def test_reclaimed_job_rejects_all_writes_from_the_previous_worker(
         )
 
     with job_engine.begin() as connection:
-        stale_lease = JobRepository(connection, registry).claim(
+        stale_lease = JobRepository(connection, catalogue).claim(
             queue="ingestion", worker_id=_worker_id()
         )
         assert stale_lease is not None
@@ -263,7 +260,7 @@ def test_reclaimed_job_rejects_all_writes_from_the_previous_worker(
             .where(Job.id == job_id)
             .values(lease_expires_at=func.clock_timestamp() - text("INTERVAL '1 second'"))
         )
-        repository = JobRepository(connection, registry, random_value=lambda: 0.0)
+        repository = JobRepository(connection, catalogue, random_value=lambda: 0.0)
         assert repository.recover_expired().retried == 1
         connection.execute(
             update(Job)
@@ -272,14 +269,14 @@ def test_reclaimed_job_rejects_all_writes_from_the_previous_worker(
         )
 
     with job_engine.begin() as connection:
-        current_lease = JobRepository(connection, registry).claim(
+        current_lease = JobRepository(connection, catalogue).claim(
             queue="ingestion", worker_id=_worker_id()
         )
         assert current_lease is not None
         assert current_lease.job_id == job_id
 
     with job_engine.begin() as connection:
-        stale_repository = JobRepository(connection, registry)
+        stale_repository = JobRepository(connection, catalogue)
         with pytest.raises(LostLease):
             stale_repository.heartbeat(stale_lease)
         with pytest.raises(LostLease):
@@ -296,15 +293,15 @@ def test_reclaimed_job_rejects_all_writes_from_the_previous_worker(
             current_lease.lease_token,
             current_lease.attempt_number,
         )
-        JobRepository(connection, registry).succeed(current_lease)
+        JobRepository(connection, catalogue).succeed(current_lease)
 
 
 @pytest.mark.postgres
 def test_retryable_failures_stop_at_the_attempt_limit(job_engine: Engine) -> None:
-    registry = _registry()
+    catalogue = _catalogue()
     with job_engine.begin() as connection:
         job_id = (
-            JobRepository(connection, registry)
+            JobRepository(connection, catalogue)
             .enqueue(
                 job_type="feeds.poll",
                 payload_version=1,
@@ -315,10 +312,12 @@ def test_retryable_failures_stop_at_the_attempt_limit(job_engine: Engine) -> Non
         )
 
     with job_engine.begin() as connection:
-        repository = JobRepository(connection, registry, random_value=lambda: 0.0)
+        repository = JobRepository(connection, catalogue, random_value=lambda: 0.0)
         first = repository.claim(queue="ingestion", worker_id=_worker_id())
         assert first is not None
-        assert repository.fail(first, JobFailure(code="dependency_timeout")) == "queued"
+        first_failure = repository.fail(first, JobFailure(code="dependency_timeout"))
+        assert first_failure.status == "queued"
+        assert first_failure.retry_at is not None
         connection.execute(
             update(Job)
             .where(Job.id == job_id)
@@ -326,11 +325,13 @@ def test_retryable_failures_stop_at_the_attempt_limit(job_engine: Engine) -> Non
         )
 
     with job_engine.begin() as connection:
-        repository = JobRepository(connection, registry, random_value=lambda: 0.0)
+        repository = JobRepository(connection, catalogue, random_value=lambda: 0.0)
         second = repository.claim(queue="ingestion", worker_id=_worker_id())
         assert second is not None
         assert second.attempt_number == 2
-        assert repository.fail(second, JobFailure(code="dependency_timeout")) == "dead"
+        second_failure = repository.fail(second, JobFailure(code="dependency_timeout"))
+        assert second_failure.status == "dead"
+        assert second_failure.retry_at is None
 
     with job_engine.connect() as connection:
         assert connection.execute(select(Job.status).where(Job.id == job_id)).scalar_one() == "dead"
@@ -345,11 +346,11 @@ def test_retryable_failures_stop_at_the_attempt_limit(job_engine: Engine) -> Non
 def test_permanent_failure_and_malformed_payload_die_without_retry(
     job_engine: Engine,
 ) -> None:
-    registry = _registry()
+    catalogue = _catalogue()
     malformed_id = uuid.uuid7()
     with job_engine.begin() as connection:
         permanent_id = (
-            JobRepository(connection, registry)
+            JobRepository(connection, catalogue)
             .enqueue(
                 job_type="feeds.poll",
                 payload_version=1,
@@ -370,11 +371,13 @@ def test_permanent_failure_and_malformed_payload_die_without_retry(
         )
 
     with job_engine.begin() as connection:
-        repository = JobRepository(connection, registry)
+        repository = JobRepository(connection, catalogue)
         permanent = repository.claim(queue="ingestion", worker_id=_worker_id())
         assert permanent is not None
         assert permanent.job_id == permanent_id
-        assert repository.fail(permanent, JobFailure(code="bad_payload")) == "dead"
+        permanent_failure = repository.fail(permanent, JobFailure(code="bad_payload"))
+        assert permanent_failure.status == "dead"
+        assert permanent_failure.retry_at is None
         assert repository.claim(queue="ingestion", worker_id=_worker_id()) is None
 
     with job_engine.connect() as connection:

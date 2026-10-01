@@ -27,10 +27,17 @@ match the job, worker, attempt number, and token, and an expired lease cannot
 be revived. This fences off stale workers after recovery or reassignment. The
 database clock is authoritative for claims, leases, retries, and recovery.
 
-Job types and payload versions come from a static registry with strict payload
-schemas. Payloads contain identifiers, not article bodies, credentials, or
-arbitrary URLs. Unknown types and versions fail permanently rather than being
-loaded dynamically.
+Job types and payload versions come from a handler-free static catalogue with
+strict payload schemas. Each processor binds its own handlers explicitly and
+refuses to consume a queue unless every contract in that queue has a handler.
+Payloads contain identifiers, not article bodies, credentials, or arbitrary
+URLs. Unknown types and versions fail permanently rather than being loaded
+dynamically.
+
+Success and failure finalisation may run bounded, prepared database callbacks
+inside the fenced completion transaction. This keeps domain history and
+successor jobs atomic with the queue transition; handler or network work never
+runs inside that transaction.
 
 Polling is the baseline wake-up mechanism. PostgreSQL notifications may reduce
 latency, but are hints only; correctness must not depend on their delivery.

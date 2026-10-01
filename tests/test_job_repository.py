@@ -11,16 +11,19 @@ from sqlalchemy import Connection
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql import ClauseElement
 
+from primary_signal.jobs.catalogue import build_default_catalogue
 from primary_signal.jobs.contracts import JobFailure, PollFeedV1
-from primary_signal.jobs.registry import build_default_registry
-from primary_signal.jobs.repository import JobLease, JobRepository, LostLease
+from primary_signal.jobs.repository import (
+    FailureDisposition,
+    JobLease,
+    JobRepository,
+    LostLease,
+)
 
 
 def _repository(connection: MagicMock) -> JobRepository:
-    registry = build_default_registry(
-        poll_feed=lambda payload: None, retrieve_article=lambda payload: None
-    )
-    return JobRepository(cast(Connection, connection), registry, random_value=lambda: 0.5)
+    catalogue = build_default_catalogue()
+    return JobRepository(cast(Connection, connection), catalogue, random_value=lambda: 0.5)
 
 
 def _sql(statement: ClauseElement) -> str:
@@ -49,6 +52,17 @@ def _result(*, scalar: object = None, rowcount: int = 1) -> MagicMock:
     return result
 
 
+def test_failure_disposition_requires_retry_time_only_when_queued() -> None:
+    retry_at = datetime.now(UTC)
+
+    assert FailureDisposition(status="queued", retry_at=retry_at).retry_at == retry_at
+    assert FailureDisposition(status="dead", retry_at=None).retry_at is None
+    with pytest.raises(ValueError, match="only a queued"):
+        FailureDisposition(status="queued", retry_at=None)
+    with pytest.raises(ValueError, match="only a queued"):
+        FailureDisposition(status="dead", retry_at=retry_at)
+
+
 def test_claim_query_uses_database_clock_order_and_skip_locked() -> None:
     connection = MagicMock()
     connection.execute.return_value.mappings.return_value.one_or_none.return_value = None
@@ -66,7 +80,7 @@ def test_claim_query_uses_database_clock_order_and_skip_locked() -> None:
 def test_claim_rejects_unknown_queue_and_nonopaque_worker_id() -> None:
     repository = _repository(MagicMock())
 
-    with pytest.raises(ValueError, match="queue is not registered"):
+    with pytest.raises(ValueError, match="queue is not present"):
         repository.claim(queue="other", worker_id=f"processor:{uuid.uuid4()}")
     with pytest.raises(ValidationError):
         repository.claim(queue="ingestion", worker_id="host.example")
@@ -320,13 +334,16 @@ def test_success_raises_when_attempt_fence_is_lost() -> None:
 
 def test_retryable_failure_requeues_and_finalizes_attempt() -> None:
     connection = MagicMock()
-    connection.execute.side_effect = [_result(scalar=5), _result(), _result()]
+    retry_at = datetime.now(UTC)
+    connection.execute.side_effect = [_result(scalar=5), _result(scalar=retry_at), _result()]
 
-    status = _repository(connection).fail(_lease(), JobFailure(code="dependency_timeout"))
+    disposition = _repository(connection).fail(_lease(), JobFailure(code="dependency_timeout"))
 
-    assert status == "queued"
+    assert disposition == FailureDisposition(status="queued", retry_at=retry_at)
+    job_sql = _sql(connection.execute.call_args_list[1].args[0])
     job_params = connection.execute.call_args_list[1].args[0].compile().params
     attempt_params = connection.execute.call_args_list[2].args[0].compile().params
+    assert "RETURNING primary_signal.jobs.run_after" in job_sql
     assert "queued" in job_params.values()
     assert "retry" in attempt_params.values()
     assert "dependency_timeout" in attempt_params.values()
@@ -341,11 +358,17 @@ def test_failure_becomes_dead_when_permanent_or_attempts_exhausted(
 ) -> None:
     connection = MagicMock()
     if maximum is None:
-        connection.execute.side_effect = [_result(), _result()]
+        connection.execute.side_effect = [_result(scalar=datetime.now(UTC)), _result()]
     else:
-        connection.execute.side_effect = [_result(scalar=maximum), _result(), _result()]
+        connection.execute.side_effect = [
+            _result(scalar=maximum),
+            _result(scalar=datetime.now(UTC)),
+            _result(),
+        ]
 
-    assert _repository(connection).fail(_lease(), failure) == "dead"
+    assert _repository(connection).fail(_lease(), failure) == FailureDisposition(
+        status="dead", retry_at=None
+    )
 
 
 def test_failure_raises_for_lost_job_and_attempt_fences() -> None:
@@ -355,7 +378,10 @@ def test_failure_raises_for_lost_job_and_attempt_fences() -> None:
         _repository(lost_job).fail(_lease(), JobFailure(code="bad_payload"))
 
     lost_attempt = MagicMock()
-    lost_attempt.execute.side_effect = [_result(), _result(rowcount=0)]
+    lost_attempt.execute.side_effect = [
+        _result(scalar=datetime.now(UTC)),
+        _result(rowcount=0),
+    ]
     with pytest.raises(LostLease, match="attempt fence"):
         _repository(lost_attempt).fail(_lease(), JobFailure(code="bad_payload"))
 
