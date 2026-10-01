@@ -41,7 +41,8 @@ def upgrade() -> None:
 
     op.execute(
         "GRANT SELECT (id, job_type, payload_version, payload, queue, priority, status, "
-        "run_after, attempt_count, max_attempts, worker_id, lease_token, lease_expires_at) "
+        "run_after, attempt_count, max_attempts, worker_id, lease_token, lease_expires_at, "
+        "first_started_at) "
         "ON primary_signal.jobs TO primary_signal_cap_queue_consume"
     )
     op.execute(
@@ -93,7 +94,8 @@ def downgrade() -> None:
     )
     op.execute(
         "REVOKE SELECT (id, job_type, payload_version, payload, queue, priority, status, "
-        "run_after, attempt_count, max_attempts, worker_id, lease_token, lease_expires_at) "
+        "run_after, attempt_count, max_attempts, worker_id, lease_token, lease_expires_at, "
+        "first_started_at) "
         "ON primary_signal.jobs FROM primary_signal_cap_queue_consume"
     )
     op.execute(
