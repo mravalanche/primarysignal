@@ -11,7 +11,7 @@ depends_on: str | Sequence[str] | None = None
 
 DDL = """
 CREATE TABLE primary_signal.sources (
- id uuid PRIMARY KEY, source_key text NOT NULL UNIQUE CHECK (source_key ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'), name text NOT NULL,
+ id uuid PRIMARY KEY, source_key text NOT NULL CONSTRAINT uq_sources_source_key UNIQUE CHECK (source_key ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'), name text NOT NULL,
  homepage_url text NOT NULL, enabled boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE primary_signal.feeds (
@@ -19,7 +19,7 @@ CREATE TABLE primary_signal.feeds (
  configured_url text NOT NULL, normalized_url text NOT NULL, url_hash text NOT NULL CHECK (char_length(url_hash)=64), url_normalization_version integer NOT NULL CHECK (url_normalization_version>0),
  enabled boolean NOT NULL DEFAULT true, poll_interval_seconds integer NOT NULL DEFAULT 900 CHECK (poll_interval_seconds>=60), next_poll_at timestamptz,
  etag text, last_modified text, last_attempt_at timestamptz, last_success_at timestamptz, consecutive_failures integer NOT NULL DEFAULT 0 CHECK (consecutive_failures>=0),
- created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(url_normalization_version,url_hash),
+ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), CONSTRAINT uq_feeds_url_normalization_version_url_hash UNIQUE(url_normalization_version,url_hash),
  CHECK (last_success_at IS NULL OR last_attempt_at IS NULL OR last_success_at<=last_attempt_at)
 );
 CREATE INDEX ix_feeds_source_id ON primary_signal.feeds(source_id);
@@ -42,7 +42,7 @@ CREATE TABLE primary_signal.job_attempts (
  id uuid PRIMARY KEY, job_id uuid NOT NULL REFERENCES primary_signal.jobs(id) ON DELETE RESTRICT, attempt_number integer NOT NULL CHECK(attempt_number>0), worker_id text NOT NULL,
  status text NOT NULL DEFAULT 'running' CHECK(status IN ('running','succeeded','retry','dead','lease_expired','cancelled')), started_at timestamptz NOT NULL, finished_at timestamptz,
  lease_expires_at timestamptz NOT NULL, error_code text, error_detail text CHECK(error_detail IS NULL OR char_length(error_detail)<=2048), created_at timestamptz NOT NULL DEFAULT now(),
- UNIQUE(job_id,attempt_number), CHECK((finished_at IS NULL AND status='running') OR (finished_at IS NOT NULL AND status<>'running')), CHECK(finished_at IS NULL OR finished_at>=started_at)
+ CONSTRAINT uq_job_attempts_job_id_attempt_number UNIQUE(job_id,attempt_number), CHECK((finished_at IS NULL AND status='running') OR (finished_at IS NOT NULL AND status<>'running')), CHECK(finished_at IS NULL OR finished_at>=started_at)
 );
 CREATE INDEX ix_job_attempts_job_started ON primary_signal.job_attempts(job_id,started_at);
 CREATE TABLE primary_signal.feed_poll_runs (
@@ -51,7 +51,7 @@ CREATE TABLE primary_signal.feed_poll_runs (
  http_status integer, entries_seen integer CHECK(entries_seen IS NULL OR entries_seen>=0), entries_discovered integer CHECK(entries_discovered IS NULL OR entries_discovered>=0),
  returned_etag text, returned_last_modified text, error_code text, error_detail text CHECK(error_detail IS NULL OR char_length(error_detail)<=2048), created_at timestamptz NOT NULL DEFAULT now(),
  CHECK((completed_at IS NULL AND status='running') OR (completed_at IS NOT NULL AND status<>'running')), CHECK(completed_at IS NULL OR completed_at>=started_at),
- CHECK(entries_discovered IS NULL OR entries_seen IS NULL OR entries_discovered<=entries_seen), UNIQUE(feed_id,id)
+ CHECK(entries_discovered IS NULL OR entries_seen IS NULL OR entries_discovered<=entries_seen), CONSTRAINT uq_feed_poll_runs_feed_id_id UNIQUE(feed_id,id)
 );
 CREATE INDEX ix_feed_poll_runs_feed_started ON primary_signal.feed_poll_runs(feed_id,started_at);
 CREATE TABLE primary_signal.articles (
@@ -64,7 +64,7 @@ CREATE TABLE primary_signal.feed_entries (
  article_id uuid REFERENCES primary_signal.articles(id) ON DELETE RESTRICT, identity_method text NOT NULL CHECK(identity_method IN ('guid','url','fingerprint')), identity_version integer NOT NULL CHECK(identity_version>0), identity_key text NOT NULL CHECK(char_length(identity_key)=64),
  reported_guid text, reported_url text, reported_title text, reported_summary text, reported_author text, reported_published_at timestamptz, reported_updated_at timestamptz,
  metadata_hash text NOT NULL CHECK(char_length(metadata_hash)=64), first_seen_at timestamptz NOT NULL, last_seen_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
- UNIQUE(feed_id,identity_version,identity_key), CHECK(last_seen_at>=first_seen_at), CONSTRAINT fk_feed_entries_first_poll_same_feed FOREIGN KEY(feed_id,first_poll_run_id) REFERENCES primary_signal.feed_poll_runs(feed_id,id) ON DELETE RESTRICT
+ CONSTRAINT uq_feed_entries_feed_id_identity_version_identity_key UNIQUE(feed_id,identity_version,identity_key), CHECK(last_seen_at>=first_seen_at), CONSTRAINT fk_feed_entries_first_poll_same_feed FOREIGN KEY(feed_id,first_poll_run_id) REFERENCES primary_signal.feed_poll_runs(feed_id,id) ON DELETE RESTRICT
 );
 CREATE INDEX ix_feed_entries_feed_last_seen ON primary_signal.feed_entries(feed_id,last_seen_at);
 CREATE INDEX ix_feed_entries_article_id ON primary_signal.feed_entries(article_id);
@@ -72,7 +72,7 @@ CREATE TABLE primary_signal.article_urls (
  id uuid PRIMARY KEY, article_id uuid NOT NULL REFERENCES primary_signal.articles(id) ON DELETE RESTRICT, original_url text NOT NULL, normalized_url text NOT NULL,
  normalized_url_hash text NOT NULL CHECK(char_length(normalized_url_hash)=64), normalization_version integer NOT NULL CHECK(normalization_version>0),
  kind text NOT NULL CHECK(kind IN ('submitted','redirect','canonical','canonical-hint')), first_seen_at timestamptz NOT NULL, last_seen_at timestamptz NOT NULL,
- created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(article_id,id), UNIQUE(normalization_version,normalized_url_hash), CHECK(last_seen_at>=first_seen_at)
+ created_at timestamptz NOT NULL DEFAULT now(), CONSTRAINT uq_article_urls_article_id_id UNIQUE(article_id,id), CONSTRAINT uq_article_urls_normalization_version_normalized_url_hash UNIQUE(normalization_version,normalized_url_hash), CHECK(last_seen_at>=first_seen_at)
 );
 CREATE INDEX ix_article_urls_article_kind ON primary_signal.article_urls(article_id,kind);
 CREATE TABLE primary_signal.fetch_attempts (
@@ -81,15 +81,15 @@ CREATE TABLE primary_signal.fetch_attempts (
  status text NOT NULL DEFAULT 'running' CHECK(status IN ('running','fetched','not_modified','rejected','failed')), started_at timestamptz NOT NULL, completed_at timestamptz,
  http_status integer, content_type text, byte_count bigint CHECK(byte_count IS NULL OR byte_count>=0), returned_etag text, returned_last_modified text,
  resulting_content_version_id uuid, error_code text, error_detail text CHECK(error_detail IS NULL OR char_length(error_detail)<=2048), created_at timestamptz NOT NULL DEFAULT now(),
- CHECK((completed_at IS NULL AND status='running') OR (completed_at IS NOT NULL AND status<>'running')), CHECK(completed_at IS NULL OR completed_at>=started_at), UNIQUE(article_id,id)
+ CHECK((completed_at IS NULL AND status='running') OR (completed_at IS NOT NULL AND status<>'running')), CHECK(completed_at IS NULL OR completed_at>=started_at), CONSTRAINT uq_fetch_attempts_article_id_id UNIQUE(article_id,id)
 );
 CREATE INDEX ix_fetch_attempts_article_started ON primary_signal.fetch_attempts(article_id,started_at);
 CREATE TABLE primary_signal.content_versions (
- id uuid PRIMARY KEY, article_id uuid NOT NULL REFERENCES primary_signal.articles(id) ON DELETE RESTRICT, origin_fetch_attempt_id uuid NOT NULL UNIQUE,
+ id uuid PRIMARY KEY, article_id uuid NOT NULL REFERENCES primary_signal.articles(id) ON DELETE RESTRICT, origin_fetch_attempt_id uuid NOT NULL CONSTRAINT uq_content_versions_origin_fetch_attempt_id UNIQUE,
  raw_response_hash text NOT NULL CHECK(char_length(raw_response_hash)=64), normalized_content_hash text NOT NULL CHECK(char_length(normalized_content_hash)=64), normalization_version integer NOT NULL CHECK(normalization_version>0),
  extracted_title text, extracted_text text NOT NULL, source_published_at timestamptz, extractor_name text NOT NULL, extractor_version text NOT NULL, content_type text, language text,
  word_count integer CHECK(word_count IS NULL OR word_count>=0), fetched_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
- UNIQUE(article_id,id), UNIQUE(article_id,normalization_version,normalized_content_hash), CONSTRAINT fk_content_versions_origin_fetch_same_article FOREIGN KEY(article_id,origin_fetch_attempt_id) REFERENCES primary_signal.fetch_attempts(article_id,id) ON DELETE RESTRICT
+ CONSTRAINT uq_content_versions_article_id_id UNIQUE(article_id,id), CONSTRAINT uq_content_versions_article_id_normalization_version_no_1bda UNIQUE(article_id,normalization_version,normalized_content_hash), CONSTRAINT fk_content_versions_origin_fetch_same_article FOREIGN KEY(article_id,origin_fetch_attempt_id) REFERENCES primary_signal.fetch_attempts(article_id,id) ON DELETE RESTRICT
 );
 CREATE INDEX ix_content_versions_article_fetched ON primary_signal.content_versions(article_id,fetched_at);
 ALTER TABLE primary_signal.articles ADD CONSTRAINT fk_articles_current_url_same_article FOREIGN KEY(id,current_canonical_url_id) REFERENCES primary_signal.article_urls(article_id,id) ON DELETE RESTRICT;

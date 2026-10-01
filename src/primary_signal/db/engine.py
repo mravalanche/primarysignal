@@ -21,7 +21,10 @@ def assert_database_role(connection: Connection, expected_role: str) -> None:
 
 
 def create_database_engine(
-    settings: DatabaseSettings, *, pool_class: type[Pool] | None = None
+    settings: DatabaseSettings,
+    *,
+    pool_class: type[Pool] | None = None,
+    search_path: str = "pg_catalog,primary_signal",
 ) -> Engine:
     """Create an engine that verifies the authenticated PostgreSQL role."""
 
@@ -34,7 +37,7 @@ def create_database_engine(
                 f"-c lock_timeout={settings.lock_timeout_ms} "
                 "-c idle_in_transaction_session_timeout="
                 f"{settings.idle_transaction_timeout_ms} "
-                "-c search_path=pg_catalog,primary_signal"
+                f"-c search_path={search_path}"
             ),
         },
         "echo": False,

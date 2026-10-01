@@ -1,5 +1,6 @@
 """Alembic environment configured without storing or logging a database URL."""
 
+from collections.abc import Mapping
 from logging.config import fileConfig
 
 from alembic import context
@@ -18,6 +19,21 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def include_name(
+    name: str | None,
+    type_: str,
+    parent_names: Mapping[str, str | None],
+) -> bool:
+    """Limit drift checks to explicitly schema-qualified application tables."""
+
+    if type_ == "schema":
+        return name == SCHEMA_NAME
+    if type_ == "table":
+        qualified_name = parent_names.get("schema_qualified_table_name")
+        return qualified_name in target_metadata.tables
+    return True
+
+
 def run_migrations_offline() -> None:
     """Generate PostgreSQL SQL without connecting to a database."""
 
@@ -28,6 +44,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
+        include_name=include_name,
         version_table_schema=SCHEMA_NAME,
     )
     context.execute(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA_NAME}"')
@@ -38,7 +55,11 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Apply migrations after verifying the authenticated database role."""
 
-    engine = create_database_engine(DatabaseSettings(), pool_class=NullPool)
+    engine = create_database_engine(
+        DatabaseSettings(),
+        pool_class=NullPool,
+        search_path="pg_catalog",
+    )
     with engine.connect() as connection:
         connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA_NAME}"'))
         connection.commit()
@@ -46,6 +67,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
+            include_name=include_name,
             version_table_schema=SCHEMA_NAME,
             compare_type=True,
             compare_server_default=True,

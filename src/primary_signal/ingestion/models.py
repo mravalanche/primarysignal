@@ -216,7 +216,9 @@ class FetchAttempt(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     redirect_chain: Mapped[list[dict[str, object]]] = mapped_column(
         JSONB, nullable=False, default=list
     )
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="running")
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, default="running", server_default="running"
+    )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     http_status: Mapped[int | None] = mapped_column(Integer)
