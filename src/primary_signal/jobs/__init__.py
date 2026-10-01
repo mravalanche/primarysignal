@@ -11,6 +11,7 @@ from primary_signal.jobs.repository import (
     RecoverySummary,
 )
 from primary_signal.jobs.retry import RetryPolicy
+from primary_signal.jobs.transactions import PreparedDatabaseCallback, TransactionalJobQueue
 
 __all__ = [
     "EnqueueResult",
@@ -24,8 +25,10 @@ __all__ = [
     "JobRepository",
     "LostLease",
     "PollFeedV1",
+    "PreparedDatabaseCallback",
     "RecoverySummary",
     "RetrieveArticleV1",
     "RetryPolicy",
+    "TransactionalJobQueue",
     "build_default_registry",
 ]

@@ -10,7 +10,7 @@ from threading import Barrier
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, func, select, text, update
+from sqlalchemy import Engine, create_engine, func, insert, select, text, update
 
 from primary_signal.jobs.contracts import JobFailure, PollFeedV1
 from primary_signal.jobs.models import Job, JobAttempt
@@ -297,3 +297,89 @@ def test_reclaimed_job_rejects_all_writes_from_the_previous_worker(
             current_lease.attempt_number,
         )
         JobRepository(connection, registry).succeed(current_lease)
+
+
+@pytest.mark.postgres
+def test_retryable_failures_stop_at_the_attempt_limit(job_engine: Engine) -> None:
+    registry = _registry()
+    with job_engine.begin() as connection:
+        job_id = (
+            JobRepository(connection, registry)
+            .enqueue(
+                job_type="feeds.poll",
+                payload_version=1,
+                payload=PollFeedV1(feed_id=uuid.uuid4()),
+                max_attempts=2,
+            )
+            .job_id
+        )
+
+    with job_engine.begin() as connection:
+        repository = JobRepository(connection, registry, random_value=lambda: 0.0)
+        first = repository.claim(queue="ingestion", worker_id=_worker_id())
+        assert first is not None
+        assert repository.fail(first, JobFailure(code="dependency_timeout")) == "queued"
+        connection.execute(
+            update(Job)
+            .where(Job.id == job_id)
+            .values(run_after=func.clock_timestamp() - text("INTERVAL '1 second'"))
+        )
+
+    with job_engine.begin() as connection:
+        repository = JobRepository(connection, registry, random_value=lambda: 0.0)
+        second = repository.claim(queue="ingestion", worker_id=_worker_id())
+        assert second is not None
+        assert second.attempt_number == 2
+        assert repository.fail(second, JobFailure(code="dependency_timeout")) == "dead"
+
+    with job_engine.connect() as connection:
+        assert connection.execute(select(Job.status).where(Job.id == job_id)).scalar_one() == "dead"
+        assert connection.execute(
+            select(JobAttempt.status)
+            .where(JobAttempt.job_id == job_id)
+            .order_by(JobAttempt.attempt_number)
+        ).scalars().all() == ["retry", "dead"]
+
+
+@pytest.mark.postgres
+def test_permanent_failure_and_malformed_payload_die_without_retry(
+    job_engine: Engine,
+) -> None:
+    registry = _registry()
+    malformed_id = uuid.uuid7()
+    with job_engine.begin() as connection:
+        permanent_id = (
+            JobRepository(connection, registry)
+            .enqueue(
+                job_type="feeds.poll",
+                payload_version=1,
+                payload=PollFeedV1(feed_id=uuid.uuid4()),
+                priority=1,
+            )
+            .job_id
+        )
+        connection.execute(
+            insert(Job).values(
+                id=malformed_id,
+                job_type="feeds.poll",
+                payload_version=1,
+                payload={"feed_id": "not-a-uuid"},
+                queue="ingestion",
+                run_after=func.clock_timestamp(),
+            )
+        )
+
+    with job_engine.begin() as connection:
+        repository = JobRepository(connection, registry)
+        permanent = repository.claim(queue="ingestion", worker_id=_worker_id())
+        assert permanent is not None
+        assert permanent.job_id == permanent_id
+        assert repository.fail(permanent, JobFailure(code="bad_payload")) == "dead"
+        assert repository.claim(queue="ingestion", worker_id=_worker_id()) is None
+
+    with job_engine.connect() as connection:
+        rows = connection.execute(
+            select(Job.id, Job.status).where(Job.id.in_((permanent_id, malformed_id)))
+        ).all()
+        states = {row.id: row.status for row in rows}
+        assert states == {permanent_id: "dead", malformed_id: "dead"}
