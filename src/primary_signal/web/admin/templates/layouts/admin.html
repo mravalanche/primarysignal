@@ -1,0 +1,5 @@
+{% extends "layouts/base.html" %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('admin-assets', path='/admin.css') }}">{% endblock %}
+{% block body %}
+  <main id="main-content" class="ps-page py-10">{% block content %}{% endblock %}</main>
+{% endblock %}

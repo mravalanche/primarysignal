@@ -1,0 +1,36 @@
+{% extends "layouts/public.html" %}
+{% import "components/ui.html" as ui %}
+{% import "components/story.html" as story %}
+
+{% block title %}Component catalogue — Primary Signal{% endblock %}
+{% block content %}
+  <header class="ps-reading-measure border-b ps-rule pb-8">
+    <p class="ps-kicker text-primary">Development only</p>
+    <h1 class="mt-2 font-serif text-4xl font-bold tracking-tight">Interface components</h1>
+    <p class="mt-3 leading-7 text-base-content/75">Shared parts shown with synthetic content and awkward states. This is a workshop, not a public page.</p>
+  </header>
+
+  <section class="py-8" aria-labelledby="controls-title">
+    <h2 id="controls-title" class="ps-kicker mb-4">Controls and states</h2>
+    <div class="flex flex-wrap items-center gap-3">
+      {% call ui.button(variant="primary") %}Read the brief{% endcall %}
+      {% call ui.button() %}View sources{% endcall %}
+      {% call ui.button(variant="quiet") %}Clear filters{% endcall %}
+      {% call ui.button(disabled=true) %}Unavailable{% endcall %}
+      {{ ui.tag("CVE-2026-0123") }}
+      {{ ui.tag("Identity") }}
+    </div>
+  </section>
+
+  <section class="border-t ps-rule py-8" aria-labelledby="stories-title">
+    <h2 id="stories-title" class="ps-kicker mb-2">Story rows</h2>
+    {{ story.row(catalogue.standard_story) }}
+    {{ story.row(catalogue.long_title_story) }}
+  </section>
+
+  <section class="grid gap-3 border-t ps-rule py-8 md:grid-cols-2" aria-labelledby="states-title">
+    <h2 id="states-title" class="ps-kicker md:col-span-2">System states</h2>
+    {% call ui.notice() %}<div><strong>No stories match these filters.</strong><br><span class="text-sm">Try a broader topic or clear the UK impact filter.</span></div>{% endcall %}
+    {% call ui.notice(kind="error") %}<div><strong>Stories could not be loaded.</strong><br><span class="text-sm">Try again. Existing filters have been kept.</span></div>{% endcall %}
+  </section>
+{% endblock %}

@@ -1,0 +1,20 @@
+{
+  "name": "primarysignal-assets",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Build-only frontend tooling for Primary Signal",
+  "engines": {
+    "node": "24.21.0"
+  },
+  "scripts": {
+    "build": "node frontend/scripts/build-assets.mjs",
+    "check": "node frontend/scripts/verify-assets.mjs && node --test frontend/tests/*.test.mjs",
+    "test": "node --test frontend/tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "daisyui": "5.7.47",
+    "htmx.org": "2.0.11",
+    "tailwindcss": "4.3.3"
+  }
+}

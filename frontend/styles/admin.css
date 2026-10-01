@@ -1,0 +1,9 @@
+@import "./foundation.css";
+@source "../../src/primary_signal/web/common/templates/**/*.html";
+@source "../../src/primary_signal/web/admin/templates/**/*.html";
+
+.ps-admin-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+}

@@ -27,8 +27,21 @@ uv run pre-commit install
 uv run poe check-offline
 ```
 
+The server-rendered interface uses Jinja, HTMX, Tailwind CSS and a constrained
+DaisyUI component subset. Node 24 Active LTS is only used to build and test
+self-hosted assets. After cloning, build them with:
+
+```sh
+npm ci --ignore-scripts
+uv run poe assets-build
+```
+
+Lifecycle scripts are disabled during installation; the pinned toolchain builds
+and tests successfully without them.
+
 The pre-commit hook runs the offline gate and secret scan. Before pushing, run
-`uv run poe check` to add the installed-dependency audit and package build.
+`uv run poe check` to add Python and frontend advisory audits and the package
+build.
 
 ## Security
 

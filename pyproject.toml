@@ -16,6 +16,7 @@ classifiers = [
 ]
 dependencies = [
   "fastapi>=0.142.2,<0.143",
+  "jinja2>=3.1.6,<3.2",
   "pydantic>=2.13.5,<2.14",
   "pydantic-settings>=2.15,<2.16",
   "uvicorn>=0.54,<0.55",
@@ -76,7 +77,7 @@ known_first_party = ["primary_signal"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.coverage.run]
@@ -89,6 +90,12 @@ skip_covered = true
 fail_under = 95
 
 [tool.poe.tasks]
+assets-install = { cmd = "npm ci --ignore-scripts", help = "Install the locked frontend build toolchain without lifecycle scripts" }
+assets-build = { cmd = "npm run build", help = "Build self-hosted CSS and JavaScript assets" }
+assets-test = { cmd = "npm test", help = "Check generated frontend assets" }
+assets-check = { cmd = "npm run check", help = "Verify generated assets are current and valid" }
+assets-audit = { cmd = "npm audit --package-lock-only --audit-level=high --include=dev", help = "Audit all locked frontend build dependencies" }
+lockfiles-check = { cmd = "python scripts/check_lockfiles.py", help = "Reject credentials and unexpected dependency sources in lockfiles" }
 test = { cmd = "pytest --cov=primary_signal --cov-report=term-missing", help = "Run tests with the coverage gate" }
 lint = { cmd = "ruff check .", help = "Run Python lint checks" }
 format-check = { cmd = "ruff format --check src tests scripts", help = "Verify Python formatting" }
@@ -100,7 +107,7 @@ security-audit = { cmd = "python scripts/audit_dependencies.py", help = "Audit l
 build = { cmd = "uv build", help = "Build source and wheel distributions" }
 build-smoke = { cmd = "python scripts/smoke_test_build.py", help = "Install and import the built wheel in isolation" }
 build-check = { sequence = ["build", "build-smoke"], help = "Build and smoke-test the distributions" }
-check-offline = { sequence = ["test", "lint", "format-check", "typecheck", "deps-check"], help = "Run the deterministic offline commit gate" }
-security = { sequence = ["security-secrets", "security-audit"], help = "Run security checks" }
-check = { sequence = ["check-offline", "security-secrets", "security-audit", "build-check"], help = "Run the complete quality and security gate" }
+check-offline = { sequence = ["lockfiles-check", "assets-check", "test", "lint", "format-check", "typecheck", "deps-check"], help = "Run the deterministic offline commit gate" }
+security = { sequence = ["security-secrets", "security-audit", "assets-audit"], help = "Run security checks" }
+check = { sequence = ["check-offline", "security-secrets", "security-audit", "assets-audit", "build-check"], help = "Run the complete quality and security gate" }
 pre-commit = { cmd = "pre-commit run --all-files", help = "Run configured Git pre-commit hooks" }

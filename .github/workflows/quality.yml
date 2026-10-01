@@ -41,8 +41,17 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
       - name: Install locked dependencies
         run: uv sync --locked --all-groups
+
+      - name: Install locked frontend build dependencies
+        run: npm ci --ignore-scripts
 
       - name: Run offline quality gate
         run: uv run --offline --locked poe check-offline
@@ -100,8 +109,20 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
       - name: Install locked dependencies
         run: uv sync --locked --all-groups
 
-      - name: Audit installed dependencies
+      - name: Install locked frontend build dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Audit Python dependencies
         run: uv run python scripts/audit_dependencies.py
+
+      - name: Audit frontend build dependencies
+        run: npm audit --package-lock-only --audit-level=high --include=dev

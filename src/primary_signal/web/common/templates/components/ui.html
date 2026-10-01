@@ -1,0 +1,11 @@
+{% macro button(variant="neutral", type="button", disabled=false) -%}
+  <button type="{{ type }}" class="btn btn-sm{% if variant == 'primary' %} btn-primary{% elif variant == 'quiet' %} btn-ghost{% endif %}"{% if disabled %} disabled{% endif %}>{{ caller() }}</button>
+{%- endmacro %}
+
+{% macro tag(label) -%}
+  <span class="badge badge-sm badge-ghost rounded-sm font-medium">{{ label }}</span>
+{%- endmacro %}
+
+{% macro notice(kind="info") -%}
+  <div role="status" class="alert alert-{{ kind }} rounded-sm border shadow-none">{{ caller() }}</div>
+{%- endmacro %}
