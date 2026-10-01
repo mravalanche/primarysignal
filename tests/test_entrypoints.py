@@ -13,7 +13,6 @@ Entrypoint = Callable[[Sequence[str] | None], None]
         (processor.main, "processor"),
         (retriever.main, "retriever"),
         (scheduler.main, "scheduler"),
-        (migrate.main, "migrate"),
     ],
 )
 def test_unimplemented_entrypoints_fail_clearly(
@@ -39,12 +38,14 @@ def test_web_entrypoint_runs_selected_surface(monkeypatch: pytest.MonkeyPatch) -
         host: str,
         port: int,
         proxy_headers: bool,
+        log_config: object,
     ) -> None:
         captured.update(
             app=app,
             host=host,
             port=port,
             proxy_headers=proxy_headers,
+            log_config=log_config,
         )
 
     monkeypatch.setattr(web.uvicorn, "run", fake_run)
@@ -54,4 +55,19 @@ def test_web_entrypoint_runs_selected_surface(monkeypatch: pytest.MonkeyPatch) -
     assert captured["host"] == "127.0.0.2"
     assert captured["port"] == 8080
     assert captured["proxy_headers"] is False
+    assert captured["log_config"] is None
     assert captured["app"].state.surface == "public"  # type: ignore[union-attr]
+
+
+def test_migrate_entrypoint_upgrades_to_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_upgrade(config: object, revision: str) -> None:
+        captured.update(config=config, revision=revision)
+
+    monkeypatch.setattr(migrate.command, "upgrade", fake_upgrade)
+
+    migrate.main([])
+
+    assert captured["revision"] == "head"
+    assert migrate.migration_config_path().is_file()

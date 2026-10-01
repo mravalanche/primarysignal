@@ -1,0 +1,84 @@
+{% extends "layouts/public.html" %}
+{% import "components/story.html" as story_component %}
+
+{% block title %}Morning brief — Primary Signal preview{% endblock %}
+{% block masthead_context %}<span class="ps-preview-label">Development preview</span>{% endblock %}
+{% block content %}
+  <section class="ps-brief" aria-labelledby="brief-title">
+    <div>
+      <p class="ps-kicker text-primary"><time datetime="{{ brief_date.isoformat() }}">Thursday 1 October 2026</time></p>
+      <h1 id="brief-title">Morning brief</h1>
+      <p class="ps-brief-standfirst">Patch the identity edge, verify package releases, and watch a reporting proposal that may change incident timelines.</p>
+    </div>
+    <div class="ps-today" aria-labelledby="today-title">
+      <h2 id="today-title">Today</h2>
+      <ol>
+        <li><a href="/__dev/preview#story-identity-service-fix">Identity service fixes</a></li>
+        <li><a href="/__dev/preview#story-package-signing-incident">Package signing incident</a></li>
+        <li><a href="/__dev/preview#story-resilience-reporting-proposal">Reporting consultation</a></li>
+      </ol>
+    </div>
+  </section>
+
+  <form class="ps-filters" method="get" action="/__dev/preview" aria-label="Filter latest reporting">
+    <div class="ps-topic-scroller" role="group" aria-label="Topic">
+      <a class="ps-filter-chip{% if not filters.topic %} is-active{% endif %}" href="?{% if filters.tag %}tag={{ filters.tag | urlencode }}&amp;{% endif %}{% if filters.uk %}uk=true{% endif %}"{% if not filters.topic %} aria-current="page"{% endif %}>All</a>
+      {% for topic_value, topic_label in topics %}
+        <a class="ps-filter-chip{% if filters.topic == topic_value %} is-active{% endif %}" href="?topic={{ topic_value }}{% if filters.tag %}&amp;tag={{ filters.tag | urlencode }}{% endif %}{% if filters.uk %}&amp;uk=true{% endif %}"{% if filters.topic == topic_value %} aria-current="page"{% endif %}>{{ topic_label }}</a>
+      {% endfor %}
+    </div>
+    <div class="ps-filter-controls">
+      <label>
+        <span>Tag</span>
+        <select class="ps-filter-select" name="tag">
+          <option value="">Any tag</option>
+          {% for tag_label in available_tags %}<option value="{{ tag_label }}"{% if filters.tag == tag_label.casefold() %} selected{% endif %}>{{ tag_label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="ps-uk-toggle">
+        <input type="checkbox" name="uk" value="true"{% if filters.uk %} checked{% endif %}>
+        <span>UK impact</span>
+      </label>
+      <button class="btn btn-sm" type="submit"{% if filters.topic %} name="topic" value="{{ filters.topic }}"{% endif %}>Apply</button>
+      {% if filters.topic or filters.tag or filters.uk %}<a class="ps-clear-link" href="/__dev/preview">Clear</a>{% endif %}
+    </div>
+  </form>
+
+  <div class="ps-news-desk">
+    <section aria-labelledby="latest-title">
+      <div class="ps-section-heading">
+        <h2 id="latest-title">Latest reporting</h2>
+        <span aria-live="polite">{{ result_count }} {% if result_count == 1 %}story{% else %}stories{% endif %}</span>
+      </div>
+      {% if stories %}
+        {% for item in stories %}
+          {{ story_component.row(item, heading_level=3, interactive=true, source_lookup=item.source_lookup) }}
+        {% endfor %}
+      {% else %}
+        <div class="ps-empty-state" role="status">
+          <h3>No stories match these filters</h3>
+          <p>Try another topic or remove the UK-impact filter.</p>
+          <a href="/__dev/preview">Clear filters</a>
+        </div>
+      {% endif %}
+    </section>
+
+    <aside class="ps-desk-notes" aria-labelledby="desk-title">
+      <h2 id="desk-title">On the desk</h2>
+      <section>
+        <h3>Worth your time</h3>
+        <p><a href="/__dev/preview#story-protocol-parser-study">Protocol parser study</a></p>
+        <p class="ps-note-meta">Original research · 12 min read</p>
+      </section>
+      <section>
+        <h3>Still developing</h3>
+        <p>Maintainer responses to the package publishing incident.</p>
+        <p class="ps-note-meta">Next review at 11:00</p>
+      </section>
+      <section>
+        <h3>About signals</h3>
+        <p>Every named signal has a rule and links to the evidence that supports it.</p>
+      </section>
+    </aside>
+  </div>
+{% endblock %}

@@ -1,33 +1,63 @@
 {% import "components/ui.html" as ui %}
 
-{% macro signal(item) -%}
-  <span class="ps-kicker text-primary">{{ item.label }}</span>
+{% macro signal(item, interactive=false, source_lookup={}) -%}
+  {% if interactive %}
+    <details class="ps-signal">
+      <summary class="ps-signal-label">{{ item.label }}</summary>
+      <div class="ps-signal-note">
+        <p>{{ item.definition }}</p>
+        <p class="ps-signal-evidence">
+          Evidence:
+          {% for source_id in item.evidence_source_ids %}
+            <a href="#source-{{ source_id }}">{{ source_lookup[source_id].publisher }}</a>{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </p>
+      </div>
+    </details>
+  {% else %}
+    <span class="ps-kicker text-primary">{{ item.label }}</span>
+  {% endif %}
 {%- endmacro %}
 
-{% macro source_trail(item) -%}
-  <span>{{ item.source_count }} source{% if item.source_count != 1 %}s{% endif %}</span>
+{% macro source_trail(item, href=none) -%}
+  {% if href %}<a class="ps-source-link" href="{{ href }}" data-source-toggle aria-controls="{{ href[1:] }}">{% endif %}{{ item.source_count }} source{% if item.source_count != 1 %}s{% endif %}{% if href %}</a>{% endif %}
   {% if item.publisher_names %}<span aria-hidden="true">·</span> <span>{{ item.publisher_names | join(", ") }}</span>{% endif %}
 {%- endmacro %}
 
-{% macro row(item) -%}
-  <article class="ps-story-row">
+{% macro row(item, heading_level=2, interactive=false, source_lookup={}) -%}
+  <article class="ps-story-row"{% if interactive %} id="story-{{ item.slug }}"{% endif %}>
     <div class="min-w-0">
       <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         <span class="ps-kicker text-secondary">{{ item.topic_label }}</span>
         {% if item.uk_relevant %}<span class="ps-kicker text-base-content/70">UK impact</span>{% endif %}
-        <span class="text-xs text-base-content/60">{{ item.age_label }}</span>
+        {% if interactive %}<time class="text-xs text-base-content/60" datetime="{{ item.published_at.isoformat() }}">{{ item.age_label }}</time>{% else %}<span class="text-xs text-base-content/60">{{ item.age_label }}</span>{% endif %}
       </div>
-      <h2 class="ps-story-title text-xl leading-tight">{{ item.headline }}</h2>
+      {% if heading_level == 3 %}<h3 class="ps-story-title text-xl leading-tight">{{ item.headline }}</h3>{% else %}<h2 class="ps-story-title text-xl leading-tight">{{ item.headline }}</h2>{% endif %}
       <p class="ps-reading-measure mt-2 text-sm leading-6 text-base-content/80">{{ item.summary }}</p>
-      <div class="mt-3 flex flex-wrap gap-1.5">
-        {% for item_tag in item.tags %}{{ ui.tag(item_tag.label) }}{% endfor %}
+      <div class="ps-tag-list mt-3 flex flex-wrap gap-1.5" aria-label="Story tags">
+        {% for item_tag in item.tags %}<span class="ps-tag-item ps-tag-{{ loop.index }}">{{ ui.tag(item_tag.label, "/__dev/preview?tag=" ~ (item_tag.label | urlencode) if interactive else none) }}</span>{% endfor %}
+        {% if item.tags | length > 2 %}<span class="ps-tag-more ps-tag-more-mobile">+{{ (item.tags | length) - 2 }}</span>{% endif %}
+        {% if item.tags | length > 3 %}<span class="ps-tag-more ps-tag-more-desktop">+{{ (item.tags | length) - 3 }}</span>{% endif %}
       </div>
     </div>
     <div class="flex flex-col justify-between gap-3 text-xs text-base-content/65 md:items-end md:text-right">
-      <div class="flex flex-wrap gap-x-2 gap-y-1 md:justify-end">
-        {% for item_signal in item.signals %}{{ signal(item_signal) }}{% endfor %}
+      <div class="ps-signal-list flex flex-wrap gap-x-2 gap-y-1 md:justify-end">
+        {% for item_signal in item.signals[:2] %}{{ signal(item_signal, interactive, source_lookup) }}{% endfor %}
       </div>
-      <div>{{ source_trail(item.source_trail) }}</div>
+      <div>{{ source_trail(item.source_trail, "#sources-" ~ item.slug if interactive else none) }}</div>
     </div>
+    {% if interactive %}
+      <details class="ps-source-section" id="sources-{{ item.slug }}">
+        <summary>Source trail for “{{ item.headline }}”</summary>
+        <ol>
+          {% for item_source in item.sources %}
+            <li id="source-{{ item_source.id }}">
+              <a href="{{ item_source.url }}">{{ item_source.title }}</a>
+              <span>— {{ item_source.publisher }}</span>
+            </li>
+          {% endfor %}
+        </ol>
+      </details>
+    {% endif %}
   </article>
 {%- endmacro %}

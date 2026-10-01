@@ -36,6 +36,15 @@ npm ci --ignore-scripts
 uv run poe assets-build
 ```
 
+To try the synthetic news-desk preview locally:
+
+```sh
+uv run primary-signal-web --surface public
+```
+
+Open <http://127.0.0.1:8000/__dev/preview>. The preview uses invented content
+and reserved example domains. It is not registered in production.
+
 Lifecycle scripts are disabled during installation; the pinned toolchain builds
 and tests successfully without them.
 
