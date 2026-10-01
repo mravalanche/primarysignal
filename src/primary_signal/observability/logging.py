@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -12,6 +13,8 @@ MAX_STRING_LENGTH: Final = 1_024
 EVENT_FIELDS: Final = frozenset(
     {
         "duration_ms",
+        "already_active",
+        "batch_size",
         "error_code",
         "error_type",
         "job_id",
@@ -20,13 +23,25 @@ EVENT_FIELDS: Final = frozenset(
         "path",
         "queue",
         "request_id",
+        "retry_attempt",
+        "retry_seconds",
         "result",
         "service",
         "status_code",
+        "selected",
+        "enqueued",
         "surface",
         "url",
     }
 )
+BOUNDED_NUMERIC_FIELDS: Final = {
+    "already_active": (0, 500, int),
+    "batch_size": (1, 500, int),
+    "enqueued": (0, 500, int),
+    "retry_attempt": (1, 1_000_000, int),
+    "retry_seconds": (0.0, 3_600.0, float),
+    "selected": (0, 500, int),
+}
 SENSITIVE_KEY_PARTS: Final = (
     "authorization",
     "api_key",
@@ -111,6 +126,19 @@ def sanitize_value(value: object, *, key: object | None = None) -> object:
     return _sanitize_string(str(value))
 
 
+def _bounded_numeric_field(key: str, value: object) -> int | float | None:
+    lower, upper, kind = BOUNDED_NUMERIC_FIELDS[key]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if kind is int and not isinstance(value, int):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if not lower <= value <= upper:
+        return None
+    return value
+
+
 class JsonFormatter(logging.Formatter):
     """Serialize standard fields plus explicitly allowlisted event fields."""
 
@@ -130,7 +158,12 @@ class JsonFormatter(logging.Formatter):
             event_fields = cast(Mapping[object, object], supplied)
             for key in EVENT_FIELDS:
                 if key in event_fields:
-                    document[key] = sanitize_value(event_fields[key], key=key)
+                    if key in BOUNDED_NUMERIC_FIELDS:
+                        numeric_value = _bounded_numeric_field(key, event_fields[key])
+                        if numeric_value is not None:
+                            document[key] = numeric_value
+                    else:
+                        document[key] = sanitize_value(event_fields[key], key=key)
         if record.exc_info:
             exception = record.exc_info[1]
             document["error_type"] = type(exception).__name__ if exception else "Exception"
