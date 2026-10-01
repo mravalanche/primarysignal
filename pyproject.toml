@@ -15,10 +15,13 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
 ]
 dependencies = [
+  "alembic>=1.18.4,<1.19",
   "fastapi>=0.142.2,<0.143",
   "jinja2>=3.1.6,<3.2",
+  "psycopg[binary]>=3.3.3,<3.4",
   "pydantic>=2.13.5,<2.14",
   "pydantic-settings>=2.15,<2.16",
+  "sqlalchemy>=2.0.48,<2.1",
   "uvicorn>=0.54,<0.55",
 ]
 
@@ -45,6 +48,10 @@ primary-signal-migrate = "primary_signal.entrypoints.migrate:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/primary_signal"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"alembic.ini" = "primary_signal/db/alembic.ini"
+"migrations" = "primary_signal/db/migrations"
 
 [tool.uv]
 required-version = ">=0.12.21,<0.13"
@@ -75,10 +82,16 @@ reportUnnecessaryTypeIgnoreComment = "error"
 [tool.deptry]
 known_first_party = ["primary_signal"]
 
+[tool.deptry.per_rule_ignores]
+DEP002 = ["psycopg"] # Loaded by SQLAlchemy through the postgresql+psycopg URL.
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 pythonpath = ["src", "."]
 testpaths = ["tests"]
+markers = [
+  "postgres: integration test requiring an explicitly configured disposable PostgreSQL database",
+]
 
 [tool.coverage.run]
 branch = true
@@ -97,6 +110,7 @@ assets-check = { cmd = "npm run check", help = "Verify generated assets are curr
 assets-audit = { cmd = "npm audit --package-lock-only --audit-level=high --include=dev", help = "Audit all locked frontend build dependencies" }
 lockfiles-check = { cmd = "python scripts/check_lockfiles.py", help = "Reject credentials and unexpected dependency sources in lockfiles" }
 test = { cmd = "pytest --cov=primary_signal --cov-report=term-missing", help = "Run tests with the coverage gate" }
+test-postgres = { cmd = "pytest -m postgres", help = "Run PostgreSQL integration tests against an explicitly configured disposable database" }
 lint = { cmd = "ruff check .", help = "Run Python lint checks" }
 format-check = { cmd = "ruff format --check src tests scripts", help = "Verify Python formatting" }
 typecheck = { cmd = "pyright", help = "Run static type checks" }

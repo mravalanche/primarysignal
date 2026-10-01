@@ -2,8 +2,8 @@
   <button type="{{ type }}" class="btn btn-sm{% if variant == 'primary' %} btn-primary{% elif variant == 'quiet' %} btn-ghost{% endif %}"{% if disabled %} disabled{% endif %}>{{ caller() }}</button>
 {%- endmacro %}
 
-{% macro tag(label) -%}
-  <span class="badge badge-sm badge-ghost rounded-sm font-medium">{{ label }}</span>
+{% macro tag(label, href=none) -%}
+  {% if href %}<a class="badge badge-sm badge-ghost rounded-sm font-medium" href="{{ href }}">{{ label }}</a>{% else %}<span class="badge badge-sm badge-ghost rounded-sm font-medium">{{ label }}</span>{% endif %}
 {%- endmacro %}
 
 {% macro notice(kind="info") -%}

@@ -1,11 +1,51 @@
 {% extends "layouts/base.html" %}
-{% block styles %}<link rel="stylesheet" href="{{ url_for('public-assets', path='/public.css') }}">{% endblock %}
+{% block styles %}
+  <script>
+    (() => {
+      try {
+        const theme = localStorage.getItem("primary-signal-theme");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = `primarysignal-${theme}`;
+      } catch (_) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('public-assets', path='/public.css') }}">
+{% endblock %}
 {% block body %}
-  <header class="border-b ps-rule">
+  <header class="ps-masthead border-b ps-rule">
     <div class="ps-page flex min-h-16 items-center justify-between gap-4">
-      <a href="/" class="text-sm font-bold tracking-[0.2em] uppercase">Primary Signal</a>
-      <span class="ps-kicker text-base-content/60">Component catalogue</span>
+      <a href="/" class="ps-wordmark tracking-[0.2em] uppercase">Primary Signal</a>
+      <div class="flex items-center gap-3">
+        {% block masthead_context %}<span class="ps-preview-label">Component catalogue</span>{% endblock %}
+        <button class="ps-theme-toggle" type="button" aria-label="Switch colour theme" aria-pressed="false" data-theme-toggle>Theme</button>
+      </div>
     </div>
   </header>
   <main id="main-content" class="ps-page py-10">{% block content %}{% endblock %}</main>
+  <script>
+    (() => {
+      const button = document.querySelector("[data-theme-toggle]");
+      if (!button) return;
+      const preferredDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+      const current = () => document.documentElement.dataset.theme || (preferredDark() ? "primarysignal-dark" : "primarysignal-light");
+      const update = () => {
+        const dark = current() === "primarysignal-dark";
+        button.setAttribute("aria-pressed", String(dark));
+        button.textContent = dark ? "Light" : "Dark";
+      };
+      button.addEventListener("click", () => {
+        const next = current() === "primarysignal-dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = `primarysignal-${next}`;
+        try { localStorage.setItem("primary-signal-theme", next); } catch (_) {}
+        update();
+      });
+      update();
+
+      document.querySelectorAll("[data-source-toggle]").forEach((link) => {
+        link.addEventListener("click", () => {
+          const target = document.querySelector(link.getAttribute("href"));
+          if (target instanceof HTMLDetailsElement) target.open = true;
+        });
+      });
+    })();
+  </script>
 {% endblock %}

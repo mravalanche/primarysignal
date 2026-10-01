@@ -16,6 +16,8 @@ id_ed25519
 credentials.json
 service-account.json
 secrets/
+.secrets/*
+!.secrets/*.example
 
 # Python
 __pycache__/

@@ -1,0 +1,6 @@
+# Optional local-only access for migration commands run outside Compose.
+# Copy to compose.override.yaml; the copied file is ignored by Git.
+services:
+  database:
+    ports:
+      - "127.0.0.1:5432:5432"

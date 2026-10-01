@@ -34,15 +34,23 @@ def main() -> int:
         "web/public/static/public.css",
         "web/admin/templates/layouts/admin.html",
         "web/admin/static/admin.css",
+        "db/alembic.ini",
+        "db/migrations/env.py",
+        "db/migrations/versions/20261001_01_initial_ingestion_schema.py",
     )
     import_check = (
         "from importlib.resources import files; "
+        "from alembic.config import Config; "
+        "from alembic.script import ScriptDirectory; "
         "from primary_signal.web.admin import create_admin_app; "
         "from primary_signal.web.public import create_public_app; "
+        "from primary_signal.entrypoints.migrate import migration_config_path; "
         f"required={required_resources!r}; "
         "root=files('primary_signal'); "
         "missing=[path for path in required if not root.joinpath(path).is_file()]; "
         "assert not missing, f'missing packaged UI resources: {missing}'; "
+        "assert migration_config_path().is_file(); "
+        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261001_01'; "
         "assert create_admin_app().title; "
         "assert create_public_app().title"
     )

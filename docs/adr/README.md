@@ -15,3 +15,4 @@ through a later ADR that replaces them.
 | [0006](0006-single-user-admin-authentication.md) | Single-user admin authentication | Proposed |
 | [0007](0007-ssrf-safe-retrieval-and-egress.md) | SSRF-safe retrieval and egress enforcement | Proposed |
 | [0008](0008-server-rendered-ui-and-component-layer.md) | Server-rendered UI and constrained component layer | Accepted |
+| [0009](0009-postgresql-persistence-foundation.md) | PostgreSQL persistence foundation | Accepted |

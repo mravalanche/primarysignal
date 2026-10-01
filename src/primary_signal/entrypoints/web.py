@@ -6,6 +6,7 @@ from collections.abc import Sequence
 import uvicorn
 
 from primary_signal.config import Settings
+from primary_signal.observability import configure_logging
 from primary_signal.web.admin import create_admin_app
 from primary_signal.web.public import create_public_app
 
@@ -23,12 +24,14 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     args = _parser().parse_args(argv)
     settings = Settings()
+    configure_logging(level=settings.log_level.value)
     factory = create_public_app if args.surface == "public" else create_admin_app
     uvicorn.run(
         factory(settings),
         host=args.host,
         port=args.port,
         proxy_headers=False,
+        log_config=None,
     )
 
 

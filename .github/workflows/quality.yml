@@ -23,6 +23,20 @@ jobs:
     name: Quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_DB: primary_signal_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: primary_signal_test_only # pragma: allowlist secret
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready --username=postgres --dbname=primary_signal_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,6 +69,12 @@ jobs:
 
       - name: Run offline quality gate
         run: uv run --offline --locked poe check-offline
+
+      - name: Exercise PostgreSQL migrations
+        env:
+          PRIMARY_SIGNAL_TEST_DATABASE_URL: postgresql+psycopg://postgres:primary_signal_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
+          PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE: postgres
+        run: uv run --offline --locked poe test-postgres
 
       - name: Build and smoke-test distributions
         run: uv run --locked poe build-check
