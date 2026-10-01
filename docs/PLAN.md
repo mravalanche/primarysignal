@@ -16,8 +16,8 @@ ranking, and a concise synthesis.
 
 ### Primary users
 
-1. **Owner/editor/operator** — tunes sources and ranking, reviews provenance,
-   corrects clusters, diagnoses processing failures, and controls publication.
+1. **Owner/operator** — tunes sources and policy, monitors system health, and
+   may correct exceptional results without operating a routine review queue.
 2. **Public reader** — understands what changed, why it matters, and where the
    evidence came from without reading duplicate coverage.
 
@@ -30,14 +30,18 @@ five minutes and reach the strongest original evidence within two interactions.
 
 ## 2. Proposed v1 operating model
 
-Use a **hybrid publication policy**:
+Use an **automation-first hybrid publication policy**:
 
 - routine stories may publish automatically after all validation gates pass;
 - failed or schema-invalid AI output never publishes;
-- high-consequence evidence claims require deterministic authoritative
-  evidence or explicit editorial approval;
+- high-consequence evidence claims publish only with deterministic
+  authoritative evidence or an optional scoped editorial override;
 - the operator can suppress, correct, merge, split, re-rank, and reprocess;
 - manual corrections are durable and protected from automated overwrite.
+
+Items that fail validation are withheld without blocking eligible stories or
+dated briefings. They are grouped for optional diagnosis and rule tuning; the
+operator is not expected to clear a routine review queue.
 
 Publication states should be explicit and auditable:
 

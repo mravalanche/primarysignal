@@ -12,7 +12,9 @@ The project is in planning. The first release will focus on:
 - explainable ranking and evidence-backed status;
 - a responsive public publication and separate local administration surface.
 
-See [the product and delivery plan](docs/PLAN.md) for the current direction.
+See the [product contract](docs/product-contract.md), [delivery
+plan](docs/PLAN.md), and [architecture decisions](docs/adr/README.md) for the
+current direction.
 
 ## Security
 
