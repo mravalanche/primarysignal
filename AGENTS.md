@@ -79,6 +79,14 @@ change, present two or three concrete options with examples and, where useful,
 mock-ups. Explain the trade-offs and wait for the operator to choose a direction.
 Do not commit a visual direction to the public repository before that approval.
 
+## Parallel work
+
+Delegate longer-running tests, audits, dependency operations, research, and
+independent reviews to subagents when they can run safely in parallel. Keep the
+main chat available for discussion and decisions while that work runs. Keep
+short or sequential work with the coordinating agent; do not create subagents
+merely for ceremony.
+
 ## Security-sensitive changes
 
 Authentication, sessions, retrieval, SSRF controls, network boundaries,

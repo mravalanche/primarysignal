@@ -17,9 +17,9 @@ of the latest push, and require Code Owner review where useful.
 Required status checks are also omitted at bootstrap. Add them only after the
 corresponding workflow jobs have run successfully at least once:
 
-- `lint`
-- `test`
-- `secret-scan`
+- `Quality`
+- `Secret scan`
+- `Dependency audit`
 - `release-source` on `main` only
 
 When adding status checks, require the branch to be up to date before merging.

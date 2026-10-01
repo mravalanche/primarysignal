@@ -21,9 +21,7 @@ def route_manifest(app: FastAPI) -> frozenset[RouteManifestEntry]:
     return frozenset(
         RouteManifestEntry(
             path=path,
-            methods=tuple(
-                sorted(method for method in operations if method in http_methods)
-            ),
+            methods=tuple(sorted(method for method in operations if method in http_methods)),
             name=next(
                 (
                     operation["operationId"]

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=77,<81"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.32.4,<1.33"]
+build-backend = "hatchling.build"
 
 [project]
 name = "primary-signal"
@@ -16,14 +16,23 @@ classifiers = [
 ]
 dependencies = [
   "fastapi>=0.142.2,<0.143",
+  "pydantic>=2.13.5,<2.14",
   "pydantic-settings>=2.15,<2.16",
   "uvicorn>=0.54,<0.55",
 ]
 
-[project.optional-dependencies]
-test = [
+[dependency-groups]
+dev = [
+  "deptry>=0.25.1,<0.26",
+  "detect-secrets>=1.5,<1.6",
   "httpx>=0.28,<0.29",
-  "pytest>=8.4.2,<8.5",
+  "pip-audit>=2.10.1,<2.11",
+  "poethepoet>=0.48,<0.49",
+  "pre-commit>=4.6.2,<4.7",
+  "pyright>=1.1.414,<1.2",
+  "pytest>=9.1.1,<9.2",
+  "pytest-cov>=7.1,<7.2",
+  "ruff>=0.16.9,<0.17",
 ]
 
 [project.scripts]
@@ -33,13 +42,65 @@ primary-signal-retriever = "primary_signal.entrypoints.retriever:main"
 primary-signal-scheduler = "primary_signal.entrypoints.scheduler:main"
 primary-signal-migrate = "primary_signal.entrypoints.migrate:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/primary_signal"]
 
-[tool.setuptools.package-data]
-primary_signal = ["py.typed"]
+[tool.uv]
+required-version = ">=0.12.21,<0.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src"]
+exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "E4", "E7", "E9", "F", "I", "RUF", "S", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"src/primary_signal/web/**/health.py" = ["RUF029"]
+
+[tool.pyright]
+pythonVersion = "3.14"
+pythonPlatform = "All"
+typeCheckingMode = "strict"
+include = ["src", "tests", "scripts"]
+exclude = [".venv"]
+venvPath = "."
+venv = ".venv"
+reportUnnecessaryTypeIgnoreComment = "error"
+
+[tool.deptry]
+known_first_party = ["primary_signal"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["primary_signal"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 95
+
+[tool.poe.tasks]
+test = { cmd = "pytest --cov=primary_signal --cov-report=term-missing", help = "Run tests with the coverage gate" }
+lint = { cmd = "ruff check .", help = "Run Python lint checks" }
+format-check = { cmd = "ruff format --check src tests scripts", help = "Verify Python formatting" }
+typecheck = { cmd = "pyright", help = "Run static type checks" }
+deps-check = { cmd = "deptry src", help = "Check dependency declarations" }
+deps-tree = { cmd = "uv tree --locked --all-groups", help = "Print the locked dependency tree" }
+security-secrets = { cmd = "pre-commit run detect-secrets --all-files", help = "Scan tracked files for credentials" }
+security-audit = { cmd = "python scripts/audit_dependencies.py", help = "Audit locked third-party dependencies" }
+build = { cmd = "uv build", help = "Build source and wheel distributions" }
+build-smoke = { cmd = "python scripts/smoke_test_build.py", help = "Install and import the built wheel in isolation" }
+build-check = { sequence = ["build", "build-smoke"], help = "Build and smoke-test the distributions" }
+check-offline = { sequence = ["test", "lint", "format-check", "typecheck", "deps-check"], help = "Run the deterministic offline commit gate" }
+security = { sequence = ["security-secrets", "security-audit"], help = "Run security checks" }
+check = { sequence = ["check-offline", "security-secrets", "security-audit", "build-check"], help = "Run the complete quality and security gate" }
+pre-commit = { cmd = "pre-commit run --all-files", help = "Run configured Git pre-commit hooks" }

@@ -16,6 +16,20 @@ See the [product contract](docs/product-contract.md), [delivery
 plan](docs/PLAN.md), and [architecture decisions](docs/adr/README.md) for the
 current direction.
 
+## Development
+
+Primary Signal uses Python 3.14, [uv](https://docs.astral.sh/uv/) for the
+environment and lockfile, and Poe for project commands.
+
+```sh
+uv sync --locked --all-groups
+uv run pre-commit install
+uv run poe check-offline
+```
+
+The pre-commit hook runs the offline gate and secret scan. Before pushing, run
+`uv run poe check` to add the installed-dependency audit and package build.
+
 ## Security
 
 Please report security issues privately. See [SECURITY.md](SECURITY.md).
