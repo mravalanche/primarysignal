@@ -31,7 +31,7 @@ def upgrade() -> None:
     )
     op.execute(
         "GRANT INSERT (id, job_type, payload_version, payload, queue, priority, "
-        "deduplication_key, status, run_after, max_attempts) "
+        "deduplication_key, status, run_after, attempt_count, max_attempts) "
         "ON primary_signal.jobs TO primary_signal_cap_queue_submit"
     )
     op.execute(
@@ -78,7 +78,7 @@ def downgrade() -> None:
     )
     op.execute(
         "REVOKE INSERT (id, job_type, payload_version, payload, queue, priority, "
-        "deduplication_key, status, run_after, max_attempts) "
+        "deduplication_key, status, run_after, attempt_count, max_attempts) "
         "ON primary_signal.jobs FROM primary_signal_cap_queue_submit"
     )
     op.execute(

@@ -321,7 +321,8 @@ def test_consume_role_can_run_lifecycle_but_cannot_enqueue_or_admin(
                 text(
                     "INSERT INTO primary_signal.jobs "
                     "(id, job_type, payload_version, payload, queue, priority, status, run_after) "
-                    "VALUES (:id, 'feeds.poll', 1, jsonb_build_object('feed_id', :feed_id), "
+                    "VALUES (:id, 'feeds.poll', 1, "
+                    "jsonb_build_object('feed_id', CAST(:feed_id AS text)), "
                     "'ingestion', 0, 'queued', clock_timestamp())"
                 ),
                 {"id": job_id, "feed_id": str(uuid.uuid7())},
