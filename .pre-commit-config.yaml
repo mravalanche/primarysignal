@@ -1,0 +1,19 @@
+repos:
+  - repo: local
+    hooks:
+      - id: detect-secrets
+        name: Detect leaked secrets
+        entry: uv run --offline --locked python -m detect_secrets.pre_commit_hook --no-verify -c 1 --baseline .secrets.baseline
+        language: system
+        pass_filenames: true
+        exclude: ^package-lock\.json$
+      - id: lockfile-safety
+        name: Check dependency lockfile sources
+        entry: uv run --offline --locked poe lockfiles-check
+        language: system
+        pass_filenames: false
+      - id: primary-signal-quality
+        name: Primary Signal offline quality gate
+        entry: uv run --offline --locked poe check-offline
+        language: system
+        pass_filenames: false

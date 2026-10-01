@@ -1,0 +1,33 @@
+{% import "components/ui.html" as ui %}
+
+{% macro signal(item) -%}
+  <span class="ps-kicker text-primary">{{ item.label }}</span>
+{%- endmacro %}
+
+{% macro source_trail(item) -%}
+  <span>{{ item.source_count }} source{% if item.source_count != 1 %}s{% endif %}</span>
+  {% if item.publisher_names %}<span aria-hidden="true">·</span> <span>{{ item.publisher_names | join(", ") }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro row(item) -%}
+  <article class="ps-story-row">
+    <div class="min-w-0">
+      <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span class="ps-kicker text-secondary">{{ item.topic_label }}</span>
+        {% if item.uk_relevant %}<span class="ps-kicker text-base-content/70">UK impact</span>{% endif %}
+        <span class="text-xs text-base-content/60">{{ item.age_label }}</span>
+      </div>
+      <h2 class="ps-story-title text-xl leading-tight">{{ item.headline }}</h2>
+      <p class="ps-reading-measure mt-2 text-sm leading-6 text-base-content/80">{{ item.summary }}</p>
+      <div class="mt-3 flex flex-wrap gap-1.5">
+        {% for item_tag in item.tags %}{{ ui.tag(item_tag.label) }}{% endfor %}
+      </div>
+    </div>
+    <div class="flex flex-col justify-between gap-3 text-xs text-base-content/65 md:items-end md:text-right">
+      <div class="flex flex-wrap gap-x-2 gap-y-1 md:justify-end">
+        {% for item_signal in item.signals %}{{ signal(item_signal) }}{% endfor %}
+      </div>
+      <div>{{ source_trail(item.source_trail) }}</div>
+    </div>
+  </article>
+{%- endmacro %}

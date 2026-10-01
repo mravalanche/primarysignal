@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: false;
+  include: alert, badge, button, input, select;
+  logs: false;
+}
+
+@plugin "daisyui/theme" {
+  name: "primarysignal-light";
+  default: true;
+  color-scheme: light;
+  --color-base-100: oklch(98.5% 0.004 240);
+  --color-base-200: oklch(96% 0.007 240);
+  --color-base-300: oklch(89% 0.012 240);
+  --color-base-content: oklch(22% 0.025 245);
+  --color-primary: oklch(57% 0.14 238);
+  --color-primary-content: oklch(99% 0.005 240);
+  --color-secondary: oklch(48% 0.075 196);
+  --color-secondary-content: oklch(99% 0.005 196);
+  --color-accent: oklch(70% 0.15 78);
+  --color-accent-content: oklch(24% 0.04 65);
+  --color-neutral: oklch(28% 0.025 245);
+  --color-neutral-content: oklch(97% 0.006 240);
+  --color-info: oklch(62% 0.12 235);
+  --color-info-content: oklch(99% 0.005 235);
+  --color-success: oklch(57% 0.12 155);
+  --color-success-content: oklch(99% 0.005 155);
+  --color-warning: oklch(72% 0.15 78);
+  --color-warning-content: oklch(24% 0.04 65);
+  --color-error: oklch(58% 0.2 27);
+  --color-error-content: oklch(99% 0.005 27);
+  --radius-selector: 0.2rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.3rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "primarysignal-dark";
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: oklch(18% 0.025 245);
+  --color-base-200: oklch(21% 0.028 245);
+  --color-base-300: oklch(29% 0.032 245);
+  --color-base-content: oklch(94% 0.008 235);
+  --color-primary: oklch(73% 0.12 226);
+  --color-primary-content: oklch(18% 0.025 245);
+  --color-secondary: oklch(72% 0.09 187);
+  --color-secondary-content: oklch(18% 0.025 245);
+  --color-accent: oklch(78% 0.14 78);
+  --color-accent-content: oklch(20% 0.035 65);
+  --color-neutral: oklch(88% 0.012 235);
+  --color-neutral-content: oklch(18% 0.025 245);
+  --color-info: oklch(72% 0.11 228);
+  --color-info-content: oklch(18% 0.025 245);
+  --color-success: oklch(72% 0.12 155);
+  --color-success-content: oklch(18% 0.025 155);
+  --color-warning: oklch(80% 0.14 78);
+  --color-warning-content: oklch(20% 0.035 65);
+  --color-error: oklch(70% 0.17 25);
+  --color-error-content: oklch(18% 0.025 25);
+  --radius-selector: 0.2rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.3rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --breakpoint-reading: 48rem;
+}
+
+:root {
+  --ps-reading-measure: 68ch;
+  --ps-page-gutter: clamp(1rem, 3vw, 2.5rem);
+  --ps-page-width: 88rem;
+  --ps-rule: color-mix(in oklab, currentColor 16%, transparent);
+}
+
+html {
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+body { min-height: 100vh; }
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+.ps-page {
+  width: min(100%, var(--ps-page-width));
+  margin-inline: auto;
+  padding-inline: var(--ps-page-gutter);
+}
+
+.ps-reading-measure { max-width: var(--ps-reading-measure); }
+
+.ps-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ps-rule { border-color: var(--ps-rule); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

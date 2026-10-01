@@ -72,6 +72,38 @@ thin rules, compact technical metadata, deliberate whitespace, and layouts that
 make source provenance easy to understand. Reuse shared components and tokens.
 Every visual element should earn its place.
 
+## UI approval
+
+Before implementing a new page, shell, component pattern, or material visual
+change, present two or three concrete options with examples and, where useful,
+mock-ups. Explain the trade-offs and wait for the operator to choose a direction.
+Do not commit a visual direction to the public repository before that approval.
+
+## UI implementation
+
+- Render the public and administration interfaces with FastAPI and strict,
+  autoescaping Jinja templates.
+- Use HTMX for focused progressive enhancement. Links, filters, navigation and
+  forms must retain an ordinary HTML path where practical.
+- Build styles with Tailwind CSS and a constrained DaisyUI component subset.
+  DaisyUI is an internal primitive layer, not the product's visual language.
+- Keep DaisyUI classes behind shared Jinja components. Story rows, source
+  trails, tags, named signals and editorial layouts are Primary Signal
+  components.
+- Keep public and administration templates and assets separate while sharing
+  foundational tokens and accessible primitives.
+- Use named, evidence-gated signals and source provenance. Do not invent a
+  composite confidence or signal-strength score.
+- Bookmarks and personalisation are outside the current product scope.
+
+## Parallel work
+
+Delegate longer-running tests, audits, dependency operations, research, and
+independent reviews to subagents when they can run safely in parallel. Keep the
+main chat available for discussion and decisions while that work runs. Keep
+short or sequential work with the coordinating agent; do not create subagents
+merely for ceremony.
+
 ## Security-sensitive changes
 
 Authentication, sessions, retrieval, SSRF controls, network boundaries,

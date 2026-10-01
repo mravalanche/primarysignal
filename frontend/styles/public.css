@@ -1,0 +1,21 @@
+@import "./foundation.css";
+@source "../../src/primary_signal/web/common/templates/**/*.html";
+@source "../../src/primary_signal/web/public/templates/**/*.html";
+
+.ps-story-title {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+}
+
+.ps-story-row {
+  display: grid;
+  gap: 0.75rem;
+  border-block-start: 1px solid var(--ps-rule);
+  padding-block: 1.15rem;
+}
+
+@media (min-width: 48rem) {
+  .ps-story-row { grid-template-columns: minmax(0, 1fr) 12rem; }
+}

@@ -14,3 +14,4 @@ through a later ADR that replaces them.
 | [0005](0005-public-projection-and-database-roles.md) | Public projection and separate database roles | Proposed |
 | [0006](0006-single-user-admin-authentication.md) | Single-user admin authentication | Proposed |
 | [0007](0007-ssrf-safe-retrieval-and-egress.md) | SSRF-safe retrieval and egress enforcement | Proposed |
+| [0008](0008-server-rendered-ui-and-component-layer.md) | Server-rendered UI and constrained component layer | Accepted |

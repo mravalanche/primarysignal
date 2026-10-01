@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>{% block title %}Primary Signal{% endblock %}</title>
+    {% block styles %}{% endblock %}
+    <script src="{{ url_for('common-assets', path='/htmx.min.js') }}" defer></script>
+  </head>
+  <body class="bg-base-100 text-base-content antialiased">
+    <a class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-base-100 focus:p-3" href="#main-content">Skip to content</a>
+    {% block body %}{% endblock %}
+  </body>
+</html>
