@@ -13,8 +13,9 @@ Primary Signal serves two v1 users:
 - **Reader:** a security practitioner or technically informed decision-maker
   who follows cyber-security developments but cannot read every source. Coverage
   is international, with UK relevance available as a lens rather than a limit.
-- **Editor:** the single owner/operator who curates sources, resolves uncertain
-  clusters and evidence, corrects publication, and runs the service.
+- **Operator:** the single owner/operator who tunes sources and policy, checks
+  system health, and may correct exceptional results. Routine publication does
+  not depend on regular editorial review.
 
 The reader should be able to identify the day's material developments in under
 five minutes, understand why each matters, and reach the strongest original
@@ -63,34 +64,42 @@ different times, but a story publishes only when all required parts are valid.
 
 | State | Meaning | Permitted next states |
 | --- | --- | --- |
-| `draft` | Incomplete, held, failed validation, or awaiting review. Never public. | `validated`, `suppressed` |
+| `draft` | Incomplete, held, or failed validation. Never public and does not imply that action is required. | `validated`, `suppressed` |
 | `validated` | All mechanical publication gates pass against a fixed input fingerprint. | `published`, `draft`, `suppressed` |
 | `published` | Present in public views. | `suppressed`, `superseded` |
-| `suppressed` | Intentionally excluded, with a reason and actor recorded. | `draft` |
+| `suppressed` | Excluded by policy, expiry, safety rule, or operator decision, with a reason and actor recorded. | `draft` |
 | `superseded` | Retained for history but replaced by another published story. Terminal. | none |
 
 Every transition records its time, actor (`system` or editor), reason, and
 input/version identifiers. There is no hard deletion through the editorial
 workflow.
 
-- `draft -> validated` is automatic only when every validation gate passes.
-- `validated -> published` is automatic for routine stories unless an
-  editorial gate below applies. The editor may also publish explicitly.
+- `draft -> validated -> published` is the default automatic path when every
+  gate passes. No operator approval is required.
+- Failed or uncertain revisions remain unpublished. They may retry when inputs
+  or policy change, but they do not create mandatory review work.
 - New inputs invalidate `validated`. New inputs for a published story create a
   draft successor revision. The published revision remains live while its
   replacement is prepared unless new evidence makes it unsafe or materially
   misleading; in that case the published revision is suppressed and the
   successor remains in `draft`.
-- `published -> suppressed` is an editorial action, except for a narrow safety
-  rule that withdraws content found to expose secrets, personal data, malicious
-  markup, or unsupported high-consequence claims. Automatic withdrawal creates
-  an urgent review item.
+- A safety rule automatically suppresses content found to expose secrets,
+  personal data, malicious markup, or unsupported high-consequence claims. It
+  records a high-severity event but does not wait for acknowledgement.
+- Drafts that become stale, are replaced by newer inputs, or repeatedly fail a
+  permanent rule move automatically to `suppressed` with a reason.
 - Merge and split operations create membership history. A replaced public story
   becomes `superseded` only after its replacement is published.
 - Manual holds, corrections, memberships, taxonomy and signal decisions take
   precedence over later automated runs until the editor clears the override.
 - Published dated briefings are immutable snapshots. Corrections are appended
   and link to the current story; the original briefing is not silently rebuilt.
+
+Diagnostics are grouped by source, stage, and failure reason. The admin surface
+does not present every withheld story or proposed signal as an editorial task.
+Transient failures retry automatically; permanent failures and stale proposals
+expire according to policy. The operator may inspect or override them, but no
+review queue is required to keep publication running.
 
 ### Gates for automatic publication
 
@@ -101,24 +110,33 @@ A routine story may publish automatically only when:
 2. its representative claims and synthesis are supported by stored evidence;
 3. generated output passes its schema, attribution, length, and unsafe-content
    checks against the current input fingerprint;
-4. cluster confidence is above the auto-merge threshold and no manual decision
-   conflicts with it;
+4. every automated story membership is above the auto-merge threshold and no
+   manual decision conflicts with it; uncertain associations remain separate;
 5. primary topic, story type, headline, synthesis, and why-it-matters text are
    present and valid;
 6. source times and identity are internally consistent;
-7. no material conflict between credible sources is unresolved;
-8. every public signal has passed the evidence rule below;
+7. material conflicts are clearly attributed in the synthesis; otherwise the
+   conflicting claim, or the story when necessary, is withheld;
+8. every displayed signal has passed the evidence rule below; an uncertain
+   optional signal is omitted rather than blocking an otherwise valid story;
 9. no source, story, or topic is held or suppressed; and
 10. no sensitive-data or rendering safety check fails.
 
-Failure leaves the story in `draft` with a specific, visible reason. A model's
-confidence score never overrides a failed gate.
+Failure quietly withholds the affected revision and records a specific reason.
+It does not create a required editorial task, and a model's confidence score
+never overrides a failed gate.
 
-Editorial approval is required for a low-confidence or disputed cluster, an
-exception to a source/evidence rule, a material allegation about a person or
-organisation that lacks authoritative confirmation, or any manual override of
-validation. Approval applies to the current version only unless explicitly
-recorded as a durable rule.
+Low-confidence clusters, disputed evidence, unsupported material allegations,
+and invalid generated output do not create required editorial work. The system
+withholds the affected story or omits the affected signal while eligible work
+continues through the pipeline. Daily briefings use the stories that pass; they
+do not wait for every candidate.
+
+The editor may inspect exceptions, correct a result, or make a scoped override,
+but that is optional tuning rather than the normal route to publication. The
+admin surface groups recurring failures and their likely causes instead of
+building an ever-growing review queue. Overrides apply only to the current
+version unless explicitly recorded as a durable rule.
 
 ## Taxonomy contract
 
@@ -169,25 +187,31 @@ decision route, producing rule/run, and override history. An LLM may propose a
 signal and locate candidate support; it cannot be the evidence.
 
 In the table, **automatic** means a deterministic rule can validate and publish
-the signal. Anything outside that exact route remains proposed until an editor
-approves or rejects it.
+the signal without operator action. Anything outside that route is omitted by
+default. The story may still publish when its synthesis remains accurate
+without the signal. Proposals are bounded diagnostic data and expire
+automatically; the operator may inspect or override them.
 
-| Signal | Minimum qualifying evidence | Automatic route | Editorial gate |
+| Signal | Minimum qualifying evidence | Automatic route | Optional exception route |
 | --- | --- | --- | --- |
-| **Primary Source** | The item is issued by the affected/responsible party or presents the author's original research or artefact. | Curated source identity and document ownership match; provenance is intact. | Required when authorship, ownership, or originality is ambiguous. |
-| **Official Advisory** | A public advisory from the responsible vendor, government body, regulator, standards body, or coordinated disclosure authority. | Curated official issuer plus an advisory identifier or advisory document type. | Required for mirrors, reposts, informal posts, or uncertain issuer scope. |
-| **Active Exploitation** | An authoritative source explicitly states exploitation has been observed in the wild, and identifies the affected issue or product. | Exact assertion and identifier from a curated government authority, affected vendor, or named original incident researcher. | Required for anonymous claims, inference from scanning, secondary-only reports, or conflicting scope. |
-| **Exploit Available** | A publicly reachable working exploit or proof of concept, tied to the same issue by identifier and affected version. | None in v1. Automation may propose and verify reachability only. | Always required; the editor checks identity, capability, and whether linking would create avoidable harm. |
-| **Actionable** | A competent source gives a concrete mitigation, fixed version, configuration change, detection method, or containment step for the stated scope. | Structured remediation from an official advisory, with product and affected/fixed scope captured. | Required for generic advice, destructive steps, disputed mitigations, or synthesis across sources. |
-| **Confirmed Incident** | The affected organisation or competent public authority confirms that an incident occurred and its wording supports the displayed scope. | Exact confirmation from a curated official channel; the label cannot exceed the confirmed facts. | Required for attributed secondary reporting, unnamed sources, victim inference, or disputed impact. |
-| **Developing** | A material fact remains unresolved and there is evidence of an active investigation, changing scope, or credible conflict. | A current authoritative source explicitly says investigation or impact assessment is continuing; expires after 72 hours without a material update. | Required to add, retain, or remove it when evidence is indirect or sources conflict. |
-| **Widely Reported** | At least three eligible, independent sources across at least two ownership groups cover the same development within 48 hours. | Deterministic source lineage and clustering meet the rule; syndication and rewrites count once. | Required when independence or cluster identity is uncertain. |
-| **Deep Read** | Substantial original reporting, research, or analysis that adds durable technical or strategic understanding beyond the event summary. | None in v1. | Always required because depth and lasting value are editorial judgements. |
+| **Primary Source** | The item is issued by the affected/responsible party or presents the author's original research or artefact. | Curated source identity and document ownership match; provenance is intact. | Omit when authorship, ownership, or originality is ambiguous; an editor may confirm it. |
+| **Official Advisory** | A public advisory from the responsible vendor, government body, regulator, standards body, or coordinated disclosure authority. | Curated official issuer plus an advisory identifier or advisory document type. | Omit for mirrors, reposts, informal posts, or uncertain issuer scope; an editor may confirm it. |
+| **Active Exploitation** | An authoritative source explicitly states exploitation has been observed in the wild, and identifies the affected issue or product. | Exact assertion and identifier from a curated government authority, affected vendor, or named original incident researcher. | Omit anonymous, inferred, secondary-only, or conflicting claims; an editor may approve cited evidence. |
+| **Exploit Available** | A publicly reachable working exploit or proof of concept, tied to the same issue by identifier and affected version. | An authoritative advisory explicitly links the artefact, or an allowlisted public artefact repository maps it to the exact identifier and affected version; identity and reachability checks pass. Do not expose a direct exploit link by default. | Omit by default; an editor may confirm identity, capability, and safe presentation. |
+| **Actionable** | A competent source gives a concrete mitigation, fixed version, configuration change, detection method, or containment step for the stated scope. | Structured remediation from an official advisory, with product and affected/fixed scope captured. | Omit generic, destructive, disputed, or synthesized advice; an editor may approve a scoped exception. |
+| **Confirmed Incident** | The affected organisation or competent public authority confirms that an incident occurred and its wording supports the displayed scope. | Exact confirmation from a curated official channel; the label cannot exceed the confirmed facts. | Omit attributed, unnamed, inferred, or disputed claims; an editor may approve cited evidence. |
+| **Developing** | A material fact remains unresolved and there is evidence of an active investigation, changing scope, or credible conflict. | A current authoritative source explicitly says investigation or impact assessment is continuing; expires after 72 hours without a material update. | Omit or expire it when evidence is indirect or conflicting; an editor may retain it with a reason. |
+| **Widely Reported** | At least three eligible, independent sources across at least two ownership groups cover the same development within 48 hours. | Deterministic source lineage and clustering meet the rule; syndication and rewrites count once. | Omit when independence or cluster identity is uncertain; an editor may correct source lineage. |
+| **Deep Read** | Substantial original reporting, research, or analysis that adds durable technical or strategic understanding beyond the event summary. | Eligible original work passes a corpus-calibrated depth rule based on substantive evidence, method, and added understanding. | Omit by default; an editor may apply it as a curated recommendation. |
 
 Active Exploitation, Exploit Available, and Confirmed Incident are
 high-consequence signals. They may not appear publicly from model output or
 corroboration count alone. Removing or narrowing any published signal preserves
 the old assertion and records the correction.
+
+An unsupported high-consequence signal is omitted automatically. If the same
+claim is material to the headline or synthesis, regenerate without it or
+withhold the story; do not create a required review item.
 
 ## Reference corpus
 
