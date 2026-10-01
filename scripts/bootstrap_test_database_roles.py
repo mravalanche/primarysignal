@@ -13,6 +13,7 @@ from sqlalchemy.engine import RowMapping
 TEST_DATABASE_URL_ENV = "PRIMARY_SIGNAL_TEST_DATABASE_URL"
 SUBMIT_ROLE = "primary_signal_cap_queue_submit"
 CONSUME_ROLE = "primary_signal_cap_queue_consume"
+FEED_SCHEDULE_ROLE = "primary_signal_cap_feed_schedule"
 SCHEDULER_ROLE = "scheduler_test"
 PROCESSOR_ROLE = "processor_test"
 SCHEDULER_PASSWORD = "primary_signal_scheduler_test_only"  # noqa: S105  # pragma: allowlist secret
@@ -125,9 +126,10 @@ def main() -> None:
         raise SystemExit(f"{TEST_DATABASE_URL_ENV} is required")
 
     repository_root = Path(__file__).resolve().parents[1]
-    bootstrap_sql = (
-        repository_root / "deploy/postgres/initdb/010_queue_capability_roles.sql"
-    ).read_text(encoding="utf-8")
+    bootstrap_paths = (
+        repository_root / "deploy/postgres/initdb/010_queue_capability_roles.sql",
+        repository_root / "deploy/postgres/initdb/020_feed_scheduler_capability_role.sql",
+    )
     engine = create_engine(database_url, hide_parameters=True)
     try:
         with engine.begin() as connection:
@@ -139,14 +141,16 @@ def main() -> None:
             # receive either capability.
             driver = cast(PsycopgConnection[Any], connection.connection.driver_connection)
             with driver.cursor() as cursor:
-                # No parameter collection: psycopg must leave PostgreSQL's
-                # format('%I', ...) placeholder for the server to interpret.
-                cursor.execute(sql.SQL(cast(LiteralString, bootstrap_sql)))
+                for bootstrap_path in bootstrap_paths:
+                    # No parameter collection: psycopg must leave PostgreSQL's
+                    # format('%I', ...) placeholder for the server to interpret.
+                    bootstrap_sql = bootstrap_path.read_text(encoding="utf-8")
+                    cursor.execute(sql.SQL(cast(LiteralString, bootstrap_sql)))
             _create_or_verify_login(
                 connection,
                 role_name=SCHEDULER_ROLE,
                 password=SCHEDULER_PASSWORD,
-                capabilities=(SUBMIT_ROLE,),
+                capabilities=(SUBMIT_ROLE, FEED_SCHEDULE_ROLE),
             )
             _create_or_verify_login(
                 connection,
