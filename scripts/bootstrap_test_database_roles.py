@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, LiteralString, cast
 
 from psycopg import Connection as PsycopgConnection
 from psycopg import sql
@@ -137,7 +137,11 @@ def main() -> None:
             # This is intentionally a one-shot bootstrap. The SQL refuses
             # pre-existing memberships, ACLs or ownership before test logins
             # receive either capability.
-            connection.exec_driver_sql(bootstrap_sql)
+            driver = cast(PsycopgConnection[Any], connection.connection.driver_connection)
+            with driver.cursor() as cursor:
+                # No parameter collection: psycopg must leave PostgreSQL's
+                # format('%I', ...) placeholder for the server to interpret.
+                cursor.execute(sql.SQL(cast(LiteralString, bootstrap_sql)))
             _create_or_verify_login(
                 connection,
                 role_name=SCHEDULER_ROLE,
