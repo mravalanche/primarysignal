@@ -80,14 +80,18 @@ def test_source_and_feed_creation_preserve_config_and_use_database_clock(
     try:
         with source_engine.connect() as connection:
             after = connection.execute(select(func.clock_timestamp())).scalar_one()
-            stored_source = connection.execute(
-                select(Source).where(Source.id == source.id)
+            stored_homepage_url = connection.execute(
+                select(Source.homepage_url).where(Source.id == source.id)
             ).scalar_one()
-            stored_feed = connection.execute(select(Feed).where(Feed.id == feed.id)).scalar_one()
+            stored_feed = connection.execute(
+                select(Feed.configured_url, Feed.normalized_url, Feed.url_hash).where(
+                    Feed.id == feed.id
+                )
+            ).one()
 
         assert source.name == "Public Example"
         assert source.homepage_url == "https://public.example/"
-        assert stored_source.homepage_url == source.homepage_url
+        assert stored_homepage_url == source.homepage_url
         assert feed.name == "Security feed"
         assert feed.configured_url == submitted
         assert feed.normalized_url == f"https://public.example/feed.xml?edition={suffix}"
