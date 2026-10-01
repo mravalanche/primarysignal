@@ -20,5 +20,5 @@ Please report security issues privately. See [SECURITY.md](SECURITY.md).
 
 ## Licence
 
-No licence has been selected yet. Until one is added, the source remains under
-the copyright holder's default rights.
+Primary Signal is licensed under the [GNU Affero General Public License,
+version 3 or later](LICENSE) (`AGPL-3.0-or-later`).
