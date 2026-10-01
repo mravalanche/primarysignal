@@ -72,6 +72,13 @@ thin rules, compact technical metadata, deliberate whitespace, and layouts that
 make source provenance easy to understand. Reuse shared components and tokens.
 Every visual element should earn its place.
 
+## UI approval
+
+Before implementing a new page, shell, component pattern, or material visual
+change, present two or three concrete options with examples and, where useful,
+mock-ups. Explain the trade-offs and wait for the operator to choose a direction.
+Do not commit a visual direction to the public repository before that approval.
+
 ## Security-sensitive changes
 
 Authentication, sessions, retrieval, SSRF controls, network boundaries,

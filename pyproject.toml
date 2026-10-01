@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "primary-signal"
+version = "0.1.0"
+description = "An evidence-led cyber-security briefing and publication"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = "AGPL-3.0-or-later"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = [
+  "fastapi>=0.142.2,<0.143",
+  "pydantic-settings>=2.15,<2.16",
+  "uvicorn>=0.54,<0.55",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx>=0.28,<0.29",
+  "pytest>=8.4.2,<8.5",
+]
+
+[project.scripts]
+primary-signal-web = "primary_signal.entrypoints.web:main"
+primary-signal-processor = "primary_signal.entrypoints.processor:main"
+primary-signal-retriever = "primary_signal.entrypoints.retriever:main"
+primary-signal-scheduler = "primary_signal.entrypoints.scheduler:main"
+primary-signal-migrate = "primary_signal.entrypoints.migrate:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+primary_signal = ["py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+pythonpath = ["src"]
+testpaths = ["tests"]
