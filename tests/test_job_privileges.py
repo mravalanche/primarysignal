@@ -4,6 +4,7 @@ import os
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 from alembic import command
@@ -11,12 +12,15 @@ from alembic.config import Config
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 
-from primary_signal.jobs.contracts import PollFeedV1
+from primary_signal.jobs.contracts import JobFailure, PollFeedV1
 from primary_signal.jobs.registry import build_default_registry
 from primary_signal.jobs.repository import JobRepository
+from primary_signal.jobs.transactions import TransactionalJobQueue
 
 SUBMIT_ROLE = "primary_signal_cap_queue_submit"
 CONSUME_ROLE = "primary_signal_cap_queue_consume"
+SCHEDULER_LOGIN = "scheduler_test"
+PROCESSOR_LOGIN = "processor_test"
 
 
 @pytest.fixture
@@ -56,6 +60,36 @@ def privilege_engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[Engine]:
         yield engine
     finally:
         engine.dispose()
+
+
+@pytest.fixture
+def restricted_engines(privilege_engine: Engine) -> Iterator[tuple[Engine, Engine]]:
+    """Connect as the two synthetic login roles created only for CI."""
+
+    scheduler_url = os.environ.get("PRIMARY_SIGNAL_TEST_SCHEDULER_DATABASE_URL")
+    processor_url = os.environ.get("PRIMARY_SIGNAL_TEST_PROCESSOR_DATABASE_URL")
+    if not scheduler_url or not processor_url:
+        if os.environ.get("PRIMARY_SIGNAL_REQUIRE_RESTRICTED_ROLE_TESTS") == "true":
+            pytest.fail("CI requires both restricted login DSNs")
+        pytest.skip("set both restricted login DSNs for PostgreSQL privilege tests")
+
+    scheduler = create_engine(scheduler_url, hide_parameters=True)
+    processor = create_engine(processor_url, hide_parameters=True)
+    try:
+        for engine, expected_role in (
+            (scheduler, SCHEDULER_LOGIN),
+            (processor, PROCESSOR_LOGIN),
+        ):
+            with engine.connect() as connection:
+                database_name, current_user = connection.execute(
+                    text("SELECT current_database(), current_user")
+                ).one()
+                assert str(database_name).endswith("_test")
+                assert current_user == expected_role
+        yield scheduler, processor
+    finally:
+        scheduler.dispose()
+        processor.dispose()
 
 
 def _set_role(connection: Connection, role: str) -> None:
@@ -328,3 +362,214 @@ def test_consume_role_can_run_lifecycle_but_cannot_enqueue_or_admin(
                 connection.execute(text("CREATE TABLE primary_signal.forbidden (id integer)"))
         finally:
             transaction.rollback()
+
+
+@pytest.mark.postgres
+def test_restricted_logins_have_only_expected_attributes_and_memberships(
+    privilege_engine: Engine,
+    restricted_engines: tuple[Engine, Engine],
+) -> None:
+    scheduler, processor = restricted_engines
+    expected_memberships = {
+        SCHEDULER_LOGIN: {SUBMIT_ROLE},
+        PROCESSOR_LOGIN: {SUBMIT_ROLE, CONSUME_ROLE},
+    }
+    migrator = os.environ["PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE"]
+
+    with privilege_engine.connect() as admin:
+        rows = admin.execute(
+            text(
+                "SELECT rolname, rolcanlogin, rolsuper, rolinherit, rolcreatedb, "
+                "rolcreaterole, rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
+                "WHERE rolname IN (:scheduler, :processor)"
+            ),
+            {"scheduler": SCHEDULER_LOGIN, "processor": PROCESSOR_LOGIN},
+        ).mappings()
+        by_name = {str(row["rolname"]): row for row in rows}
+        assert set(by_name) == {SCHEDULER_LOGIN, PROCESSOR_LOGIN}
+        for role_name, row in by_name.items():
+            assert row["rolcanlogin"]
+            assert row["rolinherit"]
+            assert not row["rolsuper"]
+            assert not row["rolcreatedb"]
+            assert not row["rolcreaterole"]
+            assert not row["rolreplication"]
+            assert not row["rolbypassrls"]
+            assert not admin.execute(
+                text("SELECT pg_has_role(:login, :migrator, 'MEMBER')"),
+                {"login": role_name, "migrator": migrator},
+            ).scalar_one()
+
+            membership_rows = admin.execute(
+                text(
+                    "SELECT parent.rolname, membership.admin_option, "
+                    "membership.inherit_option, membership.set_option "
+                    "FROM pg_catalog.pg_auth_members AS membership "
+                    "JOIN pg_catalog.pg_roles AS parent ON parent.oid = membership.roleid "
+                    "JOIN pg_catalog.pg_roles AS member ON member.oid = membership.member "
+                    "WHERE member.rolname = :login"
+                ),
+                {"login": role_name},
+            ).mappings()
+            memberships = {
+                str(membership["rolname"]): (
+                    bool(membership["admin_option"]),
+                    bool(membership["inherit_option"]),
+                    bool(membership["set_option"]),
+                )
+                for membership in membership_rows
+            }
+            assert memberships == {
+                capability: (False, True, True) for capability in expected_memberships[role_name]
+            }
+
+            owned = admin.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend AS dependency "
+                    "JOIN pg_catalog.pg_roles AS role ON role.oid = dependency.refobjid "
+                    "WHERE dependency.refclassid = 'pg_catalog.pg_authid'::regclass "
+                    "AND role.rolname = :login AND dependency.deptype IN ('a', 'o'))"
+                ),
+                {"login": role_name},
+            ).scalar_one()
+            assert not owned
+
+    for engine, expected in ((scheduler, SCHEDULER_LOGIN), (processor, PROCESSOR_LOGIN)):
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT current_user")).scalar_one() == expected
+
+
+@pytest.mark.postgres
+def test_actual_scheduler_and_processor_logins_enforce_queue_boundary(
+    privilege_engine: Engine,
+    restricted_engines: tuple[Engine, Engine],
+) -> None:
+    scheduler_engine, processor_engine = restricted_engines
+    scheduler = TransactionalJobQueue(scheduler_engine, _registry())
+    processor = TransactionalJobQueue(processor_engine, _registry(), random_value=lambda: 0.0)
+    created_ids: set[uuid.UUID] = set()
+
+    dedupe = f"restricted-scheduler:{uuid.uuid7()}"
+    first = scheduler.enqueue(
+        job_type="feeds.poll",
+        payload_version=1,
+        payload=PollFeedV1(feed_id=uuid.uuid7()),
+        deduplication_key=dedupe,
+    )
+    second = scheduler.enqueue(
+        job_type="feeds.poll",
+        payload_version=1,
+        payload=PollFeedV1(feed_id=uuid.uuid7()),
+        deduplication_key=dedupe,
+    )
+    created_ids.add(first.job_id)
+    assert first.created
+    assert not second.created
+    assert second.job_id == first.job_id
+    with pytest.raises(DBAPIError):
+        scheduler.claim(queue="ingestion", worker_id=f"scheduler:{uuid.uuid4()}")
+    assert processor.cancel_queued(first.job_id)
+
+    retry = processor.enqueue(
+        job_type="feeds.poll",
+        payload_version=1,
+        payload=PollFeedV1(feed_id=uuid.uuid7()),
+        max_attempts=2,
+    )
+    created_ids.add(retry.job_id)
+    first_attempt = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
+    assert first_attempt is not None
+    assert processor.heartbeat(first_attempt) > first_attempt.lease_expires_at
+    assert processor.fail(first_attempt, JobFailure(code="dependency_timeout")) == "queued"
+    with privilege_engine.begin() as admin:
+        admin.execute(
+            text("UPDATE primary_signal.jobs SET run_after=clock_timestamp() WHERE id=:job_id"),
+            {"job_id": retry.job_id},
+        )
+    second_attempt = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
+    assert second_attempt is not None
+    assert processor.fail(second_attempt, JobFailure(code="dependency_timeout")) == "dead"
+
+    permanent = processor.enqueue(
+        job_type="feeds.poll",
+        payload_version=1,
+        payload=PollFeedV1(feed_id=uuid.uuid7()),
+    )
+    created_ids.add(permanent.job_id)
+    permanent_lease = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
+    assert permanent_lease is not None
+    assert processor.fail(permanent_lease, JobFailure(code="bad_payload")) == "dead"
+
+    expired = processor.enqueue(
+        job_type="feeds.poll",
+        payload_version=1,
+        payload=PollFeedV1(feed_id=uuid.uuid7()),
+    )
+    created_ids.add(expired.job_id)
+    expired_lease = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
+    assert expired_lease is not None
+    with privilege_engine.begin() as admin:
+        admin.execute(
+            text(
+                "UPDATE primary_signal.jobs "
+                "SET lease_expires_at=clock_timestamp() - INTERVAL '1 second' "
+                "WHERE id=:job_id"
+            ),
+            {"job_id": expired.job_id},
+        )
+    assert processor.recover_expired().retried == 1
+    assert processor.cancel_queued(expired.job_id)
+
+    queued = processor.enqueue(
+        job_type="feeds.poll",
+        payload_version=1,
+        payload=PollFeedV1(feed_id=uuid.uuid7()),
+    )
+    created_ids.add(queued.job_id)
+    assert processor.cancel_queued(queued.job_id)
+
+    original = processor.enqueue(
+        job_type="feeds.poll",
+        payload_version=1,
+        payload=PollFeedV1(feed_id=uuid.uuid7()),
+    )
+    created_ids.add(original.job_id)
+    original_lease = processor.claim(queue="ingestion", worker_id=f"processor:{uuid.uuid4()}")
+    assert original_lease is not None
+    successor_ids: list[uuid.UUID] = []
+
+    def enqueue_successor(_connection: Connection, repository: JobRepository) -> None:
+        result = repository.enqueue(
+            job_type="feeds.poll",
+            payload_version=1,
+            payload=PollFeedV1(feed_id=uuid.uuid7()),
+            deduplication_key=f"restricted-successor:{uuid.uuid7()}",
+        )
+        successor_ids.append(result.job_id)
+
+    processor.succeed(original_lease, on_success=enqueue_successor)
+    assert len(successor_ids) == 1
+    created_ids.add(successor_ids[0])
+    assert processor.cancel_queued(successor_ids[0])
+
+    with privilege_engine.connect() as admin:
+        state_rows = admin.execute(
+            text("SELECT id, status FROM primary_signal.jobs WHERE id = ANY(:ids)"),
+            {"ids": list(created_ids)},
+        ).mappings()
+        states = {cast(uuid.UUID, row["id"]): cast(str, row["status"]) for row in state_rows}
+    assert states[retry.job_id] == "dead"
+    assert states[permanent.job_id] == "dead"
+    assert states[original.job_id] == "succeeded"
+
+    denied_statements = (
+        "UPDATE primary_signal.job_attempts SET worker_id='changed'",
+        "DELETE FROM primary_signal.jobs",
+        "TRUNCATE primary_signal.jobs",
+        "SELECT id FROM primary_signal.sources",
+        "CREATE TABLE primary_signal.forbidden (id integer)",
+        "SET ROLE postgres",
+    )
+    for statement in denied_statements:
+        with pytest.raises(DBAPIError), processor_engine.begin() as connection:
+            connection.execute(text(statement))
