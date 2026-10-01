@@ -1,6 +1,6 @@
 # ADR 0002: PostgreSQL job queue and measured triggers for Redis
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -22,6 +22,16 @@ work and recover jobs whose leases expire. Work must be idempotent. A state
 change and any successor job it requires are written in the same database
 transaction.
 
+Every claim receives a random lease token. Heartbeats and finalisation must
+match the job, worker, attempt number, and token, and an expired lease cannot
+be revived. This fences off stale workers after recovery or reassignment. The
+database clock is authoritative for claims, leases, retries, and recovery.
+
+Job types and payload versions come from a static registry with strict payload
+schemas. Payloads contain identifiers, not article bodies, credentials, or
+arbitrary URLs. Unknown types and versions fail permanently rather than being
+loaded dynamically.
+
 Polling is the baseline wake-up mechanism. PostgreSQL notifications may reduce
 latency, but are hints only; correctness must not depend on their delivery.
 Retries use bounded exponential backoff with jitter and retain attempt history.
@@ -38,6 +48,8 @@ that consumes a material share of database capacity.
 - Backup, recovery, diagnostics, and local operation have one fewer service.
 - Workers must keep claim transactions short and never process work while
   holding row locks.
+- A processor starts with one active handler; concurrency comes from running
+  more processor instances until measurements justify an internal worker pool.
 - Queue tables need deliberate indexing, retention, and contention monitoring.
 - PostgreSQL notifications cannot replace polling or lease recovery.
 - If Redis is later introduced, durable job truth remains in PostgreSQL unless
