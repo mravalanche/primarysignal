@@ -3,6 +3,7 @@ import signal
 import threading
 from collections.abc import Callable
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.exc import DBAPIError, OperationalError
@@ -190,8 +191,7 @@ def test_once_and_fatal_errors_never_retry() -> None:
         assert stop_event.waits == []
 
 
-def test_work_logs_at_info_and_idle_at_debug(caplog: pytest.LogCaptureFixture) -> None:
-    caplog.set_level(logging.DEBUG)
+def test_work_logs_at_info_and_idle_at_debug() -> None:
     scheduler = FakeScheduler(
         [
             ScheduleSummary(selected=1, enqueued=1, already_active=0),
@@ -200,14 +200,19 @@ def test_work_logs_at_info_and_idle_at_debug(caplog: pytest.LogCaptureFixture) -
     )
     stop_event = FakeEvent(stop_after_waits=2)
 
-    SchedulerRuntime(
-        scheduler,
-        SchedulerSettings(batch_size=2),
-        cast(StopEvent, stop_event),
-    ).run()
+    with patch("primary_signal.entrypoints.scheduler.log_event") as log_event:
+        SchedulerRuntime(
+            scheduler,
+            SchedulerSettings(batch_size=2),
+            cast(StopEvent, stop_event),
+        ).run()
 
-    completed = [record for record in caplog.records if record.msg == "scheduler.pass.completed"]
-    assert [record.levelno for record in completed] == [logging.INFO, logging.DEBUG]
+    completed = [
+        invocation
+        for invocation in log_event.call_args_list
+        if invocation.args[2] == "scheduler.pass.completed"
+    ]
+    assert [invocation.args[1] for invocation in completed] == [logging.INFO, logging.DEBUG]
 
 
 def test_signal_handlers_only_set_event_and_are_restored(
