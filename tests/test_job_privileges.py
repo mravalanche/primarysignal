@@ -4,11 +4,14 @@ import os
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, LiteralString, cast
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from psycopg import Connection as PsycopgConnection
+from psycopg import Error as PsycopgError
+from psycopg import sql
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 
@@ -19,6 +22,7 @@ from primary_signal.jobs.transactions import TransactionalJobQueue
 
 SUBMIT_ROLE = "primary_signal_cap_queue_submit"
 CONSUME_ROLE = "primary_signal_cap_queue_consume"
+FEED_SCHEDULE_ROLE = "primary_signal_cap_feed_schedule"
 SCHEDULER_LOGIN = "scheduler_test"
 PROCESSOR_LOGIN = "processor_test"
 
@@ -118,8 +122,16 @@ def _assert_bootstrap_refuses_contaminated_role(
             try:
                 for statement in setup_statements:
                     connection.execute(text(statement))
-                with pytest.raises(DBAPIError), connection.begin_nested():
-                    connection.exec_driver_sql(bootstrap_sql)
+                driver = cast(PsycopgConnection[Any], connection.connection.driver_connection)
+                with (
+                    pytest.raises(
+                        PsycopgError,
+                        match="not an unused Primary Signal capability role",
+                    ),
+                    connection.begin_nested(),
+                    driver.cursor() as cursor,
+                ):
+                    cursor.execute(sql.SQL(cast(LiteralString, bootstrap_sql)))
             finally:
                 transaction.rollback()
     finally:
@@ -369,7 +381,7 @@ def test_restricted_logins_have_only_expected_attributes_and_memberships(
 ) -> None:
     scheduler, processor = restricted_engines
     expected_memberships = {
-        SCHEDULER_LOGIN: {SUBMIT_ROLE},
+        SCHEDULER_LOGIN: {SUBMIT_ROLE, FEED_SCHEDULE_ROLE},
         PROCESSOR_LOGIN: {SUBMIT_ROLE, CONSUME_ROLE},
     }
     migrator = os.environ["PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE"]

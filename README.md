@@ -54,10 +54,11 @@ build.
 
 ### Database capability roles
 
-Fresh Compose database volumes create two fixed, non-login queue capability
-roles from `deploy/postgres/initdb/010_queue_capability_roles.sql`. Login roles,
-passwords and role membership remain deployment-owned. PostgreSQL only runs
-files in `docker-entrypoint-initdb.d` while creating a new data directory.
+Fresh Compose database volumes create two fixed, non-login queue capabilities
+and one feed-scheduling capability. The definitions live in the numbered SQL
+files under `deploy/postgres/initdb`. Login roles, passwords and role membership
+remain deployment-owned. PostgreSQL only runs these files while creating a new
+data directory.
 
 For an existing development volume, apply the role bootstrap from inside the
 database container. The command uses the container's existing environment and
@@ -65,14 +66,16 @@ does not put a password on the command line:
 
 ```sh
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/010_queue_capability_roles.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql'
 ```
 
-Run this before applying migrations. The migrations grant the capability roles
-access to queue columns only; they do not create login roles or grant role
-membership. The bootstrap fails closed if either cluster-wide role name is
-already in use, owns objects, or has any memberships. Apply it before granting
-the capabilities to local runtime logins or running the grant migration. A
-later rerun intentionally fails once grants or memberships exist.
+Run both commands before applying migrations. The migrations grant access to
+the exact queue and feed columns each capability needs; they do not create login
+roles or grant role membership. Each bootstrap fails closed if its cluster-wide
+role name is already in use, owns objects, has direct access, or has any
+memberships. Apply them before granting capabilities to local runtime logins or
+running the grant migrations. A later rerun intentionally fails once grants or
+memberships exist.
 
 ## Security
 

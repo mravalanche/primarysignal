@@ -39,6 +39,7 @@ def main() -> int:
         "db/migrations/versions/20261001_01_initial_ingestion_schema.py",
         "db/migrations/versions/20261001_02_harden_job_leases.py",
         "db/migrations/versions/20261001_03_queue_capability_grants.py",
+        "db/migrations/versions/20261001_04_feed_scheduler_grants.py",
     )
     import_check = (
         "from importlib.resources import files; "
@@ -52,7 +53,7 @@ def main() -> int:
         "missing=[path for path in required if not root.joinpath(path).is_file()]; "
         "assert not missing, f'missing packaged UI resources: {missing}'; "
         "assert migration_config_path().is_file(); "
-        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261001_03'; "
+        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261001_04'; "
         "assert create_admin_app().title; "
         "assert create_public_app().title"
     )
