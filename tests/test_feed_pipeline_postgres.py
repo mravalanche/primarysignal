@@ -19,7 +19,7 @@ from primary_signal.identity.urls import identify_url
 from primary_signal.ingestion.feed_polls import FeedFetchResult
 from primary_signal.ingestion.models import Article, ArticleUrl, FeedEntry, FeedPollRun
 from primary_signal.jobs.catalogue import build_default_catalogue
-from primary_signal.jobs.models import Job, JobAttempt
+from primary_signal.jobs.models import Job
 from primary_signal.jobs.transactions import TransactionalJobQueue
 from primary_signal.retrieval.api import create_retriever_app
 from primary_signal.retrieval.client import RetrieverClient
@@ -187,16 +187,6 @@ def test_scheduler_processor_retriever_pipeline_is_idempotent(
                     select(Article.id).where(Article.source_id == source_id)
                 ).scalars()
             )
-            job_ids = list(
-                connection.execute(
-                    select(Job.id).where(
-                        Job.deduplication_key.in_(
-                            [f"feed:{feed_id}"]
-                            + [f"article:{article_id}" for article_id in article_ids]
-                        )
-                    )
-                ).scalars()
-            )
             connection.execute(delete(FeedEntry).where(FeedEntry.feed_id == feed_id))
             connection.execute(delete(FeedPollRun).where(FeedPollRun.feed_id == feed_id))
             if article_ids:
@@ -207,9 +197,8 @@ def test_scheduler_processor_retriever_pipeline_is_idempotent(
                 )
                 connection.execute(delete(ArticleUrl).where(ArticleUrl.article_id.in_(article_ids)))
                 connection.execute(delete(Article).where(Article.id.in_(article_ids)))
-            if job_ids:
-                connection.execute(delete(JobAttempt).where(JobAttempt.job_id.in_(job_ids)))
-                connection.execute(delete(Job).where(Job.id.in_(job_ids)))
+            # Job attempts are immutable; keep the synthetic job history in this
+            # disposable test database rather than bypassing its audit guard.
             connection.execute(delete(Feed).where(Feed.id == feed_id))
             connection.execute(delete(Source).where(Source.id == source_id))
             for previous_id, next_poll_at in previous_poll_times:
