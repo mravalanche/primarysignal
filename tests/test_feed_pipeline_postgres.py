@@ -11,7 +11,7 @@ import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, delete, func, insert, select, text, update
+from sqlalchemy import Engine, create_engine, func, insert, select, text, update
 
 from primary_signal.config import ProcessorSettings
 from primary_signal.entrypoints.processor import ProcessorRuntime, build_feed_poll_handlers
@@ -203,25 +203,11 @@ def test_scheduler_processor_retriever_pipeline_is_idempotent(
         assert calls == [(feed_url, None, None), (feed_url, '"synthetic"', None)]
     finally:
         with engine.begin() as connection:
-            article_ids = list(
-                connection.execute(
-                    select(Article.id).where(Article.source_id == source_id)
-                ).scalars()
+            # The poll and job ledgers are immutable. Keep this synthetic history
+            # in the disposable database and prevent another scheduling pass.
+            connection.execute(
+                update(Feed).where(Feed.id == feed_id).values(enabled=False, next_poll_at=None)
             )
-            connection.execute(delete(FeedEntry).where(FeedEntry.feed_id == feed_id))
-            connection.execute(delete(FeedPollRun).where(FeedPollRun.feed_id == feed_id))
-            if article_ids:
-                connection.execute(
-                    update(Article)
-                    .where(Article.id.in_(article_ids))
-                    .values(current_canonical_url_id=None)
-                )
-                connection.execute(delete(ArticleUrl).where(ArticleUrl.article_id.in_(article_ids)))
-                connection.execute(delete(Article).where(Article.id.in_(article_ids)))
-            # Job attempts are immutable; keep the synthetic job history in this
-            # disposable test database rather than bypassing its audit guard.
-            connection.execute(delete(Feed).where(Feed.id == feed_id))
-            connection.execute(delete(Source).where(Source.id == source_id))
             for previous_id, next_poll_at in previous_poll_times:
                 connection.execute(
                     update(Feed).where(Feed.id == previous_id).values(next_poll_at=next_poll_at)
