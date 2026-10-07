@@ -1,11 +1,10 @@
 """Bounded processor execution and lease fencing."""
 
-import logging
 import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy.exc import DBAPIError
@@ -94,16 +93,14 @@ def test_expected_failure_uses_stable_code_and_prepared_failure_callback() -> No
     queue.succeed.assert_not_called()
 
 
-def test_unexpected_handler_error_never_persists_or_logs_exception_text(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_unexpected_handler_error_never_persists_or_logs_exception_text() -> None:
     job = lease()
     queue = queue_with_job(job)
 
     def handler(_lease: JobLease) -> None:
         raise RuntimeError("private upstream URL and credentials")
 
-    with caplog.at_level(logging.WARNING):
+    with patch("primary_signal.entrypoints.processor.log_event") as record_event:
         ProcessorRuntime(
             cast(TransactionalJobQueue, queue),
             handlers(handler),
@@ -112,9 +109,8 @@ def test_unexpected_handler_error_never_persists_or_logs_exception_text(
         ).run(once=True)
 
     queue.fail.assert_called_once_with(job, JobFailure(code="handler_error"), on_failure=None)
-    assert "private upstream" not in caplog.text
-    fields = cast(dict[str, object], caplog.records[-1].__dict__["event_fields"])
-    assert fields["error_code"] == "handler_error"
+    assert record_event.call_args.kwargs["error_code"] == "handler_error"
+    assert "private upstream" not in repr(record_event.call_args)
 
 
 def test_long_handler_that_loses_lease_cannot_finalize_stale_work() -> None:
