@@ -82,6 +82,17 @@ processor command intentionally refuses to start without a bound feed handler.
 Live polling depends on the isolated retriever and its network controls; the
 processor must not fetch internet URLs directly.
 
+### Feed retrieval foundation
+
+The retriever library validates feed URLs and every DNS answer against a dated
+special-purpose address policy. Its HTTP transport connects to a validated
+address, checks the peer, preserves hostname-based TLS verification, rechecks
+redirects, and limits response headers and body size. Synthetic tests exercise
+these rules. The library is not bound to the retriever service or processor yet.
+The platform DNS lookup has no cancellable timeout, so deployment also needs a
+bounded resolver and the network egress controls described in ADR 0007 before
+live polling can be enabled.
+
 ### Database capability roles
 
 Fresh Compose database volumes create two fixed, non-login queue capabilities,
