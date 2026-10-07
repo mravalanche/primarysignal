@@ -15,11 +15,12 @@ from primary_signal.jobs.catalogue import (
 )
 from primary_signal.jobs.contracts import JobFailure, JobPayload, PollFeedV1, RetrieveArticleV1
 from primary_signal.jobs.handlers import JobHandlerBinding, JobHandlers, UnknownJobHandler
+from primary_signal.jobs.repository import JobLease
 from primary_signal.jobs.retry import RetryPolicy
 
 
-def _ignore(payload: JobPayload) -> None:
-    del payload
+def _ignore(lease: JobLease) -> None:
+    del lease
 
 
 def test_default_catalogue_validates_exact_contract_and_queue() -> None:
