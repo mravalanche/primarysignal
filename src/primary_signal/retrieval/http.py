@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlsplit
 
 from primary_signal.ingestion.feed_handler import FeedFetchError
 from primary_signal.ingestion.feed_polls import FeedFetchResult
+from primary_signal.retrieval.dns import DEFAULT_RESOLVER
 from primary_signal.retrieval.policy import PolicyError, ValidatedTarget, validate_target
 
 MAX_REDIRECTS = 5
@@ -54,11 +55,7 @@ class _DeadlineStream:
 
 
 def _resolve(hostname: str, port: int) -> Sequence[str]:
-    return tuple(
-        sorted(
-            {str(row[4][0]) for row in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)}
-        )
-    )
+    return DEFAULT_RESOLVER(hostname, port)
 
 
 def _connect(
@@ -296,20 +293,26 @@ def fetch_feed(
     """Fetch a feed through a validated address, rechecking each redirect.
 
     The request deadline covers socket work and is checked after DNS lookup.
-    The platform ``getaddrinfo`` call itself has no cancellable timeout, so a
-    deployment must also bound resolver latency outside this function.
+    The default resolver caps caller wait and concurrent system lookups. A
+    timed-out platform ``getaddrinfo`` call continues in a bounded daemon
+    worker until it exits.
     """
 
     deadline = time.monotonic() + REQUEST_TIMEOUT_SECONDS
     current = url
     validators = (_safe_validator(etag), _safe_validator(last_modified))
     visited: set[str] = set()
+
+    def bounded_resolve(hostname: str, port: int) -> Sequence[str]:
+        return DEFAULT_RESOLVER.resolve(hostname, port, timeout_seconds=_remaining(deadline))
+
+    active_resolver: Resolver = bounded_resolve if resolver is _resolve else resolver
     try:
         for redirect_count in range(MAX_REDIRECTS + 1):
             if current in visited:
                 raise FeedFetchError("redirect_loop")
             visited.add(current)
-            target = validate_target(current, resolver)
+            target = validate_target(current, active_resolver)
             _remaining(deadline)
             response = _request(
                 target,

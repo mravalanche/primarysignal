@@ -89,9 +89,10 @@ special-purpose address policy. Its HTTP transport connects to a validated
 address, checks the peer, preserves hostname-based TLS verification, rechecks
 redirects, and limits response headers and body size. Synthetic tests exercise
 these rules. The library is not bound to the retriever service or processor yet.
-The platform DNS lookup has no cancellable timeout, so deployment also needs a
-bounded resolver and the network egress controls described in ADR 0007 before
-live polling can be enabled.
+DNS callers now have a finite wait and a shared limit on simultaneous system
+lookups. A stuck platform lookup cannot be cancelled and holds its capacity
+slot until it exits. The network egress controls described in ADR 0007 remain
+required before live polling can be enabled.
 
 ### Database capability roles
 
