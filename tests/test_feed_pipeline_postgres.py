@@ -151,6 +151,15 @@ def test_scheduler_processor_retriever_pipeline_is_idempotent(
                 runtime.run(once=True)
 
                 with engine.connect() as connection:
+                    poll_state = connection.execute(
+                        select(Job.status, Job.last_error_code)
+                        .where(
+                            Job.job_type == "feeds.poll", Job.deduplication_key == f"feed:{feed_id}"
+                        )
+                        .order_by(Job.created_at.desc())
+                        .limit(1)
+                    ).one()
+                    assert poll_state == ("succeeded", None), (poll_state, calls)
                     runs = connection.execute(
                         select(FeedPollRun.status, FeedPollRun.entries_discovered)
                         .where(FeedPollRun.feed_id == feed_id)
