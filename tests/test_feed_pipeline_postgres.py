@@ -80,7 +80,7 @@ def test_scheduler_processor_retriever_pipeline_is_idempotent(
                 return httpx.Response(
                     response.status_code,
                     headers=response.headers,
-                    content=await response.aread(),
+                    stream=httpx.ByteStream(await response.aread()),
                 )
 
         return asyncio.run(dispatch())
