@@ -426,13 +426,13 @@ Exit: all release gates pass and deployment is recoverable.
 
 ## 17. Immediate next step
 
-The database schema, durable queue, feed scheduler, and feed processor foundation
-are in place. The next M1 slice is the isolated retriever for bounded feed HTTP:
-validate and pin public addresses, recheck redirects, enforce resource limits,
-and expose a narrow internal request contract. Then bind the feed poll handler
-and prove the scheduler-to-entry path against a disposable database and synthetic
-feeds. Do not enable live polling before the network egress controls are in
-place and verified.
+The database schema, durable queue, feed scheduler, feed processor foundation,
+and disconnected feed retrieval policy and HTTP transport are in place. The
+next M1 slice is a bounded DNS resolver, narrow internal retriever request
+contract, and processor client. Then bind the feed poll handler and prove the
+scheduler-to-entry path against a disposable database and synthetic feeds. Do
+not enable live polling before the network egress controls are in place and
+verified.
 
 The M0 reference corpus, signal evidence matrix, and open operator decisions
 remain separate work before automated publication can be evaluated.
