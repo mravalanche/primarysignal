@@ -72,7 +72,7 @@ def test_feed_poll_capability_is_non_login_and_column_scoped(
             ("feeds", "enabled", "SELECT"),
             ("sources", "enabled", "SELECT"),
             ("feeds", "consecutive_failures", "UPDATE"),
-            ("feed_poll_runs", "entries_discovered", "INSERT"),
+            ("feed_poll_runs", "entries_discovered", "UPDATE"),
             ("feed_poll_runs", "status", "UPDATE"),
             ("feed_entries", "identity_key", "INSERT"),
             ("feed_entries", "article_id", "SELECT"),
