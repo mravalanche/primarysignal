@@ -4,7 +4,7 @@ Primary Signal is a self-hosted cyber-security briefing and publication. It
 groups reporting about the same development, ranks stories using clear factors,
 and keeps source evidence close to every summary.
 
-The project is in planning. The first release will focus on:
+The project is under development. The first release will focus on:
 
 - curated RSS and Atom ingestion;
 - reliable article retrieval and provenance;
@@ -73,13 +73,22 @@ finish before the process exits. A statement timeout applies to each statement,
 not the whole batch, so production wiring also needs a whole-pass time budget
 and shutdown grace that covers it.
 
+### Feed processor foundation
+
+The ingestion processor now has lease renewal, expired-job recovery, bounded
+database retries, and atomic completion callbacks. Feed parsing and poll-record
+persistence are available for synthetic tests and an injected fetcher. The
+processor command intentionally refuses to start without a bound feed handler.
+Live polling depends on the isolated retriever and its network controls; the
+processor must not fetch internet URLs directly.
+
 ### Database capability roles
 
-Fresh Compose database volumes create two fixed, non-login queue capabilities
-and one feed-scheduling capability. The definitions live in the numbered SQL
-files under `deploy/postgres/initdb`. Login roles, passwords and role membership
-remain deployment-owned. PostgreSQL only runs these files while creating a new
-data directory.
+Fresh Compose database volumes create two fixed, non-login queue capabilities,
+one feed-scheduling capability, and one feed-poll capability. The definitions
+live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
+passwords and role membership remain deployment-owned. PostgreSQL only runs
+these files while creating a new data directory.
 
 For an existing development volume, apply the role bootstrap from inside the
 database container. The command uses the container's existing environment and
@@ -88,9 +97,10 @@ does not put a password on the command line:
 ```sh
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/010_queue_capability_roles.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql'
 ```
 
-Run both commands before applying migrations. The migrations grant access to
+Run all three commands before applying migrations. The migrations grant access to
 the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any

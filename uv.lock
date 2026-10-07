@@ -667,6 +667,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "defusedxml" },
     { name = "fastapi" },
     { name = "idna" },
     { name = "jinja2" },
@@ -694,6 +695,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.4,<1.19" },
+    { name = "defusedxml", specifier = ">=0.7.1,<0.8" },
     { name = "fastapi", specifier = ">=0.142.2,<0.143" },
     { name = "idna", specifier = ">=3.20,<4" },
     { name = "jinja2", specifier = ">=3.1.6,<3.2" },

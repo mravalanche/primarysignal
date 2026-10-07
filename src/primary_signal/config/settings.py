@@ -76,3 +76,29 @@ class SchedulerSettings(BaseSettings):
         if self.retry_initial_seconds > self.retry_max_seconds:
             raise ValueError("scheduler retry initial delay must not exceed its maximum")
         return self
+
+
+class ProcessorSettings(BaseSettings):
+    """Bounded, non-secret controls for the ingestion processor."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="PRIMARY_SIGNAL_PROCESSOR_",
+        case_sensitive=False,
+        extra="ignore",
+        frozen=True,
+    )
+
+    recovery_batch_size: int = Field(default=100, ge=1, le=1000)
+    poll_interval_seconds: float = Field(default=5.0, ge=0.1, le=3600.0)
+    lease_seconds: int = Field(default=120, ge=5, le=3600)
+    heartbeat_interval_seconds: float = Field(default=30.0, ge=0.1, le=600.0)
+    retry_initial_seconds: float = Field(default=1.0, ge=0.1, le=3600.0)
+    retry_max_seconds: float = Field(default=60.0, ge=0.1, le=3600.0)
+
+    @model_validator(mode="after")
+    def require_ordered_intervals(self) -> Self:
+        if self.heartbeat_interval_seconds >= self.lease_seconds / 2:
+            raise ValueError("processor heartbeat interval must be less than half the lease")
+        if self.retry_initial_seconds > self.retry_max_seconds:
+            raise ValueError("processor retry initial delay must not exceed its maximum")
+        return self

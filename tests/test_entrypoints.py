@@ -14,7 +14,6 @@ Entrypoint = Callable[[Sequence[str] | None], None]
 @pytest.mark.parametrize(
     ("entrypoint", "process_name"),
     [
-        (processor.main, "processor"),
         (retriever.main, "retriever"),
     ],
 )
@@ -30,6 +29,19 @@ def test_unimplemented_entrypoints_fail_clearly(
     assert capsys.readouterr().err == (
         f"primary-signal-{process_name}: not implemented in the platform scaffold\n"
     )
+
+
+def test_processor_entrypoint_rejects_unbound_ingestion_queue(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as raised:
+        processor.main(["--once"])
+
+    assert raised.value.code == 1
+    error_output = capsys.readouterr().err
+    assert '"event":"processor.failed"' in error_output
+    assert '"error_type":"UnknownJobHandler"' in error_output
+    assert "feeds.poll" not in error_output
 
 
 def test_web_entrypoint_runs_selected_surface(monkeypatch: pytest.MonkeyPatch) -> None:

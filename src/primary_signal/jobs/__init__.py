@@ -2,7 +2,7 @@
 
 from primary_signal.jobs.catalogue import JobCatalogue, JobContract, build_default_catalogue
 from primary_signal.jobs.contracts import JobFailure, JobPayload, PollFeedV1, RetrieveArticleV1
-from primary_signal.jobs.handlers import JobHandlerBinding, JobHandlers
+from primary_signal.jobs.handlers import JobHandlerBinding, JobHandlers, JobProcessingError
 from primary_signal.jobs.models import Job, JobAttempt
 from primary_signal.jobs.repository import (
     EnqueueResult,
@@ -31,6 +31,7 @@ __all__ = [
     "JobHandlers",
     "JobLease",
     "JobPayload",
+    "JobProcessingError",
     "JobRepository",
     "LostLease",
     "PollFeedV1",

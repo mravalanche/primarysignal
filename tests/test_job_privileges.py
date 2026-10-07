@@ -23,6 +23,7 @@ from primary_signal.jobs.transactions import TransactionalJobQueue
 SUBMIT_ROLE = "primary_signal_cap_queue_submit"
 CONSUME_ROLE = "primary_signal_cap_queue_consume"
 FEED_SCHEDULE_ROLE = "primary_signal_cap_feed_schedule"
+FEED_POLL_ROLE = "primary_signal_cap_feed_poll"
 SCHEDULER_LOGIN = "scheduler_test"
 PROCESSOR_LOGIN = "processor_test"
 
@@ -382,7 +383,7 @@ def test_restricted_logins_have_only_expected_attributes_and_memberships(
     scheduler, processor = restricted_engines
     expected_memberships = {
         SCHEDULER_LOGIN: {SUBMIT_ROLE, FEED_SCHEDULE_ROLE},
-        PROCESSOR_LOGIN: {SUBMIT_ROLE, CONSUME_ROLE},
+        PROCESSOR_LOGIN: {SUBMIT_ROLE, CONSUME_ROLE, FEED_POLL_ROLE},
     }
     migrator = os.environ["PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE"]
 
@@ -605,7 +606,7 @@ def test_actual_scheduler_and_processor_logins_enforce_queue_boundary(
         "UPDATE primary_signal.job_attempts SET worker_id='changed'",
         "DELETE FROM primary_signal.jobs",
         "TRUNCATE primary_signal.jobs",
-        "SELECT id FROM primary_signal.sources",
+        "SELECT name FROM primary_signal.sources",
         "CREATE TABLE primary_signal.forbidden (id integer)",
         "SET ROLE postgres",
     )

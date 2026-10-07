@@ -286,7 +286,7 @@ def test_scheduler_can_advance_due_feeds_and_enqueue_only(
                 connection.execute(text(statement))
 
         processor_denied = (
-            "SELECT id FROM primary_signal.feeds",
+            "SELECT name FROM primary_signal.feeds",
             "UPDATE primary_signal.feeds SET next_poll_at=clock_timestamp()",
         )
         for statement in processor_denied:

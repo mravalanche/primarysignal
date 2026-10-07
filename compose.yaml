@@ -21,6 +21,7 @@ services:
       - database-data:/var/lib/postgresql
       - ./deploy/postgres/initdb/010_queue_capability_roles.sql:/docker-entrypoint-initdb.d/010_queue_capability_roles.sql:ro
       - ./deploy/postgres/initdb/020_feed_scheduler_capability_role.sql:/docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql:ro
+      - ./deploy/postgres/initdb/030_feed_poll_capability_role.sql:/docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql:ro
     networks:
       - application
 
