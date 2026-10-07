@@ -136,6 +136,18 @@ def test_scheduler_processor_retriever_pipeline_is_idempotent(
                         )
                 summary = scheduler.schedule_due(limit=1)
                 assert (summary.selected, summary.enqueued) == (1, 1)
+                # Other PostgreSQL tests can leave queued synthetic jobs behind.
+                # Put this test's poll first without changing those jobs.
+                with engine.begin() as connection:
+                    connection.execute(
+                        update(Job)
+                        .where(
+                            Job.job_type == "feeds.poll",
+                            Job.deduplication_key == f"feed:{feed_id}",
+                            Job.status == "queued",
+                        )
+                        .values(priority=100, run_after=datetime(1970, 1, 1, tzinfo=UTC))
+                    )
                 runtime.run(once=True)
 
                 with engine.connect() as connection:
