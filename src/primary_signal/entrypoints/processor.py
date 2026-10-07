@@ -13,8 +13,10 @@ from sqlalchemy import Engine
 from primary_signal.config import ProcessorSettings, Settings
 from primary_signal.db import DatabaseSettings, create_database_engine
 from primary_signal.entrypoints.scheduler import is_transient_database_error, stopping_on_signals
+from primary_signal.ingestion.feed_handler import FeedFetcher, PollFeedHandler
 from primary_signal.jobs import (
     JobFailure,
+    JobHandlerBinding,
     JobHandlers,
     JobLease,
     JobProcessingError,
@@ -179,6 +181,17 @@ def run_with_engine(
     catalogue = build_default_catalogue()
     queue = TransactionalJobQueue(engine, catalogue)
     ProcessorRuntime(queue, handlers, settings, stop_event).run(once=once)
+
+
+def build_feed_poll_handlers(engine: Engine, fetcher: FeedFetcher) -> JobHandlers:
+    """Bind the feed queue to an injected retriever client for controlled runs."""
+
+    handlers = JobHandlers(
+        build_default_catalogue(),
+        (JobHandlerBinding("feeds.poll", 1, PollFeedHandler(engine, fetcher)),),
+    )
+    handlers.require_complete_queue("ingestion")
+    return handlers
 
 
 def _parser() -> argparse.ArgumentParser:

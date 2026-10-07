@@ -1,4 +1,4 @@
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import cast
 
@@ -8,27 +8,49 @@ from sqlalchemy import Engine
 from primary_signal.db import DatabaseSettings
 from primary_signal.entrypoints import migrate, processor, retriever, scheduler, web
 
-Entrypoint = Callable[[Sequence[str] | None], None]
 
+def test_retriever_entrypoint_is_loopback_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
 
-@pytest.mark.parametrize(
-    ("entrypoint", "process_name"),
-    [
-        (retriever.main, "retriever"),
-    ],
-)
-def test_unimplemented_entrypoints_fail_clearly(
-    entrypoint: Entrypoint,
-    process_name: str,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as raised:
-        entrypoint([])
+    def fake_run(
+        app: object,
+        *,
+        host: str,
+        port: int,
+        proxy_headers: bool,
+        access_log: bool,
+        log_config: object,
+    ) -> None:
+        captured.update(
+            app=app,
+            host=host,
+            port=port,
+            proxy_headers=proxy_headers,
+            access_log=access_log,
+            log_config=log_config,
+        )
 
-    assert raised.value.code == 2
-    assert capsys.readouterr().err == (
-        f"primary-signal-{process_name}: not implemented in the platform scaffold\n"
-    )
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "development")
+    monkeypatch.setattr(retriever.uvicorn, "run", fake_run)
+    with pytest.raises(SystemExit):
+        retriever.main([])
+    retriever.main(["--allow-local-fetch"])
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 8765
+    assert captured["proxy_headers"] is False
+    assert captured["access_log"] is False
+    assert captured["log_config"] is None
+
+    with pytest.raises(SystemExit):
+        retriever.main(["--allow-local-fetch", "--host", "0.0.0.0"])  # noqa: S104
+    with pytest.raises(SystemExit):
+        retriever.main(["--allow-local-fetch", "--port", "0"])
+    monkeypatch.delenv("PRIMARY_SIGNAL_ENVIRONMENT")
+    with pytest.raises(SystemExit):
+        retriever.main(["--allow-local-fetch"])
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "production")
+    with pytest.raises(SystemExit):
+        retriever.main(["--allow-local-fetch"])
 
 
 def test_processor_entrypoint_rejects_unbound_ingestion_queue(

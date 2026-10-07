@@ -88,7 +88,13 @@ The retriever library validates feed URLs and every DNS answer against a dated
 special-purpose address policy. Its HTTP transport connects to a validated
 address, checks the peer, preserves hostname-based TLS verification, rechecks
 redirects, and limits response headers and body size. Synthetic tests exercise
-these rules. The library is not bound to the retriever service or processor yet.
+these rules. A fixed feed-fetch API is available through
+`primary-signal-retriever --allow-local-fetch` on loopback when
+`PRIMARY_SIGNAL_ENVIRONMENT` is explicitly `development` or `test`. Its processor
+client uses a fixed configured origin with no ambient proxy or redirects and a
+bounded response. The feed handler can be bound for controlled integration
+tests; normal processor startup still fails closed, and the retriever command
+rejects production startup until deployment network controls are ready.
 DNS callers now have a finite wait and a shared limit on simultaneous system
 lookups. A stuck platform lookup cannot be cancelled and holds its capacity
 slot until it exits. The network egress controls described in ADR 0007 remain
