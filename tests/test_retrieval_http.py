@@ -4,6 +4,7 @@ import gzip
 import io
 import ipaddress
 import socket
+import time
 import zlib
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 
 from primary_signal.ingestion.feed_handler import FeedFetchError
 from primary_signal.retrieval import http as retrieval_http
+from primary_signal.retrieval.dns import DnsCapacityError
 from primary_signal.retrieval.http import fetch_feed
 from primary_signal.retrieval.policy import ValidatedTarget
 
@@ -127,6 +129,21 @@ def test_peer_address_must_match_validated_dns_answer() -> None:
         )
 
 
+def test_dns_capacity_failure_never_connects() -> None:
+    def saturated(_host: str, _port: int) -> tuple[str, ...]:
+        raise DnsCapacityError("dns_capacity")
+
+    def connector(
+        _target: ValidatedTarget,
+        _address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+        _timeout: float,
+    ) -> socket.socket:
+        pytest.fail("a failed DNS lookup must not start a connection")
+
+    with pytest.raises(FeedFetchError, match="dns_error"):
+        fetch_feed("http://feed.public.example/", resolver=saturated, connector=connector)
+
+
 def test_rejects_oversized_compressed_or_decompressed_body() -> None:
     oversized = b"HTTP/1.1 200 OK\r\nContent-Length: 2097153\r\n\r\n"
     with pytest.raises(FeedFetchError, match="response_too_large"):
@@ -223,6 +240,38 @@ def test_upgrade_redirect_clears_validator(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.status == 200
     assert b'If-None-Match: "previous"' in requests[0]
     assert b"If-None-Match:" not in requests[1]
+
+
+def test_redirect_dns_uses_remaining_request_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    waits: list[float] = []
+
+    class Resolver:
+        def resolve(self, _hostname: str, _port: int, *, timeout_seconds: float) -> tuple[str, ...]:
+            waits.append(timeout_seconds)
+            return ("8.8.8.8",)
+
+    monkeypatch.setattr(retrieval_http, "DEFAULT_RESOLVER", Resolver())
+    monkeypatch.setattr(retrieval_http, "REQUEST_TIMEOUT_SECONDS", 0.1)
+    replies = iter(
+        (
+            b"HTTP/1.1 302 Found\r\nLocation: http://other.public.example/\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n",
+        )
+    )
+
+    def connector(
+        _target: ValidatedTarget,
+        _address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+        _timeout: float,
+    ) -> socket.socket:
+        if not waits or len(waits) == 1:
+            time.sleep(0.03)
+        return _FakeSocket(next(replies), "8.8.8.8", None)  # type: ignore[return-value]
+
+    result = fetch_feed("http://feed.public.example/", connector=connector)
+    assert result.status == 200
+    assert len(waits) == 2
+    assert 0 < waits[1] < waits[0] - 0.02
 
 
 def test_redirect_to_private_target_is_rejected_before_connecting() -> None:
