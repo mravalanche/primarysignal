@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -250,6 +251,15 @@ class ContentVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         ),
         UniqueConstraint("origin_fetch_attempt_id"),
         Index("ix_content_versions_article_fetched", "article_id", "fetched_at"),
+        Index(
+            "ix_content_versions_english_search",
+            text(
+                "setweight(to_tsvector('english'::regconfig, "
+                "coalesce(extracted_title, ''::text)), 'A'::\"char\") || "
+                "setweight(to_tsvector('english'::regconfig, extracted_text), 'B'::\"char\")"
+            ),
+            postgresql_using="gin",
+        ),
     )
 
     article_id: Mapped[uuid.UUID] = mapped_column(

@@ -429,11 +429,13 @@ Exit: all release gates pass and deployment is recoverable.
 The database schema, durable queue, feed scheduler, and controlled synthetic
 scheduler-to-entry path are in place. Local article retrieval and bounded
 plain-text extraction use the isolated retriever. An injectable retrieval job
-handler now records attempts and immutable extracted-text versions. Production
-retrieval remains unbound. The next M1 slice is a searchable article inventory.
-Verify deployment egress controls, service readiness, and extracted-text
-retention before live polling is enabled. Present editorial UI mock-ups for
-approval before expanding the M2 public or administration pages.
+handler now records attempts and immutable extracted-text versions. An internal
+read-only inventory searches the current version of each article through
+PostgreSQL; the local operator command returns metadata only. Production
+retrieval remains unbound. Verify deployment egress controls, service
+readiness, source-disable serialization, and extracted-text retention before
+live polling is enabled. Present editorial UI mock-ups for approval before
+expanding the M2 public or administration pages.
 
 The M0 reference corpus, signal evidence matrix, and open operator decisions
 remain separate work before automated publication can be evaluated.

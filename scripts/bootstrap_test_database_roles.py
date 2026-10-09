@@ -16,10 +16,13 @@ CONSUME_ROLE = "primary_signal_cap_queue_consume"
 FEED_SCHEDULE_ROLE = "primary_signal_cap_feed_schedule"
 FEED_POLL_ROLE = "primary_signal_cap_feed_poll"
 ARTICLE_PERSIST_ROLE = "primary_signal_cap_article_persist"
+ARTICLE_INVENTORY_ROLE = "primary_signal_cap_article_inventory"
 SCHEDULER_ROLE = "scheduler_test"
 PROCESSOR_ROLE = "processor_test"
+INVENTORY_ROLE = "inventory_test"
 SCHEDULER_PASSWORD = "primary_signal_scheduler_test_only"  # noqa: S105  # pragma: allowlist secret
 PROCESSOR_PASSWORD = "primary_signal_processor_test_only"  # noqa: S105  # pragma: allowlist secret
+INVENTORY_PASSWORD = "primary_signal_inventory_test_only"  # noqa: S105  # pragma: allowlist secret
 
 
 def _role_rows(
@@ -133,6 +136,7 @@ def main() -> None:
         repository_root / "deploy/postgres/initdb/020_feed_scheduler_capability_role.sql",
         repository_root / "deploy/postgres/initdb/030_feed_poll_capability_role.sql",
         repository_root / "deploy/postgres/initdb/040_article_persist_capability_role.sql",
+        repository_root / "deploy/postgres/initdb/050_article_inventory_capability_role.sql",
     )
     engine = create_engine(database_url, hide_parameters=True)
     try:
@@ -161,6 +165,12 @@ def main() -> None:
                 role_name=PROCESSOR_ROLE,
                 password=PROCESSOR_PASSWORD,
                 capabilities=(SUBMIT_ROLE, CONSUME_ROLE, FEED_POLL_ROLE, ARTICLE_PERSIST_ROLE),
+            )
+            _create_or_verify_login(
+                connection,
+                role_name=INVENTORY_ROLE,
+                password=INVENTORY_PASSWORD,
+                capabilities=(ARTICLE_INVENTORY_ROLE,),
             )
     finally:
         engine.dispose()
