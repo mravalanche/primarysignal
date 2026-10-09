@@ -14,6 +14,12 @@ from primary_signal.db import DatabaseSettings, create_database_engine
 from primary_signal.observability import configure_logging, log_exception
 from primary_signal.publication import PostgresStoryReader
 from primary_signal.web.admin import create_admin_app
+from primary_signal.web.admin.auth import AdminAuthService
+from primary_signal.web.admin.session_store import (
+    PostgresSessionStore,
+    assert_admin_session_database_role,
+)
+from primary_signal.web.admin.settings import AdminAuthSettings
 from primary_signal.web.public import create_public_app
 
 LOGGER = logging.getLogger(__name__)
@@ -95,6 +101,15 @@ def public_database_settings() -> DatabaseSettings:
     )
 
 
+def admin_session_database_settings() -> DatabaseSettings:
+    """Load a distinct session-only login for the private web process."""
+
+    load_settings = cast(Callable[[], DatabaseSettings], DatabaseSettings)
+    return load_settings().model_copy(
+        update={"application_name": "primary_signal_admin_session", "max_overflow": 0}
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run exactly one web surface."""
 
@@ -117,7 +132,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             else:
                 app = create_public_app(settings)
         else:
-            app = create_admin_app(settings)
+            if settings.environment is RuntimeEnvironment.PRODUCTION:
+                if args.host not in {"127.0.0.1", "::1"}:
+                    raise RuntimeError("production administration must bind to loopback")
+                engine = create_database_engine(
+                    admin_session_database_settings(), search_path="pg_catalog"
+                )
+                with engine.connect() as connection:
+                    assert_admin_session_database_role(connection)
+                load_auth_settings = cast(Callable[[], AdminAuthSettings], AdminAuthSettings)
+                admin_auth = AdminAuthService(
+                    load_auth_settings().auth_config(), PostgresSessionStore(engine)
+                )
+                app = create_admin_app(settings, auth_service=admin_auth)
+            else:
+                app = create_admin_app(settings)
         uvicorn.run(
             app,
             host=args.host,

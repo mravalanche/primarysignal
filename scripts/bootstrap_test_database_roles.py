@@ -21,6 +21,7 @@ PUBLIC_READ_ROLE = "primary_signal_cap_public_read"
 PUBLICATION_WRITE_ROLE = "primary_signal_cap_publication_write"
 SOURCE_HEALTH_ROLE = "primary_signal_cap_source_health"
 EDITORIAL_READ_ROLE = "primary_signal_cap_editorial_read"
+ADMIN_SESSION_ROLE = "primary_signal_cap_admin_session"
 SCHEDULER_ROLE = "scheduler_test"
 PROCESSOR_ROLE = "processor_test"
 INVENTORY_ROLE = "inventory_test"
@@ -28,6 +29,7 @@ PUBLIC_ROLE = "public_test"
 PUBLICATION_ROLE = "publication_test"
 HEALTH_ROLE = "health_test"
 EDITORIAL_ROLE = "editorial_test"
+ADMIN_SESSION_LOGIN_ROLE = "admin_session_test"
 SCHEDULER_PASSWORD = "primary_signal_scheduler_test_only"  # noqa: S105  # pragma: allowlist secret
 PROCESSOR_PASSWORD = "primary_signal_processor_test_only"  # noqa: S105  # pragma: allowlist secret
 INVENTORY_PASSWORD = "primary_signal_inventory_test_only"  # noqa: S105  # pragma: allowlist secret
@@ -35,6 +37,7 @@ PUBLIC_PASSWORD = "primary_signal_public_test_only"  # noqa: S105  # pragma: all
 PUBLICATION_PASSWORD = "primary_signal_publication_test_only"  # noqa: S105  # pragma: allowlist secret
 HEALTH_PASSWORD = "primary_signal_health_test_only"  # noqa: S105  # pragma: allowlist secret
 EDITORIAL_PASSWORD = "primary_signal_editorial_test_only"  # noqa: S105  # pragma: allowlist secret
+ADMIN_SESSION_PASSWORD = "primary_signal_admin_session_test_only"  # noqa: S105  # pragma: allowlist secret
 
 
 def _role_rows(
@@ -153,6 +156,7 @@ def main() -> None:
         repository_root / "deploy/postgres/initdb/070_publication_writer_capability_role.sql",
         repository_root / "deploy/postgres/initdb/080_source_health_capability_role.sql",
         repository_root / "deploy/postgres/initdb/090_editorial_read_capability_role.sql",
+        repository_root / "deploy/postgres/initdb/100_admin_session_capability_role.sql",
     )
     engine = create_engine(database_url, hide_parameters=True)
     try:
@@ -211,6 +215,12 @@ def main() -> None:
                 role_name=PUBLICATION_ROLE,
                 password=PUBLICATION_PASSWORD,
                 capabilities=(PUBLICATION_WRITE_ROLE,),
+            )
+            _create_or_verify_login(
+                connection,
+                role_name=ADMIN_SESSION_LOGIN_ROLE,
+                password=ADMIN_SESSION_PASSWORD,
+                capabilities=(ADMIN_SESSION_ROLE,),
             )
     finally:
         engine.dispose()
