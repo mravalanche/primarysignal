@@ -1,0 +1,127 @@
+{
+  "kind": "availability_pilot",
+  "selection_plan": "selection-2026-10.md",
+  "verified_on": "2026-10-09",
+  "articles": [
+    {
+      "url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+      "publisher": "Unit 42",
+      "ownership_group": "Palo Alto Networks",
+      "source_category": "independent_research",
+      "published_on": "2026-08-06",
+      "title": "ChainDrop: Inside a Self-Propagating npm Worm"
+    },
+    {
+      "url": "https://unit42.paloaltonetworks.com/kubernetes-spiffe-spire-identity-spoofing/",
+      "publisher": "Unit 42",
+      "ownership_group": "Palo Alto Networks",
+      "source_category": "independent_research",
+      "published_on": "2026-09-10",
+      "title": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+    },
+    {
+      "url": "https://blog.talosintelligence.com/china-nexus-uat-11587-targets-government-and-policy-organizations-across-asia-with-antino-backdoor/",
+      "publisher": "Cisco Talos",
+      "ownership_group": "Cisco",
+      "source_category": "independent_research",
+      "published_on": "2026-09-30",
+      "title": "China-nexus UAT-11587 targets government and policy organizations across Asia with Antino backdoor"
+    },
+    {
+      "url": "https://blog.talosintelligence.com/clearfake-webdav-infection-chain/",
+      "publisher": "Cisco Talos",
+      "ownership_group": "Cisco",
+      "source_category": "independent_research",
+      "published_on": "2026-09-08",
+      "title": "ClearFake WebDAV infection chain delivers Amatera stealer, ZigCryptoStealer, and NetSupport Manager"
+    },
+    {
+      "url": "https://cert.europa.eu/publications/security-advisories/2026-013",
+      "publisher": "CERT-EU",
+      "ownership_group": "EU institutions",
+      "source_category": "national_authority",
+      "published_on": "2026-09-22",
+      "title": "Critical Vulnerability in F5 BIG-IP APM"
+    },
+    {
+      "url": "https://cert.europa.eu/publications/security-advisories/2026-012",
+      "publisher": "CERT-EU",
+      "ownership_group": "EU institutions",
+      "source_category": "national_authority",
+      "published_on": "2026-09-10",
+      "title": "Critical Vulnerabilities in Check Point Products"
+    },
+    {
+      "url": "https://cert.europa.eu/publications/security-advisories/2026-011",
+      "publisher": "CERT-EU",
+      "ownership_group": "EU institutions",
+      "source_category": "national_authority",
+      "published_on": "2026-09-09",
+      "title": "Critical Vulnerabilities in SAP Kernel and NetWeaver Message Server"
+    },
+    {
+      "url": "https://github.blog/security/supply-chain-security/disrupting-supply-chain-attacks-on-npm-and-github-actions/",
+      "publisher": "The GitHub Blog",
+      "ownership_group": "Microsoft",
+      "source_category": "vendor_notice",
+      "published_on": "2026-07-28",
+      "title": "Disrupting supply chain attacks on npm and GitHub Actions"
+    },
+    {
+      "url": "https://github.blog/changelog/2026-09-22-security-improvements-for-ssh/",
+      "publisher": "GitHub Changelog",
+      "ownership_group": "Microsoft",
+      "source_category": "vendor_notice",
+      "published_on": "2026-09-22",
+      "title": "Security improvements for SSH"
+    },
+    {
+      "url": "https://blog.mozilla.org/security/2026/08/10/updated-gpg-key-for-signing-firefox-and-thunderbird-releases/",
+      "publisher": "Mozilla Security Blog",
+      "ownership_group": "Mozilla",
+      "source_category": "affected_organisation_statement",
+      "published_on": "2026-08-10",
+      "title": "Updated GPG key for signing Firefox and Thunderbird Releases"
+    },
+    {
+      "url": "https://www.bleepingcomputer.com/news/security/f5-warns-of-big-ip-apm-remote-code-execution-zero-day-exploited-in-attacks/",
+      "publisher": "BleepingComputer",
+      "ownership_group": "BleepingComputer",
+      "source_category": "cyber_newsroom",
+      "published_on": "2026-09-23",
+      "title": "F5 patches BIG-IP APM zero-day flaw exploited in RCE attacks"
+    },
+    {
+      "url": "https://www.bleepingcomputer.com/news/security/citrix-admins-warned-to-shut-down-netscalers-over-2-exploited-zero-days/",
+      "publisher": "BleepingComputer",
+      "ownership_group": "BleepingComputer",
+      "source_category": "cyber_newsroom",
+      "published_on": "2026-09-27",
+      "title": "Citrix confirms two NetScaler RCE zero-days exploited in attacks"
+    },
+    {
+      "url": "https://labs.watchtowr.com/is-this-a-joke-in-the-auth-header-f5-big-ip-unauth-heap-overflow-to-rce-cve-2026-94127/",
+      "publisher": "watchTowr Labs",
+      "ownership_group": "watchTowr",
+      "source_category": "independent_research",
+      "published_on": "2026-09-23",
+      "title": "Is This A Joke? In The Auth Header? (F5 BIG-IP UnAuth Heap-Overflow to RCE CVE-2026-94127)"
+    },
+    {
+      "url": "https://www.volexity.com/blog/2026/09/09/mind-the-patch-gap-multiple-chinese-threat-actors-chain-0-day-exploits-in-chrome-windows/",
+      "publisher": "Volexity",
+      "ownership_group": "Volexity",
+      "source_category": "independent_research",
+      "published_on": "2026-09-09",
+      "title": "Mind the (Patch) Gap: Multiple Chinese Threat Actors Chain 0-day Exploits in Chrome & Windows"
+    },
+    {
+      "url": "https://www.theguardian.com/uk-news/2026/sep/25/cyber-attack-dyfed-powys-police-may-accessed-staff-information",
+      "publisher": "The Guardian",
+      "ownership_group": "Guardian Media Group",
+      "source_category": "general_newsroom",
+      "published_on": "2026-09-25",
+      "title": "Cyber-attack on Dyfed-Powys police ‘may have accessed staff information’"
+    }
+  ]
+}
