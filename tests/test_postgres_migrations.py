@@ -107,6 +107,7 @@ def test_blank_postgresql_database_migrates_to_head(
         assert str(database_name.scalar_one()).endswith("_test"), (
             "migration integration tests require a disposable database ending in _test"
         )
+        connection.execute(text("DROP SCHEMA IF EXISTS primary_signal_public CASCADE"))
         connection.execute(text("DROP SCHEMA IF EXISTS primary_signal CASCADE"))
         connection.commit()
 
@@ -139,9 +140,11 @@ def test_blank_postgresql_database_migrates_to_head(
             assert inspect(connection).get_table_names(schema="primary_signal") == [
                 "alembic_version"
             ]
+            assert not inspect(connection).has_schema("primary_signal_public")
         command.upgrade(config, "head")
     finally:
         with engine.connect() as connection:
+            connection.execute(text("DROP SCHEMA IF EXISTS primary_signal_public CASCADE"))
             connection.execute(text("DROP SCHEMA IF EXISTS primary_signal CASCADE"))
             connection.commit()
         engine.dispose()

@@ -22,7 +22,14 @@ EXPECTED_TABLES = {
     "fetch_attempts",
     "job_attempts",
     "jobs",
+    "revision_signals",
+    "revision_sources",
+    "revision_tags",
+    "signal_evidence",
     "sources",
+    "stories",
+    "story_revisions",
+    "tags",
 }
 
 
@@ -105,6 +112,7 @@ def test_status_columns_are_guarded_by_checks() -> None:
         "fetch_attempts",
         "job_attempts",
         "jobs",
+        "story_revisions",
     }
 
 

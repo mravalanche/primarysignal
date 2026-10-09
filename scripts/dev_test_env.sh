@@ -164,6 +164,7 @@ export PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE=ps_dev_admin
 export PRIMARY_SIGNAL_TEST_SCHEDULER_DATABASE_URL="${database_base}scheduler_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PROCESSOR_DATABASE_URL="${database_base}processor_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_INVENTORY_DATABASE_URL="${database_base}inventory_test@${database_host}"
+export PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL="${database_base}public_test@${database_host}"
 export PRIMARY_SIGNAL_REQUIRE_RESTRICTED_ROLE_TESTS=true
 
 python scripts/bootstrap_test_database_roles.py
