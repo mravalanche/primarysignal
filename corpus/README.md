@@ -4,6 +4,8 @@ This directory holds versioned labels and public metadata for evaluating story
 clustering and publication rules. `synthetic-v1.json` is a small, invented fixture
 that exercises the format; it is not the v1 acceptance corpus.
 
+The fixed first collection plan is in [selection-2026-10.md](selection-2026-10.md).
+
 ## Labelling guide
 
 Follow the selection method in [the product contract](../docs/product-contract.md#reference-corpus).
