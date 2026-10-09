@@ -124,7 +124,9 @@ def test_latest_renders_provenance_and_neutral_exact_timestamps() -> None:
     assert 'title="8 Oct 2026, 09:20 UTC"' not in response.text
     assert "/stories/identity-advisory#sources" in response.text
     assert "Official advisory" in response.text
-    assert 'aria-describedby="signal-help-identity-advisory-official-advisory"' in response.text
+    assert '<details class="ps-signal-control ps-signal-official-advisory">' in response.text
+    assert '<summary class="ps-signal-chip">Official advisory</summary>' in response.text
+    assert "/stories/identity-advisory#signal-official-advisory" in response.text
     assert 'class="badge badge-sm ps-tag ps-tag-curated" href="/tags/identity"' in response.text
     assert "cursor=opaque.cursor" in response.text
     assert reader.requested_slugs == []  # Listing never fetches full stories per row.

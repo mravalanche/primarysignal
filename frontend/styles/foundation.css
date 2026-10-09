@@ -10,26 +10,26 @@
   name: "primarysignal-light";
   default: true;
   color-scheme: light;
-  --color-base-100: oklch(98.5% 0.004 240);
-  --color-base-200: oklch(96% 0.007 240);
-  --color-base-300: oklch(89% 0.012 240);
-  --color-base-content: oklch(22% 0.025 245);
-  --color-primary: oklch(57% 0.14 238);
-  --color-primary-content: oklch(99% 0.005 240);
-  --color-secondary: oklch(48% 0.075 196);
-  --color-secondary-content: oklch(99% 0.005 196);
-  --color-accent: oklch(70% 0.15 78);
-  --color-accent-content: oklch(24% 0.04 65);
-  --color-neutral: oklch(28% 0.025 245);
-  --color-neutral-content: oklch(97% 0.006 240);
-  --color-info: oklch(62% 0.12 235);
-  --color-info-content: oklch(99% 0.005 235);
-  --color-success: oklch(57% 0.12 155);
-  --color-success-content: oklch(99% 0.005 155);
-  --color-warning: oklch(72% 0.15 78);
-  --color-warning-content: oklch(24% 0.04 65);
-  --color-error: oklch(58% 0.2 27);
-  --color-error-content: oklch(99% 0.005 27);
+  --color-base-100: #F7F8F6;
+  --color-base-200: #EDF2F2;
+  --color-base-300: #C8D3D4;
+  --color-base-content: #142B37;
+  --color-primary: #126A85;
+  --color-primary-content: #FFFFFF;
+  --color-secondary: #2D675D;
+  --color-secondary-content: #FFFFFF;
+  --color-accent: #744914;
+  --color-accent-content: #FFFFFF;
+  --color-neutral: #142B37;
+  --color-neutral-content: #F7F8F6;
+  --color-info: #345F9B;
+  --color-info-content: #FFFFFF;
+  --color-success: #2D675D;
+  --color-success-content: #FFFFFF;
+  --color-warning: #744914;
+  --color-warning-content: #FFFFFF;
+  --color-error: #A93E4E;
+  --color-error-content: #FFFFFF;
   --radius-selector: 0.2rem;
   --radius-field: 0.25rem;
   --radius-box: 0.3rem;
@@ -44,26 +44,26 @@
   name: "primarysignal-dark";
   prefersdark: true;
   color-scheme: dark;
-  --color-base-100: oklch(18% 0.025 245);
-  --color-base-200: oklch(21% 0.028 245);
-  --color-base-300: oklch(29% 0.032 245);
-  --color-base-content: oklch(94% 0.008 235);
-  --color-primary: oklch(73% 0.12 226);
-  --color-primary-content: oklch(18% 0.025 245);
-  --color-secondary: oklch(72% 0.09 187);
-  --color-secondary-content: oklch(18% 0.025 245);
-  --color-accent: oklch(78% 0.14 78);
-  --color-accent-content: oklch(20% 0.035 65);
-  --color-neutral: oklch(88% 0.012 235);
-  --color-neutral-content: oklch(18% 0.025 245);
-  --color-info: oklch(72% 0.11 228);
-  --color-info-content: oklch(18% 0.025 245);
-  --color-success: oklch(72% 0.12 155);
-  --color-success-content: oklch(18% 0.025 155);
-  --color-warning: oklch(80% 0.14 78);
-  --color-warning-content: oklch(20% 0.035 65);
-  --color-error: oklch(70% 0.17 25);
-  --color-error-content: oklch(18% 0.025 25);
+  --color-base-100: #091820;
+  --color-base-200: #102832;
+  --color-base-300: #38505A;
+  --color-base-content: #EAF1F2;
+  --color-primary: #78CDE0;
+  --color-primary-content: #091820;
+  --color-secondary: #84C9BA;
+  --color-secondary-content: #091820;
+  --color-accent: #E3B35D;
+  --color-accent-content: #091820;
+  --color-neutral: #EAF1F2;
+  --color-neutral-content: #091820;
+  --color-info: #89ADE6;
+  --color-info-content: #091820;
+  --color-success: #84C9BA;
+  --color-success-content: #091820;
+  --color-warning: #E3B35D;
+  --color-warning-content: #091820;
+  --color-error: #E68895;
+  --color-error-content: #091820;
   --radius-selector: 0.2rem;
   --radius-field: 0.25rem;
   --radius-box: 0.3rem;
@@ -75,30 +75,211 @@
 }
 
 @theme {
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: "DejaVu Sans", "Trebuchet MS", system-ui, sans-serif;
+  --font-serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+  --font-mono: Consolas, "Liberation Mono", monospace;
   --breakpoint-reading: 48rem;
 }
 
 :root {
-  --ps-reading-measure: 68ch;
+  --ps-font-editorial: var(--font-serif);
+  --ps-font-reading: "Bitstream Charter", Charter, Cambria, Georgia, serif;
+  --ps-font-ui: var(--font-sans);
+  --ps-font-mono: var(--font-mono);
+  --ps-text-meta: 0.75rem;
+  --ps-text-ui: 0.875rem;
+  --ps-text-body: 1rem;
+  --ps-text-standfirst: 1.125rem;
+  --ps-text-story: 1.5rem;
+  --ps-text-section: 2rem;
+  --ps-text-page: clamp(2.5rem, 5vw, 3.5rem);
+  --ps-leading-meta: 1.4;
+  --ps-leading-ui: 1.4;
+  --ps-leading-body: 1.55;
+  --ps-leading-standfirst: 1.5;
+  --ps-leading-story: 1.15;
+  --ps-leading-section: 1.1;
+  --ps-leading-page: 1.05;
+  --ps-space-1: 0.25rem;
+  --ps-space-2: 0.5rem;
+  --ps-space-3: 0.75rem;
+  --ps-space-4: 1rem;
+  --ps-space-6: 1.5rem;
+  --ps-space-8: 2rem;
+  --ps-space-12: 3rem;
+  --ps-reading-measure: 62ch;
   --ps-page-gutter: clamp(1rem, 3vw, 2.5rem);
   --ps-page-width: 88rem;
-  --ps-rule: color-mix(in oklab, currentColor 16%, transparent);
+  --ps-logo-ink: var(--ps-neutral-ink);
+  --ps-logo-accent: var(--ps-brand-blue-strong);
+  --ps-link: var(--ps-brand-blue-strong);
+  --ps-action: var(--ps-brand-blue-strong);
+  --ps-story-advisory: var(--ps-amber-strong);
+  --ps-story-incident: var(--ps-red-strong);
+  --ps-story-research: var(--ps-teal-strong);
+  --ps-signal-info: var(--ps-blue-strong);
+  --ps-signal-action: var(--ps-amber-strong);
+  --ps-signal-urgent: var(--ps-red-strong);
+  --ps-rule: var(--ps-neutral-rule);
+}
+
+:root, [data-theme="primarysignal-light"] {
+  --ps-brand-blue-soft: #DFECF2;
+  --ps-brand-blue-mid: #A8CDD8;
+  --ps-brand-blue-strong: #126A85;
+  --ps-brand-blue-ink: #0D4F64;
+  --ps-blue-soft: #E1E9F5;
+  --ps-blue-mid: #B6CAE7;
+  --ps-blue-strong: #345F9B;
+  --ps-blue-ink: #234A7D;
+  --ps-red-soft: #F1DDE0;
+  --ps-red-mid: #DBA7AE;
+  --ps-red-strong: #A93E4E;
+  --ps-red-ink: #873044;
+  --ps-amber-soft: #F4E7D4;
+  --ps-amber-mid: #DBBD8B;
+  --ps-amber-strong: #A96A15;
+  --ps-amber-ink: #744914;
+  --ps-teal-soft: #DDEDE9;
+  --ps-teal-mid: #A6CEC5;
+  --ps-teal-strong: #4D8C81;
+  --ps-teal-ink: #2D675D;
+  --ps-green-soft: #E4EFE0;
+  --ps-green-mid: #B9D6B2;
+  --ps-green-strong: #407B47;
+  --ps-green-ink: #2F6535;
+  --ps-cyan-soft: #E0F0F1;
+  --ps-cyan-mid: #ADD8DC;
+  --ps-cyan-strong: #227583;
+  --ps-cyan-ink: #196471;
+  --ps-orange-soft: #F6E6D9;
+  --ps-orange-mid: #E4BD9D;
+  --ps-orange-strong: #AA5922;
+  --ps-orange-ink: #8D491C;
+  --ps-violet-soft: #EAE5F2;
+  --ps-violet-mid: #C6B5DB;
+  --ps-violet-strong: #725A9C;
+  --ps-violet-ink: #574179;
+  --ps-rose-soft: #F3E0E9;
+  --ps-rose-mid: #DDAEC3;
+  --ps-rose-strong: #A94E75;
+  --ps-rose-ink: #813755;
+  --ps-neutral-paper: #F7F8F6;
+  --ps-neutral-panel: #EDF2F2;
+  --ps-neutral-rule: #C8D3D4;
+  --ps-neutral-muted: #52616A;
+  --ps-neutral-ink: #142B37;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --ps-brand-blue-soft: #183A48;
+    --ps-brand-blue-mid: #2A5E6D;
+    --ps-brand-blue-strong: #78CDE0;
+    --ps-brand-blue-ink: #AEDFE8;
+    --ps-blue-soft: #1F304B;
+    --ps-blue-mid: #3B5682;
+    --ps-blue-strong: #89ADE6;
+    --ps-blue-ink: #C0D4F1;
+    --ps-red-soft: #4A2A35;
+    --ps-red-mid: #7C4553;
+    --ps-red-strong: #E68895;
+    --ps-red-ink: #F3B3BE;
+    --ps-amber-soft: #393021;
+    --ps-amber-mid: #765A34;
+    --ps-amber-strong: #E3B35D;
+    --ps-amber-ink: #F0D69A;
+    --ps-teal-soft: #1D3F40;
+    --ps-teal-mid: #376D68;
+    --ps-teal-strong: #84C9BA;
+    --ps-teal-ink: #B4E2D8;
+    --ps-green-soft: #25402F;
+    --ps-green-mid: #426B4A;
+    --ps-green-strong: #91C994;
+    --ps-green-ink: #BCE0BA;
+    --ps-cyan-soft: #1A3C43;
+    --ps-cyan-mid: #316B74;
+    --ps-cyan-strong: #7CCBD4;
+    --ps-cyan-ink: #B2E4E9;
+    --ps-orange-soft: #412B20;
+    --ps-orange-mid: #795238;
+    --ps-orange-strong: #E6A06A;
+    --ps-orange-ink: #F2CAA8;
+    --ps-violet-soft: #2D2742;
+    --ps-violet-mid: #5D4C7A;
+    --ps-violet-strong: #B6A0DA;
+    --ps-violet-ink: #D8C9ED;
+    --ps-rose-soft: #442638;
+    --ps-rose-mid: #7D4964;
+    --ps-rose-strong: #E29CB7;
+    --ps-rose-ink: #F3C8D7;
+    --ps-neutral-paper: #091820;
+    --ps-neutral-panel: #102832;
+    --ps-neutral-rule: #38505A;
+    --ps-neutral-muted: #A3B4B9;
+    --ps-neutral-ink: #EAF1F2;
+  }
+}
+
+[data-theme="primarysignal-dark"] {
+  --ps-brand-blue-soft: #183A48;
+  --ps-brand-blue-mid: #2A5E6D;
+  --ps-brand-blue-strong: #78CDE0;
+  --ps-brand-blue-ink: #AEDFE8;
+  --ps-blue-soft: #1F304B;
+  --ps-blue-mid: #3B5682;
+  --ps-blue-strong: #89ADE6;
+  --ps-blue-ink: #C0D4F1;
+  --ps-red-soft: #4A2A35;
+  --ps-red-mid: #7C4553;
+  --ps-red-strong: #E68895;
+  --ps-red-ink: #F3B3BE;
+  --ps-amber-soft: #393021;
+  --ps-amber-mid: #765A34;
+  --ps-amber-strong: #E3B35D;
+  --ps-amber-ink: #F0D69A;
+  --ps-teal-soft: #1D3F40;
+  --ps-teal-mid: #376D68;
+  --ps-teal-strong: #84C9BA;
+  --ps-teal-ink: #B4E2D8;
+  --ps-green-soft: #25402F;
+  --ps-green-mid: #426B4A;
+  --ps-green-strong: #91C994;
+  --ps-green-ink: #BCE0BA;
+  --ps-cyan-soft: #1A3C43;
+  --ps-cyan-mid: #316B74;
+  --ps-cyan-strong: #7CCBD4;
+  --ps-cyan-ink: #B2E4E9;
+  --ps-orange-soft: #412B20;
+  --ps-orange-mid: #795238;
+  --ps-orange-strong: #E6A06A;
+  --ps-orange-ink: #F2CAA8;
+  --ps-violet-soft: #2D2742;
+  --ps-violet-mid: #5D4C7A;
+  --ps-violet-strong: #B6A0DA;
+  --ps-violet-ink: #D8C9ED;
+  --ps-rose-soft: #442638;
+  --ps-rose-mid: #7D4964;
+  --ps-rose-strong: #E29CB7;
+  --ps-rose-ink: #F3C8D7;
+  --ps-neutral-paper: #091820;
+  --ps-neutral-panel: #102832;
+  --ps-neutral-rule: #38505A;
+  --ps-neutral-muted: #A3B4B9;
+  --ps-neutral-ink: #EAF1F2;
 }
 
 html {
-  background: var(--color-base-100);
-  color: var(--color-base-content);
-  font-family: var(--font-sans);
+  background: var(--ps-neutral-paper);
+  color: var(--ps-neutral-ink);
+  font-family: var(--ps-font-ui);
   text-rendering: optimizeLegibility;
 }
 
 body { min-height: 100vh; }
 
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--ps-link);
   outline-offset: 3px;
 }
 
@@ -111,8 +292,8 @@ body { min-height: 100vh; }
 .ps-reading-measure { max-width: var(--ps-reading-measure); }
 
 .ps-kicker {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-family: var(--ps-font-mono);
+  font-size: var(--ps-text-meta);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;

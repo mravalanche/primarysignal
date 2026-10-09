@@ -81,6 +81,9 @@ Do not commit a visual direction to the public repository before that approval.
 
 ## UI implementation
 
+- Follow [the selected Harbour Blue design system](docs/design-system.md) for
+  colour ramps, semantic aliases, typography, spacing, components, and the
+  original A4c1 Valley mark in light and dark modes.
 - Render the public and administration interfaces with FastAPI and strict,
   autoescaping Jinja templates.
 - Use HTMX for focused progressive enhancement. Links, filters, navigation and
