@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "fetch_attempts",
     "job_attempts",
     "jobs",
+    "publication_events",
     "revision_signals",
     "revision_sources",
     "revision_tags",

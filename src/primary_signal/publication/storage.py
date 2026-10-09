@@ -221,3 +221,38 @@ class SignalEvidence(Base):
     revision_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(Text, primary_key=True)
     source_id: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
+class PublicationEvent(UUIDPrimaryKeyMixin, Base):
+    """Append-only record of a publication decision."""
+
+    __tablename__ = "publication_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["story_id", "revision_id"],
+            ["primary_signal.story_revisions.story_id", "primary_signal.story_revisions.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "to_status IN ('draft','validated','published','suppressed','superseded')",
+            name="valid_to_status",
+        ),
+        CheckConstraint("char_length(actor) BETWEEN 1 AND 160", name="valid_actor"),
+        CheckConstraint("char_length(reason) BETWEEN 1 AND 1024", name="valid_reason"),
+        CheckConstraint(
+            "input_fingerprint IS NULL OR input_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="valid_fingerprint",
+        ),
+        Index("ix_publication_events_revision_time", "revision_id", "occurred_at"),
+    )
+
+    story_id: Mapped[uuid.UUID] = mapped_column()
+    revision_id: Mapped[uuid.UUID] = mapped_column()
+    from_status: Mapped[str | None] = mapped_column(Text)
+    to_status: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    input_fingerprint: Mapped[str | None] = mapped_column(Text)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
