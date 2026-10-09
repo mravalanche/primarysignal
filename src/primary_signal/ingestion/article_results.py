@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, cast
 
-from sqlalchemy import Connection, Table, select, update
+from sqlalchemy import Connection, Table, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from primary_signal.ingestion.models import Article, ArticleUrl, ContentVersion, FetchAttempt
@@ -107,16 +107,16 @@ class ArticleRetrievalRepository:
         return ArticleTarget(article_id, article_url_id, cast(str, row["normalized_url"]))
 
     def _current_target(self, target: ArticleTarget) -> bool:
-        # Read the source before locking the article. Source state is checked
-        # again after fetch, while only the article row requires a write lock.
+        # Lock the source before the article. A shared source lock lets article
+        # fetches proceed together, but serializes them with source disabling.
         source_id = self._connection.execute(
             select(_articles.c.source_id).where(_articles.c.id == target.article_id)
         ).scalar_one_or_none()
         if source_id is None:
             return False
         source_enabled = self._connection.execute(
-            select(_sources.c.enabled).where(_sources.c.id == source_id)
-        ).scalar_one_or_none()
+            select(func.primary_signal.lock_source_enabled(source_id))
+        ).scalar_one()
         if not source_enabled:
             return False
         article = (

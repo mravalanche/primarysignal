@@ -65,6 +65,13 @@ def test_feed_poll_capability_is_non_login_and_column_scoped(
             text("SELECT pg_has_role('processor_test', :role, 'member')"),
             {"role": ROLE},
         ).scalar_one()
+        assert connection.execute(
+            text(
+                "SELECT has_function_privilege(:role, "
+                "'primary_signal.lock_source_enabled(uuid)', 'EXECUTE')"
+            ),
+            {"role": ROLE},
+        ).scalar_one()
 
         allowed = (
             ("feeds", "configured_url", "SELECT"),
@@ -88,6 +95,7 @@ def test_feed_poll_capability_is_non_login_and_column_scoped(
             ("feed_entries", "reported_title", "UPDATE"),
             ("article_urls", "normalized_url", "UPDATE"),
             ("sources", "name", "SELECT"),
+            ("sources", "enabled", "UPDATE"),
             ("jobs", "id", "UPDATE"),
         )
         for table, column, privilege in allowed:
@@ -112,6 +120,7 @@ def test_feed_poll_capability_is_non_login_and_column_scoped(
         ).scalar_one()
 
     for statement in (
+        "SELECT enabled FROM primary_signal.sources FOR SHARE",
         "UPDATE primary_signal.feeds SET enabled=false",
         "UPDATE primary_signal.feed_entries SET reported_title='forbidden'",
         "DELETE FROM primary_signal.article_urls",

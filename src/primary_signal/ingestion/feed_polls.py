@@ -140,9 +140,7 @@ class FeedPollRepository:
         if feed is None:
             return FeedPollSummary(seen=0, discovered=0, retrieval_jobs=0)
         source_enabled = self._connection.execute(
-            select(_sources.c.enabled)
-            .where(_sources.c.id == feed["source_id"])
-            .with_for_update(read=True)
+            select(func.primary_signal.lock_source_enabled(feed["source_id"]))
         ).scalar_one()
         if not feed["enabled"] or not source_enabled or feed["normalized_url"] != expected_url:
             return FeedPollSummary(seen=0, discovered=0, retrieval_jobs=0)
@@ -349,9 +347,7 @@ class FeedPollRepository:
         if not feed["enabled"] or feed["normalized_url"] != expected_url:
             return
         source_enabled = self._connection.execute(
-            select(_sources.c.enabled)
-            .where(_sources.c.id == feed["source_id"])
-            .with_for_update(read=True)
+            select(func.primary_signal.lock_source_enabled(feed["source_id"]))
         ).scalar_one()
         if not source_enabled:
             return
