@@ -19,7 +19,6 @@ from primary_signal.publication.models import PublicSource, PublicStory, StoryTy
 from primary_signal.publication.writer import (
     DraftReference,
     OperatorDecision,
-    PublicationConflict,
     PublicationWriter,
 )
 
@@ -232,7 +231,49 @@ def test_cleanup_clears_only_expired_unpublished_text(monkeypatch: pytest.Monkey
                 maintenance.begin() as connection,
             ):
                 clear_expired_extracted_text(connection, limit=limit)
-        assert run_batch(maintenance, limit=1) == (str(old_id),)
+        # Keep the cleared row inside a transaction that rolls back. Migration
+        # round-trip tests later in the same CI database must still be able to
+        # restore the former NOT NULL constraint.
+        with admin.connect() as clearing:
+            clearing.execute(text("SET LOCAL ROLE retention_cleanup_test"))
+            # Use SQL here because the application wrapper correctly rejects
+            # SET ROLE impersonation (session_user differs from current_user).
+            assert tuple(
+                clearing.execute(
+                    text("SELECT primary_signal.clear_expired_extracted_text(1)")
+                ).scalars()
+            ) == (old_id,)
+            clearing.execute(text("RESET ROLE"))
+            assert clearing.execute(
+                text(
+                    "SELECT extracted_text IS NULL FROM primary_signal.content_versions WHERE id=:id"
+                ),
+                {"id": old_id},
+            ).scalar_one()
+            with pytest.raises(DBAPIError), clearing.begin_nested():
+                clearing.execute(
+                    text(
+                        "SELECT primary_signal.publish_reviewed("
+                        ":story,:revision,:fingerprint,NULL,:actor,:reason)"
+                    ),
+                    {
+                        "story": old_story,
+                        "revision": old_revision,
+                        "fingerprint": old_fingerprint,
+                        "actor": decision.actor,
+                        "reason": decision.reason,
+                    },
+                )
+            clearing.rollback()
+        # Make this fixture ineligible before exercising a separate race.
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE primary_signal.articles SET current_content_version_id=:version "
+                    "WHERE id=:article"
+                ),
+                {"version": old_id, "article": old_article},
+            )
         # A concurrent same-hash observation owns the article lock first. The
         # cleaner skips it without waiting or taking a version lock; making
         # that version current resets its retention clock.
@@ -270,20 +311,12 @@ def test_cleanup_clears_only_expired_unpublished_text(monkeypatch: pytest.Monkey
                 expected_current_revision_id=None,
                 decision=decision,
             )
-        with pytest.raises(PublicationConflict):
-            decider.publish_reviewed(
-                story_id=old_story,
-                revision_id=old_revision,
-                input_fingerprint=old_fingerprint,
-                expected_current_revision_id=None,
-                decision=decision,
-            )
         with maintenance.begin() as connection:
             assert clear_expired_extracted_text(connection, limit=500) == ()
         with admin.connect() as connection:
             assert connection.execute(
                 text(
-                    "SELECT extracted_text IS NULL FROM primary_signal.content_versions WHERE id=:id"
+                    "SELECT extracted_text IS NOT NULL FROM primary_signal.content_versions WHERE id=:id"
                 ),
                 {"id": old_id},
             ).scalar_one()
@@ -307,7 +340,7 @@ def test_cleanup_clears_only_expired_unpublished_text(monkeypatch: pytest.Monkey
             ).scalar_one()
             assert connection.execute(
                 text(
-                    "SELECT current_content_version_id <> :old FROM primary_signal.articles "
+                    "SELECT current_content_version_id = :old FROM primary_signal.articles "
                     "WHERE id=:article"
                 ),
                 {"old": old_id, "article": old_article},
