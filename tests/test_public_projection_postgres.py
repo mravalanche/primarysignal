@@ -2,7 +2,7 @@
 
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -120,7 +120,7 @@ def test_search_sees_published_match_but_not_draft_or_suppressed(
             assert connection.execute(text("SELECT current_user")).scalar_one() == "public_test"
 
             @contextmanager
-            def same_transaction() -> Iterator[Connection]:
+            def same_transaction() -> Generator[Connection]:
                 yield connection
 
             reader = PostgresStoryReader(migrated_engine)
