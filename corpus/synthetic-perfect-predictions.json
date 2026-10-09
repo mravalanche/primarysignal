@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "corpus_id": "synthetic-smoke-v1",
+  "assignments": {"a1": "cluster-1", "a2": "cluster-1", "a3": "cluster-2", "a4": "cluster-2", "b1": "cluster-3", "b2": "cluster-3", "b3": "cluster-4"}
+}
