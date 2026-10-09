@@ -190,23 +190,21 @@ class ArticleRetrievalRepository:
                 word_count=extraction.word_count,
                 fetched_at=completed_at,
             )
-            .on_conflict_do_nothing(
-                index_elements=[
-                    _versions.c.article_id,
-                    _versions.c.normalization_version,
-                    _versions.c.normalized_content_hash,
-                ]
-            )
+            .on_conflict_do_nothing()
             .returning(_versions.c.id)
         ).scalar_one_or_none()
         if inserted_id is None:
             version_id = self._connection.execute(
-                select(_versions.c.id).where(
-                    _versions.c.article_id == target.article_id,
-                    _versions.c.normalization_version == NORMALIZATION_VERSION,
-                    _versions.c.normalized_content_hash == extraction.normalized_content_hash,
+                select(
+                    func.primary_signal.find_text_bearing_content_version(
+                        target.article_id,
+                        NORMALIZATION_VERSION,
+                        extraction.normalized_content_hash,
+                    )
                 )
             ).scalar_one()
+            if version_id is None:
+                raise RuntimeError("content version conflict did not identify a text-bearing row")
         else:
             version_id = inserted_id
         self._connection.execute(

@@ -79,6 +79,14 @@ def test_article_persist_capability_is_non_login_and_column_scoped(
             ),
             {"role": ROLE},
         ).scalar_one()
+        assert connection.execute(
+            text(
+                "SELECT has_function_privilege(:role, "
+                "'primary_signal.find_text_bearing_content_version(uuid,integer,text)', "
+                "'EXECUTE')"
+            ),
+            {"role": ROLE},
+        ).scalar_one()
 
         allowed = (
             ("sources", "enabled", "SELECT"),

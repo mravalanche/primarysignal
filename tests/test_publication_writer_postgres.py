@@ -291,6 +291,123 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
             ).scalar_one()
             == 0
         )
+    lock_story = replace(draft("Locked source notice"), slug=f"synthetic-lock-{uuid.uuid7().hex}")
+    lock_story_id, lock_revision_id, lock_fingerprint = writer.create_draft(lock_story, reference)
+    with admin.connect() as holding:
+        holding.execute(
+            text("SELECT id FROM primary_signal.content_versions WHERE id=:id FOR UPDATE"),
+            {"id": version_id},
+        )
+        with (
+            (decision_engine or writer_engine).begin() as blocked,
+            pytest.raises(DBAPIError) as waiting,
+        ):
+            blocked.execute(text("SET LOCAL lock_timeout = '250ms'"))
+            blocked.execute(
+                text(
+                    "SELECT primary_signal.publish_reviewed("
+                    ":story,:revision,:fingerprint,NULL,:actor,:reason)"
+                ),
+                {
+                    "story": lock_story_id,
+                    "revision": lock_revision_id,
+                    "fingerprint": lock_fingerprint,
+                    "actor": "test-editor",
+                    "reason": "Reviewed synthetic evidence",
+                },
+            )
+        assert getattr(waiting.value.orig, "sqlstate", None) == "55P03"
+        holding.rollback()
+    decision_writer.publish_reviewed(
+        story_id=lock_story_id,
+        revision_id=lock_revision_id,
+        input_fingerprint=lock_fingerprint,
+        expected_current_revision_id=None,
+        decision=decision,
+    )
+    with admin.begin() as connection, pytest.raises(DBAPIError):
+        connection.execute(
+            text("UPDATE primary_signal.content_versions SET extracted_text=NULL WHERE id=:id"),
+            {"id": version_id},
+        )
+    cleared_attempt, cleared_version = uuid.uuid7(), uuid.uuid7()
+    with admin.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO primary_signal.fetch_attempts "
+                "(id,article_id,retrieval_strategy,requested_url,redirect_chain,status,started_at) "
+                "VALUES (:id,:article,'direct','https://public.example/notice',"
+                "'[]'::jsonb,'running',:now)"
+            ),
+            {"id": cleared_attempt, "article": article_id, "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO primary_signal.content_versions "
+                "(id,article_id,origin_fetch_attempt_id,raw_response_hash,"
+                "normalized_content_hash,normalization_version,extracted_text,"
+                "extractor_name,extractor_version,fetched_at) VALUES "
+                "(:id,:article,:attempt,:raw,:normal,1,'Unpublished synthetic evidence',"
+                "'synthetic','1',:now)"
+            ),
+            {
+                "id": cleared_version,
+                "article": article_id,
+                "attempt": cleared_attempt,
+                "raw": "c" * 64,
+                "normal": "d" * 64,
+                "now": now,
+            },
+        )
+        connection.execute(
+            text(
+                "UPDATE primary_signal.fetch_attempts SET status='fetched',"
+                "completed_at=:now,resulting_content_version_id=:version WHERE id=:id"
+            ),
+            {"id": cleared_attempt, "now": now, "version": cleared_version},
+        )
+    cleared_story = replace(
+        draft("Cleared source notice"), slug=f"synthetic-cleared-{uuid.uuid7().hex}"
+    )
+    cleared_story_id, cleared_revision_id, cleared_fingerprint = writer.create_draft(
+        cleared_story, (DraftReference(source, article_id, cleared_version),)
+    )
+    # Keep the synthetic cleared row in a transaction so migration round-trip
+    # tests can still restore the original NOT NULL constraint.
+    with admin.connect() as connection:
+        connection.execute(
+            text("UPDATE primary_signal.content_versions SET extracted_text=NULL WHERE id=:id"),
+            {"id": cleared_version},
+        )
+        with pytest.raises(DBAPIError), connection.begin_nested():
+            connection.execute(
+                text(
+                    "SELECT primary_signal.publish_reviewed("
+                    ":story,:revision,:fingerprint,NULL,:actor,:reason)"
+                ),
+                {
+                    "story": cleared_story_id,
+                    "revision": cleared_revision_id,
+                    "fingerprint": cleared_fingerprint,
+                    "actor": "test-editor",
+                    "reason": "Reviewed synthetic evidence",
+                },
+            )
+        assert (
+            connection.execute(
+                text("SELECT current_revision_id FROM primary_signal.stories WHERE id=:id"),
+                {"id": cleared_story_id},
+            ).scalar_one_or_none()
+            is None
+        )
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM primary_signal.publication_events WHERE story_id=:id"),
+                {"id": cleared_story_id},
+            ).scalar_one()
+            == 1
+        )
+        connection.rollback()
     unlinked = replace(source, url="https://public.example/unlinked")
     unlinked_story = replace(
         draft("Unlinked notice"),

@@ -242,7 +242,14 @@ class ContentVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         CheckConstraint("normalization_version > 0", name="positive_normalization_version"),
         CheckConstraint("word_count IS NULL OR word_count >= 0", name="nonnegative_word_count"),
         UniqueConstraint("article_id", "id"),
-        UniqueConstraint("article_id", "normalization_version", "normalized_content_hash"),
+        Index(
+            "uq_content_versions_text_bearing_hash",
+            "article_id",
+            "normalization_version",
+            "normalized_content_hash",
+            unique=True,
+            postgresql_where=text("extracted_text IS NOT NULL"),
+        ),
         ForeignKeyConstraint(
             ["article_id", "origin_fetch_attempt_id"],
             ["primary_signal.fetch_attempts.article_id", "primary_signal.fetch_attempts.id"],
@@ -270,7 +277,7 @@ class ContentVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     normalized_content_hash: Mapped[str] = mapped_column(Text, nullable=False)
     normalization_version: Mapped[int] = mapped_column(Integer, nullable=False)
     extracted_title: Mapped[str | None] = mapped_column(Text)
-    extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    extracted_text: Mapped[str | None] = mapped_column(Text)
     source_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     extractor_name: Mapped[str] = mapped_column(Text, nullable=False)
     extractor_version: Mapped[str] = mapped_column(Text, nullable=False)
