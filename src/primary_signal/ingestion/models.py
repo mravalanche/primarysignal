@@ -278,3 +278,17 @@ class ContentVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     language: Mapped[str | None] = mapped_column(Text)
     word_count: Mapped[int | None] = mapped_column(Integer)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ContentVersionRetention(Base):
+    """Clock for a version's latest transition out of current status."""
+
+    __tablename__ = "content_version_retention"
+    __table_args__ = (
+        Index("ix_content_version_retention_superseded", "superseded_at", "content_version_id"),
+    )
+
+    content_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("primary_signal.content_versions.id", ondelete="RESTRICT"), primary_key=True
+    )
+    superseded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
