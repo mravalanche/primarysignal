@@ -148,7 +148,7 @@ def main() -> None:
         repository_root / "deploy/postgres/initdb/050_article_inventory_capability_role.sql",
         repository_root / "deploy/postgres/initdb/060_public_projection_roles.sql",
         repository_root / "deploy/postgres/initdb/070_publication_writer_capability_role.sql",
-                repository_root / "deploy/postgres/initdb/080_source_health_capability_role.sql",
+        repository_root / "deploy/postgres/initdb/080_source_health_capability_role.sql",
     )
     engine = create_engine(database_url, hide_parameters=True)
     try:

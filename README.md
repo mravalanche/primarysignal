@@ -188,8 +188,7 @@ Fresh Compose database volumes create two fixed, non-login queue capabilities,
 one feed-scheduling capability, one feed-poll capability, and one capability for
 article persistence, a metadata-only inventory search capability, and public
 projection owner/read capabilities, a publication-writer capability, and a
-source-health read capability. The definitions
-live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
+source-health read capability. The definitions live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
 passwords and role membership remain deployment-owned. PostgreSQL only runs
 these files while creating a new data directory.
 

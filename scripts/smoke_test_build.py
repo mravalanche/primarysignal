@@ -45,6 +45,7 @@ def main() -> int:
         "db/migrations/versions/20261009_07_article_inventory_search.py",
         "db/migrations/versions/20261009_08_publication_projection.py",
         "db/migrations/versions/20261009_09_publication_writer.py",
+        "db/migrations/versions/20261009_10_source_health.py",
     )
     import_check = (
         "from importlib.resources import files; "
@@ -58,7 +59,7 @@ def main() -> int:
         "missing=[path for path in required if not root.joinpath(path).is_file()]; "
         "assert not missing, f'missing packaged UI resources: {missing}'; "
         "assert migration_config_path().is_file(); "
-        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_09'; "
+        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_10'; "
         "assert create_admin_app().title; "
         "assert create_public_app().title"
     )
