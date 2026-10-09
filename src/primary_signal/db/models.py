@@ -20,8 +20,11 @@ from primary_signal.publication.storage import (
     Tag,
 )
 from primary_signal.sources.models import Feed, Source
+from primary_signal.web.admin.models import AdminLoginAttempt, AdminSession
 
 __all__ = [
+    "AdminLoginAttempt",
+    "AdminSession",
     "Article",
     "ArticleUrl",
     "ContentVersion",

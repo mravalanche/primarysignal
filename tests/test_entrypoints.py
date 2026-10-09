@@ -95,6 +95,10 @@ def test_web_entrypoint_runs_selected_surface(monkeypatch: pytest.MonkeyPatch) -
     assert captured["log_config"] is None
     assert captured["app"].state.surface == "public"  # type: ignore[union-attr]
 
+    web.main(["--surface", "admin"])
+    assert captured["proxy_headers"] is False
+    assert captured["app"].state.surface == "admin"  # type: ignore[union-attr]
+
 
 def test_public_production_entrypoint_uses_restricted_database_reader(
     monkeypatch: pytest.MonkeyPatch,
