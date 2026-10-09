@@ -43,6 +43,10 @@
 .ps-desk-reading { border-bottom: 1px solid var(--ps-neutral-rule); padding: 1.5rem 0; }
 .ps-desk-reading h3 { font-size: var(--ps-text-story); line-height: var(--ps-leading-story); margin-bottom: .5rem; }
 .ps-desk-reading p { max-width: var(--ps-reading-measure); font: 400 var(--ps-text-body)/var(--ps-leading-body) var(--ps-font-reading); margin-bottom: .75rem; }
+.ps-desk-current { margin: 1rem 0; padding: 1rem; border-left: 2px solid var(--ps-blue-strong); background: var(--ps-neutral-panel); }
+.ps-desk-current .ps-kicker { font: 700 var(--ps-text-meta)/var(--ps-leading-meta) var(--ps-font-mono); color: var(--ps-neutral-muted); }
+.ps-desk-current h4 { font: 700 1.125rem/1.2 var(--ps-font-editorial); margin: .4rem 0; }
+.ps-desk-current p:last-child { margin-bottom: 0; }
 .ps-desk-sources { list-style: none; margin: .75rem 0 0; padding: 0; }
 .ps-desk-source { border-top: 1px solid var(--ps-neutral-rule); padding: 1rem 0; }
 .ps-desk-source-heading { display: flex; gap: .65rem; align-items: baseline; }

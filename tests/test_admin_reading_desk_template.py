@@ -25,6 +25,8 @@ def _context() -> dict[str, Any]:
         "state_label": "Ready",
         "candidate_number": 2,
         "current_number": 1,
+        "current_headline": "Identity gateway advisory published",
+        "current_synthesis": "The earlier report covered the session fault before affected versions were named.",
     }
     return {
         "url_for": _url_for,
@@ -91,6 +93,8 @@ def test_reading_desk_renders_inventory_evidence_and_gated_actions() -> None:
     assert 'method="get" action="/admin/stories"' in html
     assert "Candidate revision 2" in html
     assert "Current public revision" in html
+    assert "Identity gateway advisory published" in html
+    assert "earlier report covered the session fault" in html
     assert "Gateway session update" in html
     assert "Content version" in html
     assert "https://public.example/advisory-original" in html
@@ -99,6 +103,7 @@ def test_reading_desk_renders_inventory_evidence_and_gated_actions() -> None:
     assert 'type="button" disabled' in html
     assert 'name="reason"' not in html
     assert "raw body" not in html.lower()
+    assert "authentication and transition checks" not in html
 
 
 def test_reading_desk_empty_and_failure_states_are_explicit_and_escaped() -> None:

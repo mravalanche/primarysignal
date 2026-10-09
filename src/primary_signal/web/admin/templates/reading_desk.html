@@ -68,6 +68,7 @@
       <section class="ps-desk-reading" aria-labelledby="desk-changes-title">
         <h3 id="desk-changes-title">Changes from the public version</h3>
         {% if story.changes %}<p>{{ story.changes }}</p>{% else %}<p class="ps-desk-muted">No public revision exists yet.</p>{% endif %}
+        {% if story.current_number %}<div class="ps-desk-current"><p class="ps-kicker">Currently public · revision {{ story.current_number }}</p><h4>{{ story.current_headline }}</h4><p>{{ story.current_synthesis }}</p></div>{% endif %}
         {% if public_url %}<a href="{{ public_url }}" rel="noopener noreferrer">View current public story ↗</a>{% endif %}
       </section>
       <section class="ps-desk-reading" aria-labelledby="desk-sources-title">
@@ -100,7 +101,7 @@
       <section class="ps-desk-rail-section" aria-labelledby="desk-decision-title">
         <h2 id="desk-decision-title">Decision</h2>
         <p>Publishing candidate revision {{ story.candidate_number }} would replace {% if story.current_number %}public revision {{ story.current_number }}{% else %}the unpublished state{% endif %}.</p>
-        <p class="ps-desk-muted">Publication controls open after authentication and transition checks are connected.</p>
+        <p class="ps-desk-muted">Publication actions are unavailable.</p>
         <div class="ps-desk-decision-actions"><button class="btn btn-primary" type="button" disabled>Publish revision {{ story.candidate_number }}</button><button class="btn" type="button" disabled>Suppress…</button></div>
       </section>
     </aside>
