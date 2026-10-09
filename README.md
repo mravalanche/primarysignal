@@ -82,7 +82,7 @@ processor command intentionally refuses to start without a bound feed handler.
 Live polling depends on the isolated retriever and its network controls; the
 processor must not fetch internet URLs directly.
 
-### Feed retrieval foundation
+### Feed and article retrieval foundation
 
 The retriever library validates feed URLs and every DNS answer against a dated
 special-purpose address policy. Its HTTP transport connects to a validated
@@ -99,6 +99,12 @@ DNS callers now have a finite wait and a shared limit on simultaneous system
 lookups. A stuck platform lookup cannot be cancelled and holds its capacity
 slot until it exits. The network egress controls described in ADR 0007 remain
 required before live polling can be enabled.
+
+The local retriever also has a fixed article-fetch endpoint. It applies the
+same address and redirect policy, extracts bounded plain text from HTML inside
+the database-free retriever, and returns content hashes and redirect history.
+Raw HTML is discarded there. Article job handling and content-version
+persistence are the next step; live article retrieval remains disabled.
 
 ### Database capability roles
 
