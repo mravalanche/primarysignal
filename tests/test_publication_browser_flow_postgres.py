@@ -235,6 +235,9 @@ def test_authenticated_publish_and_suppress_reach_public_html(
                 assert story.headline in published.text
                 assert source_url in published.text
                 assert "Synthetic evidence" not in published.text
+                latest = await public_client.get("/")
+                assert latest.status_code == 200
+                assert story.headline in latest.text
 
                 updated_desk = await admin_client.get(path)
                 assert updated_desk.status_code == 200
@@ -247,7 +250,7 @@ def test_authenticated_publish_and_suppress_reach_public_html(
                 )
                 assert suppression.status_code == 303
                 assert (await public_client.get(public_path)).status_code == 404
-                assert slug not in (await public_client.get("/")).text
+                assert story.headline not in (await public_client.get("/")).text
 
         asyncio.run(exercise())
         with admin.connect() as connection:
