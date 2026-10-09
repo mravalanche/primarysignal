@@ -106,3 +106,32 @@
 .ps-desk-event-list li { border-top: 1px solid var(--ps-neutral-rule); display: grid; gap: .15rem; padding: .6rem 0; font-size: var(--ps-text-meta); }
 .ps-desk-event-list time { color: var(--ps-neutral-muted); }
 .ps-desk-event-list li span { overflow-wrap: anywhere; }
+
+/* Publication choices stay in the decision rail; confirmation uses a focused dialog. */
+.ps-desk-decision-choice { margin-top: .75rem; }
+.ps-desk-decision-open, .ps-desk-decision-fallback > summary { display: inline-flex; align-items: center; min-height: 2.75rem; padding: .5rem .75rem; border: 1px solid var(--ps-neutral-rule); border-radius: .2rem; background: var(--ps-neutral-panel); color: var(--ps-neutral-ink); font: 700 var(--ps-text-ui)/var(--ps-leading-ui) var(--ps-font-ui); cursor: pointer; }
+.ps-desk-decision-open:hover, .ps-desk-decision-fallback > summary:hover { border-color: var(--ps-brand-blue-strong); }
+.ps-desk-decision-fallback > summary { list-style: none; }
+.ps-desk-decision-fallback > summary::-webkit-details-marker { display: none; }
+.ps-desk-decision-open.ps-desk-decision-submit-publish, .ps-desk-decision-fallback.is-publish > summary { border-color: var(--ps-brand-blue-mid); background: var(--ps-brand-blue-soft); color: var(--ps-brand-blue-ink); }
+.ps-desk-decision-open-suppress, .ps-desk-decision-fallback.is-suppress > summary { color: var(--ps-red-ink); border-color: var(--ps-red-mid); background: var(--ps-red-soft); }
+.ps-desk-decision-open[hidden], .ps-desk-decision-fallback[hidden] { display: none; }
+.ps-desk-decision-confirm { margin-top: .75rem; padding: 1rem; border: 1px solid var(--ps-neutral-rule); background: var(--ps-neutral-panel); }
+.ps-desk-decision-confirm h3 { font-size: var(--ps-text-story); }
+.ps-desk-decision-confirm > p, .ps-desk-decision-dialog > p { margin: .5rem 0 1rem; font: 400 var(--ps-text-ui)/var(--ps-leading-ui) var(--ps-font-ui); }
+.ps-desk-decision-dialog { width: min(calc(100% - 2rem), 32rem); max-height: calc(100dvh - 2rem); overflow: auto; margin: auto; padding: clamp(1rem, 3vw, 1.5rem); border: 1px solid var(--ps-neutral-rule); border-top: 3px solid var(--ps-brand-blue-strong); border-radius: .25rem; background: var(--ps-neutral-paper); color: var(--ps-neutral-ink); box-shadow: 0 1rem 2.5rem #0005; }
+.ps-desk-decision-dialog.is-suppress { border-top-color: var(--ps-red-strong); }
+.ps-desk-decision-dialog::backdrop { background: #06171dcc; }
+.ps-desk-decision-dialog h2 { font: 700 var(--ps-text-story)/var(--ps-leading-story) var(--ps-font-editorial); }
+.ps-desk-decision-form { display: grid; gap: .5rem; margin-top: 1rem; }
+.ps-desk-decision-form label { font-size: var(--ps-text-ui); font-weight: 700; }
+.ps-desk-decision-form textarea { width: 100%; min-height: 7rem; padding: .6rem .7rem; resize: vertical; border: 1px solid var(--ps-neutral-rule); border-radius: .2rem; background: var(--ps-neutral-paper); color: var(--ps-neutral-ink); }
+.ps-desk-decision-form .ps-desk-muted { margin: 0; font-size: var(--ps-text-meta); }
+.ps-desk-decision-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.ps-desk-decision-actions .btn { min-height: 2.75rem; }
+.ps-desk-decision-submit-publish { border-color: var(--ps-brand-blue-strong); background: var(--ps-brand-blue-strong); color: var(--ps-neutral-paper); }
+.ps-desk-decision-submit-suppress { border-color: var(--ps-red-strong); background: var(--ps-red-strong); color: var(--ps-neutral-paper); }
+.ps-desk-decision-notice { padding: .75rem; border-left: 3px solid var(--ps-brand-blue-strong); background: var(--ps-neutral-panel); font-size: var(--ps-text-ui); }
+.ps-desk-decision-notice.is-stale { border-color: var(--ps-amber-strong); background: var(--ps-amber-soft); }
+.ps-desk-decision-notice.is-error { border-color: var(--ps-red-strong); background: var(--ps-red-soft); }
+.ps-desk-decision-notice.is-success { border-color: var(--ps-green-strong); background: var(--ps-green-soft); }
