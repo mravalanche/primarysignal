@@ -14,7 +14,9 @@ from sqlalchemy import Connection, Engine, text
 from sqlalchemy.engine import RowMapping
 
 from primary_signal.db.engine import assert_database_role
-from primary_signal.publication.models import validate_public_identifier
+from primary_signal.publication.models import Topic, validate_public_identifier
+
+_CANDIDATE_STATES = frozenset({"draft", "validated", "published", "superseded"})
 
 _ROLE_CHECK = text(
     """
@@ -32,6 +34,30 @@ SELECT session_user = current_user
     AND pg_catalog.pg_has_role(current_user, 'primary_signal_cap_editorial_read', 'USAGE')
     AND NOT pg_catalog.has_column_privilege(
         current_user, 'primary_signal.content_versions', 'extracted_text', 'SELECT')
+    AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_class AS relation
+        JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'primary_signal'
+          AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+          AND (
+              pg_catalog.has_table_privilege(current_user, relation.oid,
+                  'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+              OR pg_catalog.has_any_column_privilege(current_user, relation.oid,
+                  'INSERT,UPDATE,REFERENCES')
+          )
+    )
+    AND NOT pg_catalog.has_table_privilege(current_user,
+        'primary_signal.admin_sessions', 'SELECT')
+    AND NOT pg_catalog.has_any_column_privilege(current_user,
+        'primary_signal.admin_sessions', 'SELECT')
+    AND NOT pg_catalog.has_table_privilege(current_user,
+        'primary_signal.admin_login_attempts', 'SELECT')
+    AND NOT pg_catalog.has_any_column_privilege(current_user,
+        'primary_signal.admin_login_attempts', 'SELECT')
+    AND NOT pg_catalog.has_function_privilege(current_user,
+        'primary_signal.publish_reviewed(uuid,uuid,text,uuid,text,text)', 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege(current_user,
+        'primary_signal.suppress_reviewed(uuid,uuid,text,text)', 'EXECUTE')
     AND NOT EXISTS (
         SELECT 1 FROM memberships
         JOIN pg_catalog.pg_roles AS inherited ON inherited.oid = memberships.role_oid
@@ -52,6 +78,8 @@ class EditorialStoryRow:
     candidate_number: int | None
     candidate_status: str | None
     candidate_headline: str | None
+    candidate_topic: str | None
+    candidate_updated_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +150,14 @@ class EditorialStoryDetail:
     events_have_more: bool
 
 
+def assert_editorial_database_role(connection: Connection, expected_role: str) -> None:
+    """Require the exact restricted editorial login on an open connection."""
+
+    assert_database_role(connection, expected_role)
+    if connection.execute(_ROLE_CHECK).scalar_one() is not True:
+        raise RuntimeError("editorial reader role lacks restricted read privileges")
+
+
 class EditorialReader:
     """Read metadata under the dedicated editorial capability only."""
 
@@ -140,9 +176,7 @@ class EditorialReader:
                 connection.execute(
                     text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 )
-                assert_database_role(connection, self._expected_role)
-                if connection.execute(_ROLE_CHECK).scalar_one() is not True:
-                    raise RuntimeError("editorial reader role lacks restricted read privileges")
+                assert_editorial_database_role(connection, self._expected_role)
                 yield connection
 
     @staticmethod
@@ -157,6 +191,8 @@ class EditorialReader:
             candidate_number=row["candidate_number"],
             candidate_status=row["candidate_status"],
             candidate_headline=row["candidate_headline"],
+            candidate_topic=row["candidate_topic"],
+            candidate_updated_at=row["candidate_updated_at"],
         )
 
     def list_stories(
@@ -164,13 +200,47 @@ class EditorialReader:
         *,
         limit: int = 20,
         before: tuple[datetime, uuid.UUID] | None = None,
+        q: str | None = None,
+        state: str | None = None,
+        topic: str | None = None,
+        source: str | None = None,
     ) -> EditorialStoryPage:
-        """List all states by stable creation order, without a review-queue count."""
+        """List candidate states by stable creation order, with bounded filters.
+
+        ``suppressed`` uses the story flag. Other states match the latest candidate
+        revision, even when an older revision is still public. ``source`` matches
+        the configured source key attached to that candidate's article.
+        """
 
         if not 1 <= limit <= 50:
             raise ValueError("limit must be between 1 and 50")
         if before is not None and (before[0].tzinfo is None or before[0].utcoffset() is None):
             raise ValueError("pagination time must include a timezone")
+        if q is not None:
+            q = q.strip()
+            if len(q) > 160:
+                raise ValueError("search query exceeds 160 characters")
+            q = q or None
+        if state == "":
+            state = None
+        if state is not None and state not in _CANDIDATE_STATES | {"suppressed"}:
+            raise ValueError("invalid publication state")
+        if topic == "":
+            topic = None
+        if topic is not None and topic not in {item.value for item in Topic}:
+            raise ValueError("invalid topic")
+        if source == "":
+            source = None
+        if source is not None:
+            validate_public_identifier(source, name="source key", slug=True)
+            if len(source) > 128:
+                raise ValueError("source key exceeds 128 characters")
+        # A backslash escape makes %, _ and backslash literal search characters.
+        search = (
+            "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            if q is not None
+            else None
+        )
         with self._snapshot() as connection:
             rows = (
                 connection.execute(
@@ -180,19 +250,40 @@ class EditorialReader:
                         "candidate.id AS candidate_revision_id, "
                         "candidate.revision_number AS candidate_number, "
                         "candidate.status AS candidate_status, "
-                        "candidate.headline AS candidate_headline "
+                        "candidate.headline AS candidate_headline, "
+                        "candidate.primary_topic AS candidate_topic, "
+                        "candidate.latest_material_update_at AS candidate_updated_at "
                         "FROM primary_signal.stories AS story "
-                        "LEFT JOIN LATERAL (SELECT id, revision_number, status, headline "
+                        "LEFT JOIN LATERAL (SELECT id, revision_number, status, headline, "
+                        "primary_topic, latest_material_update_at "
                         "FROM primary_signal.story_revisions WHERE story_id = story.id "
                         "ORDER BY revision_number DESC LIMIT 1) AS candidate ON true "
                         "WHERE (CAST(:before_time AS timestamptz) IS NULL "
                         "OR (story.created_at, story.id) "
                         "< (CAST(:before_time AS timestamptz), CAST(:before_id AS uuid))) "
+                        "AND (CAST(:search AS text) IS NULL "
+                        "OR story.slug ILIKE :search ESCAPE '\\' "
+                        "OR candidate.headline ILIKE :search ESCAPE '\\') "
+                        "AND (CAST(:state AS text) IS NULL "
+                        "OR (:state = 'suppressed' AND story.suppressed) "
+                        "OR (:state <> 'suppressed' AND NOT story.suppressed "
+                        "AND candidate.status = :state)) "
+                        "AND (CAST(:topic AS text) IS NULL OR candidate.primary_topic = :topic) "
+                        "AND (CAST(:source AS text) IS NULL OR EXISTS ("
+                        "SELECT 1 FROM primary_signal.revision_sources AS rs "
+                        "JOIN primary_signal.articles AS article ON article.id = rs.article_id "
+                        "JOIN primary_signal.sources AS configured "
+                        "ON configured.id = article.source_id "
+                        "WHERE rs.revision_id = candidate.id AND configured.source_key = :source)) "
                         "ORDER BY story.created_at DESC, story.id DESC LIMIT :row_limit"
                     ),
                     {
                         "before_time": before[0] if before else None,
                         "before_id": before[1] if before else None,
+                        "search": search,
+                        "state": state,
+                        "topic": topic,
+                        "source": source,
                         "row_limit": limit + 1,
                     },
                 )
@@ -218,9 +309,12 @@ class EditorialReader:
                         "candidate.id AS candidate_revision_id, "
                         "candidate.revision_number AS candidate_number, "
                         "candidate.status AS candidate_status, "
-                        "candidate.headline AS candidate_headline "
+                        "candidate.headline AS candidate_headline, "
+                        "candidate.primary_topic AS candidate_topic, "
+                        "candidate.latest_material_update_at AS candidate_updated_at "
                         "FROM primary_signal.stories AS story "
-                        "LEFT JOIN LATERAL (SELECT id, revision_number, status, headline "
+                        "LEFT JOIN LATERAL (SELECT id, revision_number, status, headline, "
+                        "primary_topic, latest_material_update_at "
                         "FROM primary_signal.story_revisions WHERE story_id = story.id "
                         "ORDER BY revision_number DESC LIMIT 1) AS candidate ON true "
                         "WHERE story.slug = :slug"

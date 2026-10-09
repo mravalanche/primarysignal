@@ -3,7 +3,7 @@
 import hashlib
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,7 +12,11 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
-from primary_signal.publication.editorial_reader import EditorialReader
+from primary_signal.db.engine import UnexpectedDatabaseRoleError
+from primary_signal.publication.editorial_reader import (
+    EditorialReader,
+    assert_editorial_database_role,
+)
 
 
 @pytest.mark.postgres
@@ -44,10 +48,55 @@ def test_restricted_editorial_reader_sees_provenance_without_article_text(
     monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_URL", admin_url)
     monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", expected_admin)
     command.upgrade(Config(Path(__file__).resolve().parents[1] / "alembic.ini"), "head")
+    with editorial.connect() as connection:
+        assert_editorial_database_role(connection, "editorial_test")
+    with admin.connect() as connection, pytest.raises(UnexpectedDatabaseRoleError):
+        assert_editorial_database_role(connection, "editorial_test")
+    try:
+        with admin.begin() as connection:
+            connection.execute(
+                text("GRANT UPDATE (suppressed) ON primary_signal.stories TO editorial_test")
+            )
+        with editorial.connect() as connection, pytest.raises(RuntimeError, match="restricted"):
+            assert_editorial_database_role(connection, "editorial_test")
+    finally:
+        with admin.begin() as connection:
+            connection.execute(
+                text("REVOKE UPDATE (suppressed) ON primary_signal.stories FROM editorial_test")
+            )
+    try:
+        with admin.begin() as connection:
+            connection.execute(
+                text("GRANT SELECT ON primary_signal.admin_sessions TO editorial_test")
+            )
+        with editorial.connect() as connection, pytest.raises(RuntimeError, match="restricted"):
+            assert_editorial_database_role(connection, "editorial_test")
+    finally:
+        with admin.begin() as connection:
+            connection.execute(
+                text("REVOKE SELECT ON primary_signal.admin_sessions FROM editorial_test")
+            )
+    try:
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "GRANT SELECT (csrf_secret) ON primary_signal.admin_sessions TO editorial_test"
+                )
+            )
+        with editorial.connect() as connection, pytest.raises(RuntimeError, match="restricted"):
+            assert_editorial_database_role(connection, "editorial_test")
+    finally:
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "REVOKE SELECT (csrf_secret) ON primary_signal.admin_sessions FROM editorial_test"
+                )
+            )
 
     source_id, article_id, article_url_id, attempt_id, version_id = (uuid.uuid7() for _ in range(5))
     story_id, revision_id, event_id = (uuid.uuid7() for _ in range(3))
-    slug = f"editorial-reader-{story_id.hex}"
+    marker = uuid.uuid7().hex
+    slug = f"editorial-reader-{marker}-{story_id.hex}"
     link = f"https://public.example/notice/{article_id.hex}"
     now = datetime.now(UTC)
     try:
@@ -173,6 +222,54 @@ def test_restricted_editorial_reader_sees_provenance_without_article_text(
         assert source.current_canonical_url == link
         assert source.configured_source_enabled is True
         assert reader.list_stories(limit=1).items[0].slug == slug
+        assert reader.list_stories(q=marker, state="draft").items[0].candidate_topic == (
+            "security-engineering"
+        )
+        assert (
+            reader.list_stories(q=marker, source=f"editorial-{source_id.hex}").items[0].slug == slug
+        )
+        assert reader.list_stories(q=marker, topic="research-and-tools").items == ()
+        assert reader.list_stories(q="%", source=f"editorial-{source_id.hex}").items == ()
+        assert reader.list_stories(q="_", source=f"editorial-{source_id.hex}").items == ()
+        assert reader.list_stories(q="' OR 1=1 --", source=f"editorial-{source_id.hex}").items == ()
+        with admin.begin() as connection:
+            for offset, suppressed in ((1, False), (2, True)):
+                extra_story, extra_revision = uuid.uuid7(), uuid.uuid7()
+                connection.execute(
+                    text(
+                        "INSERT INTO primary_signal.stories(id,slug,suppressed,created_at) "
+                        "VALUES (:id,:slug,:suppressed,:created_at)"
+                    ),
+                    {
+                        "id": extra_story,
+                        "slug": f"editorial-reader-{marker}-{extra_story.hex}",
+                        "suppressed": suppressed,
+                        "created_at": now + timedelta(minutes=offset),
+                    },
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO primary_signal.story_revisions "
+                        "(id,story_id,revision_number,headline,synthesis,why_it_matters,"
+                        "primary_topic,story_type,first_reported_at,latest_material_update_at) "
+                        "VALUES (:id,:story,1,'Additional synthetic story','Synthetic summary',"
+                        "'Synthetic relevance','research-and-tools','research',:now,:now)"
+                    ),
+                    {"id": extra_revision, "story": extra_story, "now": now},
+                )
+        pages: list[str] = []
+        before = None
+        for _ in range(3):
+            page = reader.list_stories(q=marker, limit=1, before=before)
+            assert len(page.items) == 1
+            pages.append(page.items[0].slug)
+            before = page.next_position
+        assert len(set(pages)) == 3
+        assert before is None
+        assert reader.list_stories(q=marker, state="suppressed").items[0].slug == pages[0]
+        assert len(reader.list_stories(q=marker, state="draft").items) == 2
+        assert len(reader.list_stories(q=marker, topic="research-and-tools").items) == 2
+        assert len(reader.list_stories(q=marker, source=f"editorial-{source_id.hex}").items) == 1
         successor_id = uuid.uuid7()
         with admin.begin() as connection:
             connection.execute(

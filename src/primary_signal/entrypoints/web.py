@@ -13,13 +13,17 @@ from primary_signal.config import RuntimeEnvironment, Settings
 from primary_signal.db import DatabaseSettings, create_database_engine
 from primary_signal.observability import configure_logging, log_exception
 from primary_signal.publication import PostgresStoryReader
+from primary_signal.publication.editorial_reader import (
+    EditorialReader,
+    assert_editorial_database_role,
+)
 from primary_signal.web.admin import create_admin_app
 from primary_signal.web.admin.auth import AdminAuthService
 from primary_signal.web.admin.session_store import (
     PostgresSessionStore,
     assert_admin_session_database_role,
 )
-from primary_signal.web.admin.settings import AdminAuthSettings
+from primary_signal.web.admin.settings import AdminAuthSettings, AdminEditorialDatabaseSettings
 from primary_signal.web.public import create_public_app
 
 LOGGER = logging.getLogger(__name__)
@@ -110,12 +114,24 @@ def admin_session_database_settings() -> DatabaseSettings:
     )
 
 
+def admin_editorial_database_settings() -> AdminEditorialDatabaseSettings:
+    """Load the separate editorial-read login for the private web process."""
+
+    load_settings = cast(
+        Callable[[], AdminEditorialDatabaseSettings], AdminEditorialDatabaseSettings
+    )
+    return load_settings().model_copy(
+        update={"application_name": "primary_signal_admin_editorial", "max_overflow": 0}
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run exactly one web surface."""
 
     args = _parser().parse_args(argv)
     configure_logging(level="INFO")
     engine: Engine | None = None
+    editorial_engine: Engine | None = None
     exit_code = 0
     try:
         settings = Settings()
@@ -141,10 +157,24 @@ def main(argv: Sequence[str] | None = None) -> None:
                 with engine.connect() as connection:
                     assert_admin_session_database_role(connection)
                 load_auth_settings = cast(Callable[[], AdminAuthSettings], AdminAuthSettings)
+                admin_settings = load_auth_settings()
                 admin_auth = AdminAuthService(
-                    load_auth_settings().auth_config(), PostgresSessionStore(engine)
+                    admin_settings.auth_config(), PostgresSessionStore(engine)
                 )
-                app = create_admin_app(settings, auth_service=admin_auth)
+                editorial_settings = admin_editorial_database_settings()
+                editorial_engine = create_database_engine(
+                    editorial_settings, search_path="pg_catalog"
+                )
+                with editorial_engine.connect() as connection:
+                    assert_editorial_database_role(connection, editorial_settings.expected_role)
+                app = create_admin_app(
+                    settings,
+                    auth_service=admin_auth,
+                    editorial_reader=EditorialReader(
+                        editorial_engine, expected_role=editorial_settings.expected_role
+                    ),
+                    public_origin=admin_settings.public_origin,
+                )
             else:
                 app = create_admin_app(settings)
         # Do not let proxy headers rewrite client or scheme before the admin
@@ -165,6 +195,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 engine.dispose()
             except Exception as exception:
                 log_exception(LOGGER, "web.dispose.failed", exception, result="fatal")
+                exit_code = 1
+        if editorial_engine is not None:
+            try:
+                editorial_engine.dispose()
+            except Exception as exception:
+                log_exception(LOGGER, "web.editorial.dispose.failed", exception, result="fatal")
                 exit_code = 1
     if exit_code:
         raise SystemExit(exit_code)

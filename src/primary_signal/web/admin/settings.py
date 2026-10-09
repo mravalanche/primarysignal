@@ -3,7 +3,19 @@
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from primary_signal.db import DatabaseSettings
 from primary_signal.web.admin.auth import AdminAuthConfig
+
+
+class AdminEditorialDatabaseSettings(DatabaseSettings):
+    """Separate restricted login for private editorial metadata reads."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="PRIMARY_SIGNAL_ADMIN_EDITORIAL_DATABASE_",
+        case_sensitive=False,
+        extra="ignore",
+        frozen=True,
+    )
 
 
 class AdminAuthSettings(BaseSettings):
@@ -14,6 +26,7 @@ class AdminAuthSettings(BaseSettings):
     )
 
     origin: str
+    public_origin: str | None = None
     password_phc: SecretStr
     session_key_hex: SecretStr
     idle_seconds: int = Field(default=1800, ge=60, le=86400)

@@ -16,6 +16,14 @@ def test_reader_rejects_unbounded_inputs_before_database_access() -> None:
         reader.list_stories(limit=51)
     with pytest.raises(ValueError, match="timezone"):
         reader.list_stories(before=(datetime(2026, 10, 9), uuid.uuid7()))
+    with pytest.raises(ValueError, match="search query"):
+        reader.list_stories(q="x" * 161)
+    with pytest.raises(ValueError, match="publication state"):
+        reader.list_stories(state="ready")
+    with pytest.raises(ValueError, match="topic"):
+        reader.list_stories(topic="made-up")
+    with pytest.raises(ValueError, match="source key"):
+        reader.list_stories(source="../private")
     with pytest.raises(ValueError, match="story slug"):
         reader.get_story("../private")
     engine.connect.assert_not_called()
