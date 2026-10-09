@@ -1,6 +1,6 @@
 # ADR 0005: Public projection and separate database roles
 
-Status: Proposed
+Status: Accepted (current-story projection implemented; digest projection pending)
 
 ## Context
 
@@ -40,6 +40,28 @@ admin routes.
 The projection is a security boundary as well as an API. Changes to its fields
 or eligibility rules require review and tests showing that unpublished and
 internal data remain inaccessible.
+
+## Current implementation
+
+The first projection uses security-barrier views in `primary_signal_public`.
+Every view follows `stories.current_revision_id` and requires that revision
+to be published and the story not suppressed. A separate non-login view owner
+has column-specific SELECT grants on the publication tables. The public reader
+capability has SELECT only on the six projection views and USAGE only on the
+projection schema. Its login must not inherit or be able to assume the owner
+or migration role. The publication writer will validate public source URLs
+with `PublicSource` before promoting a revision; the database checks URL
+shape but does not implement the full host/IP policy. A source without an
+ingested content version requires an explicit, auditable editorial exception
+in the future writer.
+
+The role bootstrap creates the two non-login roles. A deployment administrator
+must grant the migration login membership in `primary_signal_public_owner`
+before this migration runs so it can assign view and schema ownership. The
+public login receives only `primary_signal_cap_public_read`; neither login
+credentials nor membership grants belong in this repository. PostgreSQL's
+default `public` schema must not grant CREATE to that login. Any future
+projection function needs an explicit EXECUTE revoke from PUBLIC.
 
 ## Consequences
 

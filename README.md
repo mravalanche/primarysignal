@@ -156,7 +156,8 @@ search endpoint. The public and administration sites do not expose this reader.
 
 Fresh Compose database volumes create two fixed, non-login queue capabilities,
 one feed-scheduling capability, one feed-poll capability, and one capability for
-article persistence, plus a metadata-only inventory search capability. The definitions
+article persistence, a metadata-only inventory search capability, and public
+projection owner/read capabilities. The definitions
 live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
 passwords and role membership remain deployment-owned. PostgreSQL only runs
 these files while creating a new data directory.
@@ -171,9 +172,10 @@ docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POST
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/040_article_persist_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/050_article_inventory_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/060_public_projection_roles.sql'
 ```
 
-Run all five commands before applying migrations. The migrations grant access to
+Run all six commands before applying migrations. The migrations grant access to
 the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any

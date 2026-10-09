@@ -9,6 +9,15 @@ from primary_signal.ingestion.models import (
     FetchAttempt,
 )
 from primary_signal.jobs.models import Job, JobAttempt
+from primary_signal.publication.storage import (
+    RevisionSignal,
+    RevisionSource,
+    RevisionTag,
+    SignalEvidence,
+    Story,
+    StoryRevision,
+    Tag,
+)
 from primary_signal.sources.models import Feed, Source
 
 __all__ = [
@@ -21,5 +30,12 @@ __all__ = [
     "FetchAttempt",
     "Job",
     "JobAttempt",
+    "RevisionSignal",
+    "RevisionSource",
+    "RevisionTag",
+    "SignalEvidence",
     "Source",
+    "Story",
+    "StoryRevision",
+    "Tag",
 ]
