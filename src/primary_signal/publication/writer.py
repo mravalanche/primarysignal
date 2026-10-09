@@ -1,8 +1,11 @@
 """Explicit, operator-reviewed publication transactions.
 
-This is a narrow manual path. Automated publication must supply its own verified
-contract gates before it may call a separate service; a caller assertion is not
-an automatic publication gate.
+This is a narrow manual path for a trusted backend process only. PostgreSQL
+does not force direct table writes through this API, so it does not enforce
+event audit, fetched-version eligibility, or authenticated operator identity.
+The caller must bind ``OperatorDecision.actor`` to an authenticated operator;
+this module has no authentication boundary. It must not be used by the public
+or admin web runtime or by unattended automatic publication.
 """
 
 import hashlib
@@ -19,6 +22,35 @@ from primary_signal.publication.models import PublicSource, PublicStory
 
 class PublicationConflict(ValueError):
     """The draft or current pointer changed before the decision completed."""
+
+
+_WRITER_ROLE_CHECK = text(
+    """
+WITH RECURSIVE memberships(role_oid) AS (
+    SELECT member_of.roleid FROM pg_catalog.pg_auth_members AS member_of
+    WHERE member_of.member = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)
+    UNION
+    SELECT member_of.roleid FROM pg_catalog.pg_auth_members AS member_of
+    JOIN memberships ON member_of.member = memberships.role_oid
+)
+SELECT session_user = current_user
+    AND COALESCE((SELECT NOT (role.rolsuper OR role.rolcreaterole OR role.rolcreatedb
+                             OR role.rolbypassrls OR role.rolreplication)
+                  FROM pg_catalog.pg_roles AS role WHERE role.rolname = current_user), false)
+    AND pg_catalog.pg_has_role(current_user, 'primary_signal_cap_publication_write', 'USAGE')
+    AND NOT EXISTS (
+        SELECT 1 FROM memberships
+        JOIN pg_catalog.pg_roles AS inherited ON inherited.oid = memberships.role_oid
+        WHERE inherited.rolname <> 'primary_signal_cap_publication_write'
+    ) AS is_restricted_publication_writer
+"""
+)
+
+
+def assert_publication_writer_role(connection: Connection) -> None:
+    """Reject a writer login with missing or additional inherited capabilities."""
+    if connection.execute(_WRITER_ROLE_CHECK).scalar_one() is not True:
+        raise RuntimeError("publication writer role lacks the required restricted privileges")
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +117,10 @@ class PublicationWriter:
         self.engine = engine
         self.expected_role = expected_role
 
+    def _check_connection(self, connection: Connection) -> None:
+        assert_database_role(connection, self.expected_role)
+        assert_publication_writer_role(connection)
+
     def create_draft(
         self, story: PublicStory, references: tuple[DraftReference, ...]
     ) -> tuple[uuid.UUID, uuid.UUID, str]:
@@ -101,7 +137,7 @@ class PublicationWriter:
         fingerprint = fingerprint_draft(story, references)
         revision_id = uuid.uuid7()
         with self.engine.begin() as connection:
-            assert_database_role(connection, self.expected_role)
+            self._check_connection(connection)
             row = (
                 connection.execute(
                     text(
@@ -210,7 +246,7 @@ class PublicationWriter:
         ):
             raise ValueError("input fingerprint is invalid")
         with self.engine.begin() as connection:
-            assert_database_role(connection, self.expected_role)
+            self._check_connection(connection)
             story = (
                 connection.execute(
                     text(
@@ -336,7 +372,7 @@ class PublicationWriter:
     def suppress(self, *, story_id: uuid.UUID, decision: OperatorDecision) -> None:
         """Hide a current story and retain the decision in append-only history."""
         with self.engine.begin() as connection:
-            assert_database_role(connection, self.expected_role)
+            self._check_connection(connection)
             row = (
                 connection.execute(
                     text(

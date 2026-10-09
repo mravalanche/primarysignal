@@ -8,17 +8,24 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from scripts.bootstrap_test_database_roles import PUBLICATION_PASSWORD, PUBLICATION_ROLE
+from scripts.bootstrap_test_database_roles import (
+    PUBLIC_PASSWORD,
+    PUBLIC_ROLE,
+    PUBLICATION_PASSWORD,
+    PUBLICATION_ROLE,
+)
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 
+from primary_signal.entrypoints.web import assert_public_database_role
 from primary_signal.publication.models import PublicSource, PublicStory, StoryType, Topic
 from primary_signal.publication.writer import (
     DraftReference,
     OperatorDecision,
     PublicationConflict,
     PublicationWriter,
+    assert_publication_writer_role,
 )
 
 
@@ -39,6 +46,16 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
     command.upgrade(Config(Path(__file__).resolve().parents[1] / "alembic.ini"), "head")
     role_url = make_url(url).set(username=PUBLICATION_ROLE, password=PUBLICATION_PASSWORD)
     writer_engine = create_engine(role_url, hide_parameters=True)
+    public_url = make_url(url).set(username=PUBLIC_ROLE, password=PUBLIC_PASSWORD)
+    public_engine = create_engine(public_url, hide_parameters=True)
+    with writer_engine.connect() as connection:
+        assert_publication_writer_role(connection)
+        with pytest.raises(RuntimeError, match="public database role"):
+            assert_public_database_role(connection)
+    with public_engine.connect() as connection:
+        assert_public_database_role(connection)
+        with pytest.raises(RuntimeError, match="publication writer role"):
+            assert_publication_writer_role(connection)
     writer = PublicationWriter(writer_engine, expected_role=PUBLICATION_ROLE)
     now = datetime.now(UTC)
     source_id, article_id, attempt_id, version_id = (uuid.uuid7() for _ in range(4))
@@ -176,4 +193,5 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
             == 0
         )
     writer_engine.dispose()
+    public_engine.dispose()
     admin.dispose()

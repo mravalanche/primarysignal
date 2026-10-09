@@ -49,6 +49,9 @@ CREATE TABLE primary_signal.publication_events (
         "articles": "id, source_id",
         "sources": "id, enabled",
         "publication_events": "revision_id, to_status, input_fingerprint, occurred_at",
+        # guard_story_revision() is SECURITY INVOKER and reads these exact
+        # metadata columns while checking every published signal's evidence.
+        # The writer receives no source URL or article-body access here.
         "revision_signals": "revision_id, kind",
         "signal_evidence": "revision_id, kind",
     }.items():

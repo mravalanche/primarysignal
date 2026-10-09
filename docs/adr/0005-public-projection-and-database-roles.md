@@ -55,13 +55,25 @@ shape but does not implement the full host/IP policy. A source without an
 ingested content version requires an explicit, auditable editorial exception
 in the future writer.
 
-The role bootstrap creates the two non-login roles. A deployment administrator
+The public-projection bootstrap creates its two non-login roles. A deployment administrator
 must grant the migration login membership in `primary_signal_public_owner`
 before this migration runs so it can assign view and schema ownership. The
 public login receives only `primary_signal_cap_public_read`; neither login
 credentials nor membership grants belong in this repository. PostgreSQL's
 default `public` schema must not grant CREATE to that login. Any future
 projection function needs an explicit EXECUTE revoke from PUBLIC.
+
+The manual publication writer is a trusted backend-only foundation. Its
+dedicated login must inherit only `primary_signal_cap_publication_write`; it
+must not be a migration login or be shared with either web runtime. The
+public web startup check rejects publication capabilities, and the current
+admin web runtime has no database connection. The writer API records decisions
+with a named actor and source-version fingerprint, but the database's direct
+table grants do not force writes through that API. They do not enforce event
+audit, fetched-version eligibility, or authenticated operator identity against
+a writer login issuing direct SQL. A future authenticated service must bind
+the actor to its session. No unattended automatic publication may use this
+manual path; contract gates need an independently enforced implementation.
 
 ## Consequences
 

@@ -168,7 +168,7 @@ search endpoint. The public and administration sites do not expose this reader.
 Fresh Compose database volumes create two fixed, non-login queue capabilities,
 one feed-scheduling capability, one feed-poll capability, and one capability for
 article persistence, a metadata-only inventory search capability, and public
-projection owner/read capabilities. The definitions
+projection owner/read capabilities, plus a publication-writer capability. The definitions
 live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
 passwords and role membership remain deployment-owned. PostgreSQL only runs
 these files while creating a new data directory.
@@ -184,15 +184,26 @@ docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POST
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/040_article_persist_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/050_article_inventory_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/060_public_projection_roles.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/070_publication_writer_capability_role.sql'
 ```
 
-Run all six commands before applying migrations. The migrations grant access to
+Run all seven commands before applying migrations. The migrations grant access to
 the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any
 memberships. Apply them before granting capabilities to local runtime logins or
 running the grant migrations. A later rerun intentionally fails once grants or
 memberships exist.
+
+The publication writer is a manual, trusted-backend foundation. A deployment
+administrator must create a separate writer login and grant it only
+`primary_signal_cap_publication_write`. Do not use a migration or admin login
+as the writer, and do not attach this capability to either web runtime. The
+writer API records operator decisions, but direct SQL using that capability
+can bypass its audit and eligibility checks. The API has no authentication;
+future authenticated service code must bind the recorded actor to its session.
+Automatic publication requires the product contract's remaining evidence,
+safety, membership, and hold gates before it can be enabled.
 
 ## Security
 

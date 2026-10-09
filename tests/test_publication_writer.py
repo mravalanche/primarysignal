@@ -2,11 +2,47 @@
 
 import uuid
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy import Connection
 
+from primary_signal.config import RuntimeEnvironment, Settings
+from primary_signal.entrypoints import web
 from primary_signal.publication.models import PublicSource, PublicStory, StoryType, Topic
-from primary_signal.publication.writer import DraftReference, OperatorDecision, PublicationWriter
+from primary_signal.publication.writer import (
+    DraftReference,
+    OperatorDecision,
+    PublicationWriter,
+    assert_publication_writer_role,
+)
+
+
+def test_writer_rejects_a_login_without_its_restricted_capability() -> None:
+    connection = MagicMock(spec=Connection)
+    connection.execute.return_value.scalar_one.return_value = False
+    with pytest.raises(RuntimeError, match="restricted privileges"):
+        assert_publication_writer_role(connection)
+
+
+def test_admin_web_runtime_does_not_open_writer_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    database_engine = MagicMock()
+    admin_app = MagicMock()
+    run_server = MagicMock()
+
+    def fake_admin_app(settings: Settings) -> MagicMock:
+        del settings
+        return admin_app
+
+    monkeypatch.setattr(web, "Settings", lambda: Settings(environment=RuntimeEnvironment.TEST))
+    monkeypatch.setattr(web, "create_database_engine", database_engine)
+    monkeypatch.setattr(web, "create_admin_app", fake_admin_app)
+    monkeypatch.setattr(web.uvicorn, "run", run_server)
+
+    web.main(["--surface", "admin"])
+
+    database_engine.assert_not_called()
+    run_server.assert_called_once()
 
 
 def story() -> PublicStory:
