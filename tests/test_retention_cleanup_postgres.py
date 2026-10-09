@@ -249,6 +249,27 @@ def test_cleanup_clears_only_expired_unpublished_text(monkeypatch: pytest.Monkey
                 ),
                 {"version": race_id, "article": race_article},
             )
+        with admin.begin() as connection:
+            publishing_article, publishing_id = _insert_candidate(connection, age_days=91)
+        publishing_story, publishing_revision, publishing_fingerprint = _create_draft(
+            writer, publishing_article, publishing_id
+        )
+        # A publication's version share lock makes cleanup skip that row. The
+        # publish transaction can then commit, and the historical reference
+        # still protects the text after the lock is released.
+        with admin.begin() as holding:
+            holding.execute(
+                text("SELECT id FROM primary_signal.content_versions WHERE id=:id FOR SHARE"),
+                {"id": publishing_id},
+            )
+            assert run_batch(maintenance, limit=500) == ()
+            decider.publish_reviewed(
+                story_id=publishing_story,
+                revision_id=publishing_revision,
+                input_fingerprint=publishing_fingerprint,
+                expected_current_revision_id=None,
+                decision=decision,
+            )
         with pytest.raises(PublicationConflict):
             decider.publish_reviewed(
                 story_id=old_story,
@@ -277,6 +298,12 @@ def test_cleanup_clears_only_expired_unpublished_text(monkeypatch: pytest.Monkey
                     "SELECT extracted_text IS NOT NULL FROM primary_signal.content_versions WHERE id=:id"
                 ),
                 {"id": protected_id},
+            ).scalar_one()
+            assert connection.execute(
+                text(
+                    "SELECT extracted_text IS NOT NULL FROM primary_signal.content_versions WHERE id=:id"
+                ),
+                {"id": publishing_id},
             ).scalar_one()
             assert connection.execute(
                 text(
