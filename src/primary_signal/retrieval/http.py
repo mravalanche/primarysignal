@@ -1,5 +1,6 @@
 """Bounded, address-pinned HTTP retrieval for feed documents."""
 
+import hashlib
 import ipaddress
 import socket
 import ssl
@@ -13,7 +14,13 @@ from urllib.parse import urljoin, urlsplit
 
 from primary_signal.ingestion.feed_handler import FeedFetchError
 from primary_signal.ingestion.feed_polls import FeedFetchResult
+from primary_signal.retrieval.article import (
+    MAX_ARTICLE_URL_CHARS,
+    ArticleFetchResult,
+    RedirectHop,
+)
 from primary_signal.retrieval.dns import DEFAULT_RESOLVER
+from primary_signal.retrieval.extract import InvalidArticle, extract_article_html
 from primary_signal.retrieval.policy import PolicyError, ValidatedTarget, validate_target
 
 MAX_REDIRECTS = 5
@@ -239,6 +246,8 @@ def _request(
     last_modified: str | None,
     deadline: float,
     connector: Connector,
+    accept: str = "application/rss+xml, application/atom+xml, application/xml, text/xml",
+    user_agent: str = "PrimarySignalFeedPoll/1",
 ) -> _Response:
     address = target.addresses[0]
     raw = connector(target, address, _remaining(deadline))
@@ -257,8 +266,8 @@ def _request(
             request_lines = [
                 f"GET {target.path_and_query} HTTP/1.1",
                 f"Host: {host}",
-                "User-Agent: PrimarySignalFeedPoll/1",
-                "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml",
+                f"User-Agent: {user_agent}",
+                f"Accept: {accept}",
                 "Accept-Encoding: gzip, deflate",
                 "Connection: close",
             ]
@@ -351,6 +360,111 @@ def fetch_feed(
                     etag=_safe_validator(response.headers.get("etag")),
                     last_modified=_safe_validator(response.headers.get("last-modified")),
                 )
+            except ValueError as error:
+                raise FeedFetchError("invalid_response") from error
+    except PolicyError as error:
+        raise FeedFetchError(error.code) from error
+    except (OSError, ssl.SSLError) as error:
+        raise FeedFetchError("fetch_network") from error
+    raise FeedFetchError("invalid_redirect")
+
+
+def fetch_article(
+    url: str,
+    *,
+    etag: str | None = None,
+    last_modified: str | None = None,
+    resolver: Resolver = _resolve,
+    connector: Connector = _connect,
+) -> ArticleFetchResult:
+    """Fetch and extract one article inside the address-pinned retriever."""
+
+    if len(url) > MAX_ARTICLE_URL_CHARS:
+        raise FeedFetchError("url")
+    deadline = time.monotonic() + REQUEST_TIMEOUT_SECONDS
+    current = url
+    validators = (_safe_validator(etag), _safe_validator(last_modified))
+    visited: set[str] = set()
+    redirects: list[RedirectHop] = []
+    pending_redirect: tuple[int, str] | None = None
+
+    def bounded_resolve(hostname: str, port: int) -> Sequence[str]:
+        return DEFAULT_RESOLVER.resolve(hostname, port, timeout_seconds=_remaining(deadline))
+
+    active_resolver: Resolver = bounded_resolve if resolver is _resolve else resolver
+    try:
+        for redirect_count in range(MAX_REDIRECTS + 1):
+            if current in visited:
+                raise FeedFetchError("redirect_loop")
+            visited.add(current)
+            target = validate_target(current, active_resolver)
+            _remaining(deadline)
+            if pending_redirect is not None:
+                try:
+                    redirects.append(RedirectHop(*pending_redirect))
+                except ValueError as error:
+                    raise FeedFetchError("invalid_redirect") from error
+                pending_redirect = None
+            response = _request(
+                target,
+                etag=validators[0],
+                last_modified=validators[1],
+                deadline=deadline,
+                connector=connector,
+                accept="text/html, application/xhtml+xml",
+                user_agent="PrimarySignalArticleFetch/1",
+            )
+            _remaining(deadline)
+            if response.status in (301, 302, 303, 307, 308):
+                location = response.headers.get("location")
+                if not location or redirect_count == MAX_REDIRECTS:
+                    raise FeedFetchError("invalid_redirect")
+                try:
+                    following = urljoin(current, location)
+                    following_parts = urlsplit(following)
+                    current_parts = urlsplit(current)
+                except ValueError as error:
+                    raise FeedFetchError("invalid_redirect") from error
+                if len(following) > MAX_ARTICLE_URL_CHARS:
+                    raise FeedFetchError("invalid_redirect")
+                if target.scheme == "https" and following_parts.scheme.lower() != "https":
+                    raise FeedFetchError("https_downgrade")
+                if (
+                    following_parts.scheme.lower() != target.scheme
+                    or following_parts.netloc.lower() != current_parts.netloc.lower()
+                ):
+                    validators = (None, None)
+                current = following
+                pending_redirect = (response.status, following)
+                continue
+            if response.status not in (200, 304):
+                raise FeedFetchError("http_status")
+            content_type = response.headers.get("content-type")
+            if content_type is not None and len(content_type) > 256:
+                raise FeedFetchError("invalid_response_headers")
+            try:
+                extraction = (
+                    extract_article_html(response.body, content_type)
+                    if response.status == 200
+                    else None
+                )
+                return ArticleFetchResult(
+                    status=response.status,
+                    final_url=current,
+                    redirect_chain=tuple(redirects),
+                    content_type=content_type,
+                    decoded_byte_count=len(response.body),
+                    raw_response_hash=(
+                        hashlib.sha256(response.body).hexdigest()
+                        if response.status == 200
+                        else None
+                    ),
+                    extraction=extraction,
+                    etag=_safe_validator(response.headers.get("etag")),
+                    last_modified=_safe_validator(response.headers.get("last-modified")),
+                )
+            except InvalidArticle as error:
+                raise FeedFetchError(error.code) from error
             except ValueError as error:
                 raise FeedFetchError("invalid_response") from error
     except PolicyError as error:

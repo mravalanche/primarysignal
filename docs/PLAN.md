@@ -427,11 +427,12 @@ Exit: all release gates pass and deployment is recoverable.
 ## 17. Immediate next step
 
 The database schema, durable queue, feed scheduler, and controlled synthetic
-scheduler-to-entry path are in place. The retriever API and processor client
-remain local and fail closed for production. The next M1 slice is article
-retrieval, extraction, content versioning, and a searchable inventory. The
-deployment egress controls and service readiness policy must be verified before
-live polling is enabled. Present editorial UI mock-ups for approval before
+scheduler-to-entry path are in place. Local article retrieval and bounded
+plain-text extraction now use the isolated retriever. The retriever API and
+processor client remain local and fail closed for production. The next M1 slice
+is article job handling, immutable content-version persistence, and a searchable
+inventory. Verify deployment egress controls and service readiness before live
+polling is enabled. Present editorial UI mock-ups for approval before
 expanding the M2 public or administration pages.
 
 The M0 reference corpus, signal evidence matrix, and open operator decisions
