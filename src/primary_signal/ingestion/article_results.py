@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, cast
 
-from sqlalchemy import Connection, Table, select, update
+from sqlalchemy import Connection, Table, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from primary_signal.ingestion.models import Article, ArticleUrl, ContentVersion, FetchAttempt
@@ -115,8 +115,8 @@ class ArticleRetrievalRepository:
         if source_id is None:
             return False
         source_enabled = self._connection.execute(
-            select(_sources.c.enabled).where(_sources.c.id == source_id).with_for_update(read=True)
-        ).scalar_one_or_none()
+            select(func.primary_signal.lock_source_enabled(source_id))
+        ).scalar_one()
         if not source_enabled:
             return False
         article = (

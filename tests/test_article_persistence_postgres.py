@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, func, insert, select, text, update
+from sqlalchemy import create_engine, func, insert, select, text, update
 from sqlalchemy.exc import OperationalError
 
 from primary_signal.identity.urls import identify_url
@@ -20,7 +20,6 @@ from primary_signal.ingestion.article_results import (
 from primary_signal.ingestion.models import Article, ArticleUrl, ContentVersion, FetchAttempt
 from primary_signal.jobs.catalogue import build_default_catalogue
 from primary_signal.jobs.contracts import RetrieveArticleV1
-from primary_signal.jobs.models import Job
 from primary_signal.jobs.repository import JobRepository
 from primary_signal.retrieval.article import ArticleFetchResult
 from primary_signal.retrieval.extract import extract_article_html
@@ -186,14 +185,20 @@ def test_source_disable_and_article_persistence_serialize(
 ) -> None:
     database_url = os.environ.get("PRIMARY_SIGNAL_TEST_DATABASE_URL")
     expected_role = os.environ.get("PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE")
-    if not database_url or not expected_role:
-        pytest.skip("set disposable PostgreSQL test database settings")
+    processor_url = os.environ.get("PRIMARY_SIGNAL_TEST_PROCESSOR_DATABASE_URL")
+    if not database_url or not expected_role or not processor_url:
+        if os.environ.get("PRIMARY_SIGNAL_REQUIRE_RESTRICTED_ROLE_TESTS") == "true":
+            pytest.fail("CI requires the admin and restricted processor DSNs")
+        pytest.skip("set disposable PostgreSQL admin and processor test settings")
     engine = create_engine(database_url, hide_parameters=True)
+    processor = create_engine(processor_url, hide_parameters=True)
     with engine.connect() as connection:
         assert str(connection.execute(text("SELECT current_database()")).scalar_one()).endswith(
             "_test"
         )
         assert connection.execute(text("SELECT current_user")).scalar_one() == expected_role
+    with processor.connect() as connection:
+        assert connection.execute(text("SELECT current_user")).scalar_one() == "processor_test"
     monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_URL", database_url)
     monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", expected_role)
     command.upgrade(Config(Path(__file__).resolve().parents[1] / "alembic.ini"), "head")
@@ -214,7 +219,6 @@ def test_source_disable_and_article_persistence_serialize(
         etag=None,
         last_modified=None,
     )
-    job_id: uuid.UUID | None = None
     try:
         with engine.begin() as connection:
             connection.execute(
@@ -254,9 +258,8 @@ def test_source_disable_and_article_persistence_serialize(
                 payload_version=1,
                 payload=RetrieveArticleV1(article_id=article_id, article_url_id=url_id),
             )
-            job_id = job.job_id
 
-        with engine.connect() as disabling, engine.connect() as persisting:
+        with engine.connect() as disabling, processor.connect() as persisting:
             # Disable wins: the fetch waits, then sees disabled and writes nothing.
             disabling.execute(update(Source).where(Source.id == source_id).values(enabled=False))
             persisting.execute(text("SET LOCAL lock_timeout = '300ms'"))
@@ -265,6 +268,16 @@ def test_source_disable_and_article_persistence_serialize(
                     target=target,
                     job_id=job.job_id,
                     result=result,
+                    started_at=now,
+                    completed_at=now + timedelta(seconds=1),
+                )
+            persisting.rollback()
+            persisting.execute(text("SET LOCAL lock_timeout = '300ms'"))
+            with pytest.raises(OperationalError, match="lock timeout"):
+                ArticleRetrievalRepository(persisting).record_failure(
+                    target=target,
+                    job_id=job.job_id,
+                    error_code="dependency_timeout",
                     started_at=now,
                     completed_at=now + timedelta(seconds=1),
                 )
@@ -286,7 +299,7 @@ def test_source_disable_and_article_persistence_serialize(
             )
             assert skipped == ArticleRecordSummary("skipped", False, None)
             assert (
-                persisting.execute(
+                disabling.execute(
                     select(func.count())
                     .select_from(FetchAttempt)
                     .where(FetchAttempt.article_id == article_id)
@@ -294,7 +307,7 @@ def test_source_disable_and_article_persistence_serialize(
                 == 0
             )
             assert (
-                persisting.execute(
+                disabling.execute(
                     select(func.count())
                     .select_from(ContentVersion)
                     .where(ContentVersion.article_id == article_id)
@@ -348,25 +361,7 @@ def test_source_disable_and_article_persistence_serialize(
                 is False
             )
     finally:
-        # These fixtures are committed so independent connections can see them.
-        with engine.begin() as connection:
-            connection.execute(
-                update(Article)
-                .where(Article.id == article_id)
-                .values(current_canonical_url_id=None, current_content_version_id=None)
-            )
-            connection.execute(
-                update(FetchAttempt)
-                .where(FetchAttempt.article_id == article_id)
-                .values(resulting_content_version_id=None)
-            )
-            connection.execute(
-                delete(ContentVersion).where(ContentVersion.article_id == article_id)
-            )
-            connection.execute(delete(FetchAttempt).where(FetchAttempt.article_id == article_id))
-            connection.execute(delete(ArticleUrl).where(ArticleUrl.article_id == article_id))
-            connection.execute(delete(Article).where(Article.id == article_id))
-            connection.execute(delete(Source).where(Source.id == source_id))
-            if job_id is not None:
-                connection.execute(delete(Job).where(Job.id == job_id))
+        # Terminal history is immutable. Unique synthetic rows remain only in
+        # the disposable test database, which the harness destroys afterward.
+        processor.dispose()
         engine.dispose()

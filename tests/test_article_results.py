@@ -126,7 +126,7 @@ def test_new_result_creates_terminal_attempt_and_content_pointer() -> None:
     )
     statements = _statements(connection)
     assert len(statements) == 8
-    assert "FOR SHARE" in statements[1]
+    assert "primary_signal.lock_source_enabled" in statements[1]
     assert "FOR UPDATE" in statements[2]
     assert "INSERT INTO primary_signal.fetch_attempts" in statements[4]
     assert "INSERT INTO primary_signal.content_versions" in statements[5]

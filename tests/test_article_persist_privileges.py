@@ -72,6 +72,13 @@ def test_article_persist_capability_is_non_login_and_column_scoped(
             text("SELECT pg_has_role('processor_test', :role, 'member')"),
             {"role": ROLE},
         ).scalar_one()
+        assert connection.execute(
+            text(
+                "SELECT has_function_privilege(:role, "
+                "'primary_signal.lock_source_enabled(uuid)', 'EXECUTE')"
+            ),
+            {"role": ROLE},
+        ).scalar_one()
 
         allowed = (
             ("sources", "enabled", "SELECT"),
@@ -89,6 +96,7 @@ def test_article_persist_capability_is_non_login_and_column_scoped(
         )
         denied = (
             ("sources", "name", "SELECT"),
+            ("sources", "enabled", "UPDATE"),
             ("articles", "last_seen_at", "UPDATE"),
             ("article_urls", "normalized_url", "UPDATE"),
             ("fetch_attempts", "requested_url", "SELECT"),
@@ -122,6 +130,13 @@ def test_article_persist_capability_is_non_login_and_column_scoped(
     with processor.connect() as connection:
         assert (
             connection.execute(
+                text("SELECT primary_signal.lock_source_enabled(:source_id)"),
+                {"source_id": uuid.uuid7()},
+            ).scalar_one()
+            is False
+        )
+        assert (
+            connection.execute(
                 text("SELECT normalized_url FROM primary_signal.article_urls WHERE false")
             ).fetchall()
             == []
@@ -136,6 +151,7 @@ def test_article_persist_capability_is_non_login_and_column_scoped(
         )
 
     for statement in (
+        "SELECT enabled FROM primary_signal.sources FOR SHARE",
         "SELECT extracted_text FROM primary_signal.content_versions WHERE false",
         "SELECT requested_url FROM primary_signal.fetch_attempts WHERE false",
         "UPDATE primary_signal.articles SET first_seen_at=now() WHERE false",
