@@ -1,7 +1,11 @@
 """Disposable PostgreSQL proof of atomic publication and writer privileges."""
 
+import hashlib
 import os
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -56,9 +60,25 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
         assert_public_database_role(connection)
         with pytest.raises(RuntimeError, match="publication writer role"):
             assert_publication_writer_role(connection)
+    with writer_engine.begin() as connection, pytest.raises(DBAPIError) as denied_story:
+        connection.execute(text("UPDATE primary_signal.stories SET suppressed=true"))
+    assert getattr(denied_story.value.orig, "sqlstate", None) == "42501"
+    with writer_engine.begin() as connection, pytest.raises(DBAPIError) as denied_revision:
+        connection.execute(text("UPDATE primary_signal.story_revisions SET status='validated'"))
+    assert getattr(denied_revision.value.orig, "sqlstate", None) == "42501"
+    with writer_engine.begin() as connection, pytest.raises(DBAPIError) as denied_event:
+        connection.execute(
+            text(
+                "INSERT INTO primary_signal.publication_events "
+                "(id,story_id,revision_id,to_status,actor,reason) "
+                "VALUES (:id,:story,:revision,'draft','test-editor','bypass')"
+            ),
+            {"id": uuid.uuid7(), "story": uuid.uuid7(), "revision": uuid.uuid7()},
+        )
+    assert getattr(denied_event.value.orig, "sqlstate", None) == "42501"
     writer = PublicationWriter(writer_engine, expected_role=PUBLICATION_ROLE)
     now = datetime.now(UTC)
-    source_id, article_id, attempt_id, version_id = (uuid.uuid7() for _ in range(4))
+    source_id, article_id, article_url_id, attempt_id, version_id = (uuid.uuid7() for _ in range(5))
     with admin.begin() as connection:
         connection.execute(
             text(
@@ -73,6 +93,21 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
                 "VALUES (:id,:source,:now,:now)"
             ),
             {"id": article_id, "source": source_id, "now": now},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO primary_signal.article_urls "
+                "(id,article_id,original_url,normalized_url,normalized_url_hash,"
+                "normalization_version,kind,first_seen_at,last_seen_at) "
+                "VALUES (:id,:article,:url,:url,:hash,1,'submitted',:now,:now)"
+            ),
+            {
+                "id": article_url_id,
+                "article": article_id,
+                "url": "https://public.example/notice",
+                "hash": hashlib.sha256(b"https://public.example/notice").hexdigest(),
+                "now": now,
+            },
         )
         connection.execute(
             text(
@@ -136,17 +171,64 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
     reference = (DraftReference(source, article_id, version_id),)
     decision = OperatorDecision(actor="test-editor", reason="Reviewed synthetic evidence")
     story_id, first_id, fingerprint = writer.create_draft(draft("First version"), reference)
-    writer.publish_reviewed(
-        story_id=story_id, revision_id=first_id, input_fingerprint=fingerprint, decision=decision
-    )
+    with writer_engine.begin() as connection, pytest.raises(DBAPIError) as frozen_source:
+        connection.execute(
+            text(
+                "INSERT INTO primary_signal.revision_sources "
+                "(revision_id,source_id,position,title,publisher,public_url,article_id,"
+                "content_version_id) VALUES (:revision,'second-source',2,'Second source',"
+                "'Public Example','https://public.example/notice',:article,:version)"
+            ),
+            {"revision": first_id, "article": article_id, "version": version_id},
+        )
+    assert getattr(frozen_source.value.orig, "sqlstate", None) == "P0001"
+    start = threading.Barrier(2)
+
+    def concurrent_publish() -> str:
+        start.wait(timeout=5)
+        try:
+            writer.publish_reviewed(
+                story_id=story_id,
+                revision_id=first_id,
+                input_fingerprint=fingerprint,
+                expected_current_revision_id=None,
+                decision=decision,
+            )
+        except PublicationConflict:
+            return "conflict"
+        return "published"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        attempts = [pool.submit(concurrent_publish) for _ in range(2)]
+        assert sorted(attempt.result(timeout=15) for attempt in attempts) == [
+            "conflict",
+            "published",
+        ]
+    with admin.connect() as connection:
+        assert (
+            connection.execute(
+                text(
+                    "SELECT count(*) FROM primary_signal.publication_events WHERE story_id=:story"
+                ),
+                {"story": story_id},
+            ).scalar_one()
+            == 3
+        )
+    with pytest.raises(PublicationConflict, match="conflicts with stored state"):
+        writer.suppress(
+            story_id=story_id,
+            expected_current_revision_id=uuid.uuid7(),
+            decision=decision,
+        )
     _, successor_id, successor_fingerprint = writer.create_draft(
         draft("Successor version"), reference
     )
-    with pytest.raises(PublicationConflict, match="fingerprint changed"):
+    with pytest.raises(PublicationConflict, match="conflicts with stored state"):
         writer.publish_reviewed(
             story_id=story_id,
             revision_id=successor_id,
             input_fingerprint="0" * 64,
+            expected_current_revision_id=first_id,
             decision=decision,
         )
     with admin.connect() as connection:
@@ -161,8 +243,15 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
         story_id=story_id,
         revision_id=successor_id,
         input_fingerprint=successor_fingerprint,
+        expected_current_revision_id=first_id,
         decision=decision,
     )
+    with pytest.raises(PublicationConflict, match="conflicts with stored state"):
+        writer.suppress(
+            story_id=story_id,
+            expected_current_revision_id=first_id,
+            decision=decision,
+        )
     with admin.connect() as connection:
         assert (
             connection.execute(
@@ -183,7 +272,7 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
         )
     with writer_engine.begin() as connection, pytest.raises(DBAPIError):
         connection.execute(text("SELECT extracted_text FROM primary_signal.content_versions"))
-    writer.suppress(story_id=story_id, decision=decision)
+    writer.suppress(story_id=story_id, expected_current_revision_id=successor_id, decision=decision)
     with admin.connect() as connection:
         assert (
             connection.execute(
@@ -191,6 +280,72 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
                 {"id": story_id},
             ).scalar_one()
             == 0
+        )
+    unlinked = replace(source, url="https://public.example/unlinked")
+    unlinked_story = replace(
+        draft("Unlinked notice"),
+        slug=f"synthetic-unlinked-{uuid.uuid7().hex}",
+        sources=(unlinked,),
+    )
+    unlinked_story_id, unlinked_revision_id, unlinked_fingerprint = writer.create_draft(
+        unlinked_story, (DraftReference(unlinked, article_id, version_id),)
+    )
+    with pytest.raises(PublicationConflict, match="conflicts with stored state"):
+        writer.publish_reviewed(
+            story_id=unlinked_story_id,
+            revision_id=unlinked_revision_id,
+            input_fingerprint=unlinked_fingerprint,
+            expected_current_revision_id=None,
+            decision=decision,
+        )
+    with admin.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT current_revision_id FROM primary_signal.stories WHERE id=:id"),
+                {"id": unlinked_story_id},
+            ).scalar_one_or_none()
+            is None
+        )
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM primary_signal.publication_events WHERE story_id=:id"),
+                {"id": unlinked_story_id},
+            ).scalar_one()
+            == 1
+        )
+    with admin.begin() as connection:
+        connection.execute(
+            text("UPDATE primary_signal.sources SET enabled=false WHERE id=:id"),
+            {"id": source_id},
+        )
+    disabled_story = replace(
+        draft("Disabled source"), slug=f"synthetic-disabled-{uuid.uuid7().hex}"
+    )
+    disabled_story_id, disabled_revision_id, disabled_fingerprint = writer.create_draft(
+        disabled_story, reference
+    )
+    with pytest.raises(PublicationConflict, match="conflicts with stored state"):
+        writer.publish_reviewed(
+            story_id=disabled_story_id,
+            revision_id=disabled_revision_id,
+            input_fingerprint=disabled_fingerprint,
+            expected_current_revision_id=None,
+            decision=decision,
+        )
+    with admin.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT current_revision_id FROM primary_signal.stories WHERE id=:id"),
+                {"id": disabled_story_id},
+            ).scalar_one_or_none()
+            is None
+        )
+        assert (
+            connection.execute(
+                text("SELECT count(*) FROM primary_signal.publication_events WHERE story_id=:id"),
+                {"id": disabled_story_id},
+            ).scalar_one()
+            == 1
         )
     writer_engine.dispose()
     public_engine.dispose()
