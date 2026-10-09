@@ -46,6 +46,127 @@
           if (target instanceof HTMLDetailsElement) target.open = true;
         });
       });
+
+      const sourceControls = [];
+      document.querySelectorAll(".ps-source-control").forEach((control) => {
+        const trigger = control.querySelector(".ps-source-trigger");
+        const panel = control.querySelector(".ps-source-panel");
+        if (!trigger || !panel) return;
+        trigger.setAttribute("aria-controls", panel.id);
+        trigger.setAttribute("aria-expanded", "false");
+        let pinned = false;
+        let loaded = false;
+        let loading = null;
+        let leaveTimer = null;
+        const cancelLeave = () => { if (leaveTimer) clearTimeout(leaveTimer); leaveTimer = null; };
+        const placePanel = () => {
+          if (panel.hidden) return;
+          panel.classList.remove("align-end", "align-above");
+          panel.style.insetInlineStart = "";
+          panel.style.insetInlineEnd = "";
+          const gutter = 12;
+          if (panel.getBoundingClientRect().right > window.innerWidth - gutter) {
+            panel.classList.add("align-end");
+          }
+          if (panel.getBoundingClientRect().left < gutter) {
+            panel.style.insetInlineStart = `${gutter - control.getBoundingClientRect().left}px`;
+            panel.style.insetInlineEnd = "auto";
+          }
+          const controlRect = control.getBoundingClientRect();
+          const roomBelow = window.innerHeight - controlRect.bottom;
+          const roomAbove = controlRect.top;
+          if (panel.getBoundingClientRect().height > roomBelow && roomAbove > roomBelow) {
+            panel.classList.add("align-above");
+          }
+        };
+        const close = () => {
+          cancelLeave();
+          pinned = false;
+          panel.hidden = true;
+          trigger.setAttribute("aria-expanded", "false");
+        };
+        const show = () => {
+          cancelLeave();
+          sourceControls.forEach((other) => { if (other.control !== control) other.close(); });
+          panel.hidden = false;
+          trigger.setAttribute("aria-expanded", "true");
+          placePanel();
+          if (loaded) return Promise.resolve(true);
+          if (loading) return loading;
+          panel.textContent = "Loading sources…";
+          loading = fetch(trigger.dataset.sourcePreview, { headers: { Accept: "text/html" } })
+            .then((response) => { if (!response.ok) throw new Error("Source preview unavailable"); return response.text(); })
+            .then((html) => { panel.innerHTML = html; loaded = true; placePanel(); return true; })
+            .catch(() => {
+              panel.textContent = "Preview unavailable. Open the full source trail.";
+              const fullLink = document.createElement("a");
+              fullLink.href = trigger.href;
+              fullLink.textContent = "View all sources →";
+              panel.append(fullLink);
+              placePanel();
+              return false;
+            })
+            .finally(() => { loading = null; });
+          return loading;
+        };
+        const scheduleClose = () => {
+          cancelLeave();
+          if (!pinned) leaveTimer = setTimeout(() => {
+            if (!control.contains(document.activeElement)) close();
+          }, 250);
+        };
+        control.addEventListener("pointerenter", () => { void show(); });
+        control.addEventListener("pointerleave", scheduleClose);
+        trigger.addEventListener("focus", () => { void show(); });
+        control.addEventListener("focusout", (event) => {
+          if (!control.contains(event.relatedTarget)) scheduleClose();
+        });
+        window.addEventListener("resize", placePanel);
+        trigger.addEventListener("click", async (event) => {
+          event.preventDefault();
+          if (pinned) { close(); return; }
+          pinned = true;
+          if (!(await show())) window.location.assign(trigger.href);
+        });
+        sourceControls.push({ control, trigger, panel, close });
+      });
+      document.addEventListener("pointerdown", (event) => {
+        sourceControls.forEach((item) => {
+          if (!item.control.contains(event.target)) item.close();
+        });
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        sourceControls.forEach((item) => {
+          if (!item.panel.hidden && item.panel.contains(document.activeElement)) item.trigger.focus();
+          item.close();
+        });
+      });
+
+      const relativeTimes = document.querySelectorAll("time[data-relative-time]");
+      if (relativeTimes.length) {
+        const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+        relativeTimes.forEach((element) => { element.dataset.exactTime = element.textContent; });
+        const refreshTimes = () => {
+          const now = Date.now();
+          relativeTimes.forEach((element) => {
+            const when = Date.parse(element.dateTime);
+            if (!Number.isFinite(when)) return;
+            const seconds = Math.floor((now - when) / 1000);
+            // Exact UTC text stays visible for future times and older reports.
+            if (seconds < 0 || seconds >= 30 * 86400) {
+              element.textContent = element.dataset.exactTime;
+              return;
+            }
+            if (seconds < 60) element.textContent = "Just now";
+            else if (seconds < 3600) element.textContent = formatter.format(-Math.floor(seconds / 60), "minute");
+            else if (seconds < 86400) element.textContent = formatter.format(-Math.floor(seconds / 3600), "hour");
+            else element.textContent = formatter.format(-Math.floor(seconds / 86400), "day");
+          });
+        };
+        refreshTimes();
+        window.setInterval(refreshTimes, 60_000);
+      }
     })();
   </script>
 {% endblock %}

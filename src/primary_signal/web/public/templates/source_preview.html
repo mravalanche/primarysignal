@@ -1,0 +1,7 @@
+<div class="ps-source-panel-content">
+  <div class="ps-source-panel-heading"><h4>Sources for this story</h4><span>{{ story.source_count }} {% if story.source_count == 1 %}source{% else %}sources{% endif %}</span></div>
+  <ol class="ps-source-cards">
+    {% for source in preview_sources %}<li class="ps-source-card"><a href="{{ source.url }}" rel="noopener noreferrer"><span class="ps-source-publisher">{{ source.publisher }}</span><span class="ps-source-title">{{ source.title }}</span><span class="ps-source-role">{% if source.is_primary %}Primary source{% else %}Additional source{% endif %}</span></a></li>{% endfor %}
+  </ol>
+  <a class="ps-source-all" href="/stories/{{ story.slug }}#sources">View all {{ story.source_count }} {% if story.source_count == 1 %}source{% else %}sources{% endif %} →</a>
+</div>
