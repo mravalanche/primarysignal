@@ -5,7 +5,8 @@ import json
 import math
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from time import monotonic
 from urllib.parse import urlsplit
@@ -29,6 +30,9 @@ from primary_signal.retrieval.policy import (
     PolicyError,
     _canonical_host,  # pyright: ignore[reportPrivateUsage]
 )
+
+_TRANSPORT_FEED = fetch_feed
+_TRANSPORT_ARTICLE = retrieve_article
 
 MAX_REQUEST_BYTES = 16 * 1024
 DEFAULT_MAX_CONCURRENT_FETCHES = 8
@@ -143,12 +147,12 @@ class _OriginState:
     active: int = 0
 
 
-class _RequestLimiter:
-    """Atomically admit both routes under global and initial-host limits.
+class _RedirectAdmissionError(FeedFetchError):
+    """Admission failure from the API's validated redirect hook."""
 
-    The transport separately validates and caps redirects. Redirect destinations
-    are not charged to this API-level bucket.
-    """
+
+class _RequestLimiter:
+    """Atomically admit requests and validated redirect hops under host limits."""
 
     def __init__(
         self,
@@ -171,15 +175,19 @@ class _RequestLimiter:
         self._lock = threading.Lock()
 
     def acquire(self, hostname: str) -> str | None:
+        return self._acquire(hostname, charge_global=True, hold_origin=True)
+
+    def _acquire(self, hostname: str, *, charge_global: bool, hold_origin: bool) -> str | None:
         with self._lock:
             now = monotonic()
-            self._global_bucket.refill(
-                now=now,
-                capacity=self.max_requests_global,
-                window_seconds=self.global_window_seconds,
-            )
-            if self._global_bucket.tokens < 1:
-                return "global_rate_limited"
+            if charge_global:
+                self._global_bucket.refill(
+                    now=now,
+                    capacity=self.max_requests_global,
+                    window_seconds=self.global_window_seconds,
+                )
+                if self._global_bucket.tokens < 1:
+                    return "global_rate_limited"
             state = self._states.get(hostname)
             if state is None:
                 if len(self._states) >= self.max_origins:
@@ -202,18 +210,34 @@ class _RequestLimiter:
                 capacity=self.max_requests_per_origin,
                 window_seconds=self.origin_window_seconds,
             )
-            if state.active >= self.max_concurrent_per_origin:
+            if hold_origin and state.active >= self.max_concurrent_per_origin:
                 return "retriever_busy"
             if state.bucket.tokens < 1:
                 return "origin_rate_limited"
-            self._global_bucket.tokens -= 1
+            if charge_global:
+                self._global_bucket.tokens -= 1
             state.bucket.tokens -= 1
-            state.active += 1
+            if hold_origin:
+                state.active += 1
         return None
 
     def release(self, hostname: str) -> None:
         with self._lock:
             self._states[hostname].active -= 1
+
+    @contextmanager
+    def redirect_lease(self, hostname: str, *, initial_hostname: str) -> Generator[None]:
+        # The initial host's active lease spans the full fetch. A same-host
+        # redirect spends another token while sharing that lease.
+        hold_origin = hostname != initial_hostname
+        rejected = self._acquire(hostname, charge_global=False, hold_origin=hold_origin)
+        if rejected is not None:
+            raise _RedirectAdmissionError(rejected)
+        try:
+            yield
+        finally:
+            if hold_origin:
+                self.release(hostname)
 
 
 def create_retriever_app(
@@ -294,9 +318,23 @@ def create_retriever_app(
             )
         try:
             try:
-                result = await run_in_threadpool(
-                    lambda: fetch(parsed.url, parsed.etag, parsed.last_modified)
-                )
+                if fetch is _default_fetch and fetch_feed is _TRANSPORT_FEED:
+                    result = await run_in_threadpool(
+                        lambda: fetch_feed(
+                            parsed.url,
+                            etag=parsed.etag,
+                            last_modified=parsed.last_modified,
+                            hop_lease=lambda destination: limits.redirect_lease(
+                                destination, initial_hostname=hostname
+                            ),
+                        )
+                    )
+                else:
+                    result = await run_in_threadpool(
+                        lambda: fetch(parsed.url, parsed.etag, parsed.last_modified)
+                    )
+            except _RedirectAdmissionError as error:
+                return _error(429 if error.code == "origin_rate_limited" else 503, error.code)
             except FeedFetchError as error:
                 return _error(
                     502, error.code if error.code in _SAFE_FETCH_ERRORS else "fetch_failed"
@@ -354,9 +392,26 @@ def create_retriever_app(
             )
         try:
             try:
-                result = await run_in_threadpool(
-                    lambda: fetch_article(parsed.url, parsed.etag, parsed.last_modified)
-                )
+                if (
+                    fetch_article is _default_fetch_article
+                    and retrieve_article is _TRANSPORT_ARTICLE
+                ):
+                    result = await run_in_threadpool(
+                        lambda: retrieve_article(
+                            parsed.url,
+                            etag=parsed.etag,
+                            last_modified=parsed.last_modified,
+                            hop_lease=lambda destination: limits.redirect_lease(
+                                destination, initial_hostname=hostname
+                            ),
+                        )
+                    )
+                else:
+                    result = await run_in_threadpool(
+                        lambda: fetch_article(parsed.url, parsed.etag, parsed.last_modified)
+                    )
+            except _RedirectAdmissionError as error:
+                return _error(429 if error.code == "origin_rate_limited" else 503, error.code)
             except FeedFetchError as error:
                 return _error(
                     502, error.code if error.code in _SAFE_FETCH_ERRORS else "fetch_failed"

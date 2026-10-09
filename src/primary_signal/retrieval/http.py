@@ -7,7 +7,7 @@ import ssl
 import time
 import zlib
 from collections.abc import Callable, Sequence
-from contextlib import closing
+from contextlib import AbstractContextManager, closing, nullcontext
 from dataclasses import dataclass
 from typing import BinaryIO
 from urllib.parse import urljoin, urlsplit
@@ -37,6 +37,7 @@ type Resolver = Callable[[str, int], Sequence[str]]
 type Connector = Callable[
     [ValidatedTarget, ipaddress.IPv4Address | ipaddress.IPv6Address, float], socket.socket
 ]
+type HopLease = Callable[[str], AbstractContextManager[None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,6 +299,7 @@ def fetch_feed(
     last_modified: str | None = None,
     resolver: Resolver = _resolve,
     connector: Connector = _connect,
+    hop_lease: HopLease | None = None,
 ) -> FeedFetchResult:
     """Fetch a feed through a validated address, rechecking each redirect.
 
@@ -323,13 +325,16 @@ def fetch_feed(
             visited.add(current)
             target = validate_target(current, active_resolver)
             _remaining(deadline)
-            response = _request(
-                target,
-                etag=validators[0],
-                last_modified=validators[1],
-                deadline=deadline,
-                connector=connector,
-            )
+            # The API already admits the initial host. A redirect is charged only
+            # after its address has passed the transport's SSRF checks.
+            with hop_lease(target.hostname) if redirect_count and hop_lease else nullcontext():
+                response = _request(
+                    target,
+                    etag=validators[0],
+                    last_modified=validators[1],
+                    deadline=deadline,
+                    connector=connector,
+                )
             _remaining(deadline)
             if response.status in (301, 302, 303, 307, 308):
                 location = response.headers.get("location")
@@ -376,6 +381,7 @@ def fetch_article(
     last_modified: str | None = None,
     resolver: Resolver = _resolve,
     connector: Connector = _connect,
+    hop_lease: HopLease | None = None,
 ) -> ArticleFetchResult:
     """Fetch and extract one article inside the address-pinned retriever."""
 
@@ -405,15 +411,16 @@ def fetch_article(
                 except ValueError as error:
                     raise FeedFetchError("invalid_redirect") from error
                 pending_redirect = None
-            response = _request(
-                target,
-                etag=validators[0],
-                last_modified=validators[1],
-                deadline=deadline,
-                connector=connector,
-                accept="text/html, application/xhtml+xml",
-                user_agent="PrimarySignalArticleFetch/1",
-            )
+            with hop_lease(target.hostname) if redirect_count and hop_lease else nullcontext():
+                response = _request(
+                    target,
+                    etag=validators[0],
+                    last_modified=validators[1],
+                    deadline=deadline,
+                    connector=connector,
+                    accept="text/html, application/xhtml+xml",
+                    user_agent="PrimarySignalArticleFetch/1",
+                )
             _remaining(deadline)
             if response.status in (301, 302, 303, 307, 308):
                 location = response.headers.get("location")
