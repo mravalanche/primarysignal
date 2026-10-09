@@ -34,7 +34,12 @@ def migrated_engine(monkeypatch: pytest.MonkeyPatch) -> Iterator[Engine]:
 
 
 def _revision(
-    connection: Connection, *, slug: str, number: int, status: str = "draft"
+    connection: Connection,
+    *,
+    slug: str,
+    number: int,
+    status: str = "draft",
+    headline: str = "Synthetic headline",
 ) -> tuple[uuid.UUID, uuid.UUID]:
     story_id = uuid.uuid7()
     revision_id = uuid.uuid7()
@@ -47,10 +52,16 @@ def _revision(
             "INSERT INTO primary_signal.story_revisions "
             "(id,story_id,revision_number,status,headline,synthesis,why_it_matters,"
             "primary_topic,story_type,first_reported_at,latest_material_update_at) "
-            "VALUES (:id,:story_id,:number,:status,'Synthetic headline','Synthetic summary',"
+            "VALUES (:id,:story_id,:number,:status,:headline,'Synthetic summary',"
             "'Synthetic relevance','security-engineering','advisory',now(),now())"
         ),
-        {"id": revision_id, "story_id": story_id, "number": number, "status": status},
+        {
+            "id": revision_id,
+            "story_id": story_id,
+            "number": number,
+            "status": status,
+            "headline": headline,
+        },
     )
     return story_id, revision_id
 
@@ -85,15 +96,11 @@ def test_search_sees_published_match_but_not_draft_or_suppressed(
     with migrated_engine.connect() as connection:
         transaction = connection.begin()
         try:
-            revisions = [_revision(connection, slug=slug, number=1) for slug in slugs]
-            for index, (_, revision_id) in enumerate(revisions):
-                connection.execute(
-                    text(
-                        "UPDATE primary_signal.story_revisions SET headline=:headline "
-                        "WHERE id=:revision_id"
-                    ),
-                    {"headline": f"Synthetic {marker} {index}", "revision_id": revision_id},
-                )
+            revisions = [
+                _revision(connection, slug=slug, number=1, headline=f"Synthetic {marker} {index}")
+                for index, slug in enumerate(slugs)
+            ]
+            for _, revision_id in revisions:
                 connection.execute(
                     text(
                         "INSERT INTO primary_signal.revision_sources "
