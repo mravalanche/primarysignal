@@ -1,20 +1,14 @@
-"""Explicit, operator-reviewed publication transactions.
+"""Draft creation and database-mediated publication decisions.
 
-This is a narrow manual path for a trusted backend process only. PostgreSQL
-does not force direct table writes through this API, so it does not enforce
-event audit, fetched-version eligibility, or authenticated operator identity.
-The caller must bind ``OperatorDecision.actor`` to an authenticated operator;
-this module has no authentication boundary. It must not be used by the public
-or admin web runtime or by unattended automatic publication.
+This trusted backend API does not authenticate an operator. A web caller must
+bind the decision actor and expected public revision to a verified session.
 """
 
-import hashlib
-import json
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sqlalchemy import Connection, Engine, text
+from sqlalchemy.exc import DBAPIError
 
 from primary_signal.db.engine import assert_database_role
 from primary_signal.publication.models import PublicSource, PublicStory
@@ -38,6 +32,23 @@ SELECT session_user = current_user
                              OR role.rolbypassrls OR role.rolreplication)
                   FROM pg_catalog.pg_roles AS role WHERE role.rolname = current_user), false)
     AND pg_catalog.pg_has_role(current_user, 'primary_signal_cap_publication_write', 'USAGE')
+    AND pg_catalog.has_function_privilege(
+        current_user, 'primary_signal.finalize_draft(uuid, uuid)', 'EXECUTE')
+    AND pg_catalog.has_function_privilege(
+        current_user, 'primary_signal.lock_story_for_draft(text)', 'EXECUTE')
+    AND pg_catalog.has_function_privilege(
+        current_user, 'primary_signal.publish_reviewed(uuid, uuid, text, uuid, text, text)',
+        'EXECUTE')
+    AND pg_catalog.has_function_privilege(
+        current_user, 'primary_signal.suppress_reviewed(uuid, uuid, text, text)', 'EXECUTE')
+    AND NOT pg_catalog.has_column_privilege(
+        current_user, 'primary_signal.stories', 'current_revision_id', 'UPDATE')
+    AND NOT pg_catalog.has_column_privilege(
+        current_user, 'primary_signal.stories', 'suppressed', 'UPDATE')
+    AND NOT pg_catalog.has_column_privilege(
+        current_user, 'primary_signal.story_revisions', 'status', 'UPDATE')
+    AND NOT pg_catalog.has_column_privilege(
+        current_user, 'primary_signal.publication_events', 'id', 'INSERT')
     AND NOT EXISTS (
         SELECT 1 FROM memberships
         JOIN pg_catalog.pg_roles AS inherited ON inherited.oid = memberships.role_oid
@@ -74,40 +85,6 @@ class OperatorDecision:
             raise ValueError("a bounded decision reason is required")
 
 
-def fingerprint_draft(story: PublicStory, references: tuple[DraftReference, ...]) -> str:
-    payload = {
-        "story": {
-            "slug": story.slug,
-            "headline": story.headline,
-            "synthesis": story.synthesis,
-            "why_it_matters": story.why_it_matters,
-            "primary_topic": story.primary_topic.value,
-            "story_type": story.story_type.value,
-            "uk_relevant": story.uk_relevant,
-            "first_reported_at": story.first_reported_at.isoformat(),
-            "latest_material_update_at": story.latest_material_update_at.isoformat(),
-        },
-        "sources": [
-            {
-                "id": ref.source.id,
-                "title": ref.source.title,
-                "publisher": ref.source.publisher,
-                "url": ref.source.url,
-                "first_published_at": (
-                    ref.source.first_published_at.isoformat()
-                    if ref.source.first_published_at
-                    else None
-                ),
-                "is_primary": ref.source.is_primary,
-                "article_id": str(ref.article_id),
-                "content_version_id": str(ref.content_version_id),
-            }
-            for ref in references
-        ],
-    }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-
-
 class PublicationWriter:
     """Write through a dedicated login with the publication capability only."""
 
@@ -134,15 +111,12 @@ class PublicationWriter:
             raise ValueError("this writer slice does not yet support tags or signals")
         if not references:
             raise ValueError("a draft requires a source")
-        fingerprint = fingerprint_draft(story, references)
         revision_id = uuid.uuid7()
         with self.engine.begin() as connection:
             self._check_connection(connection)
             row = (
                 connection.execute(
-                    text(
-                        "SELECT id, suppressed FROM primary_signal.stories WHERE slug=:slug FOR UPDATE"
-                    ),
+                    text("SELECT id, suppressed FROM primary_signal.lock_story_for_draft(:slug)"),
                     {"slug": story.slug},
                 )
                 .mappings()
@@ -211,20 +185,10 @@ class PublicationWriter:
                         "version": ref.content_version_id,
                     },
                 )
-            connection.execute(
-                text(
-                    "INSERT INTO primary_signal.publication_events "
-                    "(id,story_id,revision_id,from_status,to_status,actor,reason,"
-                    "input_fingerprint) VALUES (:id,:story,:revision,NULL,'draft',"
-                    "'system','draft created',:fingerprint)"
-                ),
-                {
-                    "id": uuid.uuid7(),
-                    "story": story_id,
-                    "revision": revision_id,
-                    "fingerprint": fingerprint,
-                },
-            )
+            fingerprint = connection.execute(
+                text("SELECT primary_signal.finalize_draft(:story, :revision)"),
+                {"story": story_id, "revision": revision_id},
+            ).scalar_one()
         return story_id, revision_id, fingerprint
 
     def publish_reviewed(
@@ -233,199 +197,64 @@ class PublicationWriter:
         story_id: uuid.UUID,
         revision_id: uuid.UUID,
         input_fingerprint: str,
+        expected_current_revision_id: uuid.UUID | None,
         decision: OperatorDecision,
     ) -> None:
-        """Publish a manually reviewed draft atomically with pointer replacement.
-
-        The operator is responsible for applying the product contract's claim,
-        safety, membership, conflict and signal gates. This method cannot be
-        used for unattended publication.
-        """
+        """Publish a reviewed draft if its snapshot and current pointer agree."""
         if len(input_fingerprint) != 64 or any(
             c not in "0123456789abcdef" for c in input_fingerprint
         ):
             raise ValueError("input fingerprint is invalid")
         with self.engine.begin() as connection:
             self._check_connection(connection)
-            story = (
+            try:
                 connection.execute(
                     text(
-                        "SELECT current_revision_id,suppressed FROM primary_signal.stories "
-                        "WHERE id=:story FOR UPDATE"
+                        "SELECT primary_signal.publish_reviewed(:story, :revision, :fingerprint, "
+                        "CAST(:expected_current AS uuid), :actor, :reason)"
                     ),
-                    {"story": story_id},
+                    {
+                        "story": story_id,
+                        "revision": revision_id,
+                        "fingerprint": input_fingerprint,
+                        "expected_current": expected_current_revision_id,
+                        "actor": decision.actor,
+                        "reason": decision.reason,
+                    },
                 )
-                .mappings()
-                .first()
-            )
-            if story is None or story["suppressed"]:
-                raise PublicationConflict("story is missing or suppressed")
-            revision = (
-                connection.execute(
-                    text(
-                        "SELECT status, revision_number FROM primary_signal.story_revisions "
-                        "WHERE id=:revision AND story_id=:story FOR UPDATE"
-                    ),
-                    {"revision": revision_id, "story": story_id},
-                )
-                .mappings()
-                .first()
-            )
-            if revision is None or revision["status"] != "draft":
-                raise PublicationConflict("revision is not a draft")
-            latest_number = connection.execute(
-                text(
-                    "SELECT MAX(revision_number) FROM primary_signal.story_revisions "
-                    "WHERE story_id=:story"
-                ),
-                {"story": story_id},
-            ).scalar_one()
-            if latest_number != revision["revision_number"]:
-                raise PublicationConflict("a newer revision exists")
-            recorded = connection.execute(
-                text(
-                    "SELECT input_fingerprint FROM primary_signal.publication_events "
-                    "WHERE revision_id=:revision AND to_status='draft' "
-                    "ORDER BY occurred_at DESC LIMIT 1"
-                ),
-                {"revision": revision_id},
-            ).scalar_one_or_none()
-            if recorded != input_fingerprint:
-                raise PublicationConflict("reviewed input fingerprint changed")
-            # An immutable fetched version is required for every visible source.
-            source_count = connection.execute(
-                text(
-                    "SELECT count(*) FROM primary_signal.revision_sources rs "
-                    "JOIN primary_signal.content_versions cv ON "
-                    "cv.id=rs.content_version_id AND cv.article_id=rs.article_id "
-                    "JOIN primary_signal.fetch_attempts fa ON "
-                    "fa.id=cv.origin_fetch_attempt_id AND fa.article_id=cv.article_id "
-                    "AND fa.status='fetched' AND fa.resulting_content_version_id=cv.id "
-                    "JOIN primary_signal.articles a ON a.id=cv.article_id "
-                    "JOIN primary_signal.sources s ON s.id=a.source_id "
-                    "WHERE rs.revision_id=:revision AND s.enabled"
-                ),
-                {"revision": revision_id},
-            ).scalar_one()
-            total_count = connection.execute(
-                text(
-                    "SELECT count(*) FROM primary_signal.revision_sources "
-                    "WHERE revision_id=:revision"
-                ),
-                {"revision": revision_id},
-            ).scalar_one()
-            if not total_count or source_count != total_count:
-                raise PublicationConflict("all visible sources require eligible fetched versions")
-            old = story["current_revision_id"]
-            now = datetime.now(UTC)
-            connection.execute(
-                text(
-                    "UPDATE primary_signal.story_revisions SET status='validated' "
-                    "WHERE id=:revision"
-                ),
-                {"revision": revision_id},
-            )
-            self._event(
-                connection, story_id, revision_id, "draft", "validated", decision, input_fingerprint
-            )
-            connection.execute(
-                text(
-                    "UPDATE primary_signal.story_revisions SET status='published',"
-                    "published_at=:now WHERE id=:revision"
-                ),
-                {"revision": revision_id, "now": now},
-            )
-            self._event(
-                connection,
-                story_id,
-                revision_id,
-                "validated",
-                "published",
-                decision,
-                input_fingerprint,
-            )
-            connection.execute(
-                text(
-                    "UPDATE primary_signal.stories SET current_revision_id=:revision "
-                    "WHERE id=:story"
-                ),
-                {"revision": revision_id, "story": story_id},
-            )
-            if old is not None:
-                connection.execute(
-                    text(
-                        "UPDATE primary_signal.story_revisions SET status='superseded' "
-                        "WHERE id=:old AND status='published'"
-                    ),
-                    {"old": old},
-                )
-                self._event(
-                    connection,
-                    story_id,
-                    old,
-                    "published",
-                    "superseded",
-                    decision,
-                    input_fingerprint,
-                )
+            except DBAPIError as exc:
+                if getattr(exc.orig, "sqlstate", None) == "P0001":
+                    raise PublicationConflict(
+                        "publication decision conflicts with stored state"
+                    ) from exc
+                raise
 
-    def suppress(self, *, story_id: uuid.UUID, decision: OperatorDecision) -> None:
+    def suppress(
+        self,
+        *,
+        story_id: uuid.UUID,
+        expected_current_revision_id: uuid.UUID,
+        decision: OperatorDecision,
+    ) -> None:
         """Hide a current story and retain the decision in append-only history."""
         with self.engine.begin() as connection:
             self._check_connection(connection)
-            row = (
+            try:
                 connection.execute(
                     text(
-                        "SELECT current_revision_id,suppressed FROM primary_signal.stories "
-                        "WHERE id=:story FOR UPDATE"
+                        "SELECT primary_signal.suppress_reviewed(:story, :expected_current, "
+                        ":actor, :reason)"
                     ),
-                    {"story": story_id},
+                    {
+                        "story": story_id,
+                        "expected_current": expected_current_revision_id,
+                        "actor": decision.actor,
+                        "reason": decision.reason,
+                    },
                 )
-                .mappings()
-                .first()
-            )
-            if row is None or row["suppressed"] or row["current_revision_id"] is None:
-                raise PublicationConflict("story has no unsuppressed current revision")
-            revision_id = row["current_revision_id"]
-            connection.execute(
-                text("UPDATE primary_signal.stories SET suppressed=true WHERE id=:story"),
-                {"story": story_id},
-            )
-            connection.execute(
-                text(
-                    "UPDATE primary_signal.story_revisions SET status='suppressed' "
-                    "WHERE id=:revision AND status='published'"
-                ),
-                {"revision": revision_id},
-            )
-            self._event(
-                connection, story_id, revision_id, "published", "suppressed", decision, None
-            )
-
-    @staticmethod
-    def _event(
-        connection: Connection,
-        story_id: uuid.UUID,
-        revision_id: uuid.UUID,
-        from_status: str,
-        to_status: str,
-        decision: OperatorDecision,
-        fingerprint: str | None,
-    ) -> None:
-        connection.execute(
-            text(
-                "INSERT INTO primary_signal.publication_events "
-                "(id,story_id,revision_id,from_status,to_status,actor,reason,input_fingerprint) "
-                "VALUES (:id,:story,:revision,:previous,:next,:actor,:reason,:fingerprint)"
-            ),
-            {
-                "id": uuid.uuid7(),
-                "story": story_id,
-                "revision": revision_id,
-                "previous": from_status,
-                "next": to_status,
-                "actor": decision.actor,
-                "reason": decision.reason,
-                "fingerprint": fingerprint,
-            },
-        )
+            except DBAPIError as exc:
+                if getattr(exc.orig, "sqlstate", None) == "P0001":
+                    raise PublicationConflict(
+                        "publication decision conflicts with stored state"
+                    ) from exc
+                raise

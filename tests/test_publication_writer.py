@@ -92,14 +92,3 @@ def test_draft_references_must_match_visible_trail() -> None:
     )
     with pytest.raises(ValueError, match="references must match"):
         writer.create_draft(publication, (DraftReference(other, uuid.uuid7(), uuid.uuid7()),))
-
-
-def test_input_fingerprint_is_stable_and_binds_content_version() -> None:
-    from primary_signal.publication.writer import fingerprint_draft
-
-    publication = story()
-    article_id, first_version, second_version = uuid.uuid7(), uuid.uuid7(), uuid.uuid7()
-    first = (DraftReference(publication.sources[0], article_id, first_version),)
-    second = (DraftReference(publication.sources[0], article_id, second_version),)
-    assert fingerprint_draft(publication, first) == fingerprint_draft(publication, first)
-    assert fingerprint_draft(publication, first) != fingerprint_draft(publication, second)
