@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "corpus_id": "synthetic-smoke-v1",
+  "revision_note": "Initial invented format and evaluator fixture; no real articles.",
+  "selection": {
+    "kind": "synthetic",
+    "window_start": "2026-01-01",
+    "window_end": "2026-01-31",
+    "random_seed": 17,
+    "frozen": false
+  },
+  "articles": [
+    {"id": "a1", "split": "development", "url": "https://vendor.example/advisory/one", "publisher": "Vendor", "ownership_group": "vendor", "source_category": "vendor_advisory", "published_at": "2026-01-02T10:00:00Z", "title": "Synthetic gateway fix"},
+    {"id": "a2", "split": "development", "url": "https://research.example/gateway/one", "publisher": "Research group", "ownership_group": "research", "source_category": "original_research", "published_at": "2026-01-03T11:00:00Z", "title": "Synthetic gateway analysis"},
+    {"id": "a3", "split": "development", "url": "https://vendor.example/advisory/two", "publisher": "Vendor", "ownership_group": "vendor", "source_category": "vendor_advisory", "published_at": "2026-01-04T09:00:00Z", "title": "Different synthetic gateway flaw"},
+    {"id": "a4", "split": "development", "url": "https://news.example/gateway/two", "publisher": "Newsroom", "ownership_group": "newsroom", "source_category": "security_newsroom", "published_at": "2026-01-04T12:00:00Z", "title": "Second gateway flaw reported"},
+    {"id": "b1", "split": "blind_acceptance", "url": "https://project.example/releases/one", "publisher": "Project", "ownership_group": "project", "source_category": "open_source_advisory", "published_at": "2026-01-08T10:00:00Z", "title": "Synthetic package release"},
+    {"id": "b2", "split": "blind_acceptance", "url": "https://research.example/packages/one", "publisher": "Research group", "ownership_group": "research", "source_category": "original_research", "published_at": "2026-01-09T10:00:00Z", "title": "Synthetic package release analysis"},
+    {"id": "b3", "split": "blind_acceptance", "url": "https://authority.example/notices/other", "publisher": "Authority", "ownership_group": "authority", "source_category": "national_authority", "published_at": "2026-01-10T10:00:00Z", "title": "Unrelated synthetic policy notice"}
+  ],
+  "stories": [
+    {"id": "s1", "split": "development", "article_ids": ["a1", "a2"], "representative_article_id": "a1", "primary_source_article_id": "a1", "primary_source_reason": "Vendor issued the advisory for its own product.", "primary_topic": "Vulnerabilities & Exploitation", "secondary_topics": ["Security Engineering"], "story_type": "Advisory", "entities": [{"kind": "product", "name": "Synthetic Gateway"}], "signals": [{"name": "Official Advisory", "source_article_id": "a1", "evidence_ref": "Public advisory identifier SYN-1", "scope": "Synthetic Gateway version 1", "decision_route": "automatic", "uncertain": false}], "uk_relevance": {"applies": false, "reason": "No direct UK connection in the invented evidence."}, "material_updates": [], "uncertainty": null, "label_passes": ["first", "second"], "adjudication_note": "Both passes agreed."},
+    {"id": "s2", "split": "development", "article_ids": ["a3", "a4"], "representative_article_id": "a3", "primary_source_article_id": "a3", "primary_source_reason": "Vendor issued the advisory for the second issue.", "primary_topic": "Vulnerabilities & Exploitation", "secondary_topics": [], "story_type": "Advisory", "entities": [{"kind": "product", "name": "Synthetic Gateway"}], "signals": [], "uk_relevance": {"applies": false, "reason": "No direct UK connection in the invented evidence."}, "material_updates": [], "uncertainty": null, "label_passes": ["first", "second"], "adjudication_note": "Separate issue from s1."},
+    {"id": "s3", "split": "blind_acceptance", "article_ids": ["b1", "b2"], "representative_article_id": "b1", "primary_source_article_id": "b1", "primary_source_reason": "Project published its own release.", "primary_topic": "Security Engineering", "secondary_topics": ["Research & Tools"], "story_type": "News", "entities": [{"kind": "product", "name": "Synthetic Package"}], "signals": [], "uk_relevance": {"applies": false, "reason": "No direct UK connection in the invented evidence."}, "material_updates": [], "uncertainty": null, "label_passes": ["first", "second"], "adjudication_note": "Both passes agreed."},
+    {"id": "s4", "split": "blind_acceptance", "article_ids": ["b3"], "representative_article_id": "b3", "primary_source_article_id": "b3", "primary_source_reason": "Authority issued the policy notice.", "primary_topic": "Policy & Strategy", "secondary_topics": [], "story_type": "News", "entities": [{"kind": "organisation", "name": "Example Authority"}], "signals": [], "uk_relevance": {"applies": false, "reason": "Invented authority has no UK connection."}, "material_updates": [], "uncertainty": null, "label_passes": ["first", "second"], "adjudication_note": "Single-source story retained."}
+  ],
+  "non_merges": [
+    {"left_article_id": "a1", "right_article_id": "a3", "reason": "Similar product, separate invented flaws."},
+    {"left_article_id": "b1", "right_article_id": "b3", "reason": "Package release and policy notice are unrelated."}
+  ],
+  "uncertain_pairs": []
+}
