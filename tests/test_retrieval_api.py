@@ -200,6 +200,73 @@ def test_feed_and_article_share_canonical_hostname_rate_limit() -> None:
     assert (feed_calls, article_calls) == (1, 2)
 
 
+def test_global_rate_is_shared_across_routes_and_origins() -> None:
+    feed_calls = 0
+    article_calls = 0
+
+    def feed(url: str, _etag: str | None, _modified: str | None) -> FeedFetchResult:
+        nonlocal feed_calls
+        feed_calls += 1
+        return FeedFetchResult(304, url, b"")
+
+    def article(url: str, _etag: str | None, _modified: str | None) -> ArticleFetchResult:
+        nonlocal article_calls
+        article_calls += 1
+        return ArticleFetchResult(304, url, (), None, 0, None, None, None, None)
+
+    app = create_retriever_app(fetch=feed, fetch_article=article, max_requests_global=2)
+
+    async def send() -> tuple[Response, Response, Response]:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://retriever"
+        ) as client:
+            first = await client.post("/v1/feeds/fetch", json={"url": URL})
+            second = await client.post(
+                "/v1/articles/fetch", json={"url": "https://other.public.example/story"}
+            )
+            limited = await client.post(
+                "/v1/feeds/fetch", json={"url": "https://third.public.example/feed"}
+            )
+            return first, second, limited
+
+    first, second, limited = asyncio.run(send())
+    assert (first.status_code, second.status_code, limited.status_code) == (200, 200, 429)
+    assert limited.json() == {"error": "global_rate_limited"}
+    assert (feed_calls, article_calls) == (1, 1)
+
+
+def test_global_rate_refills_without_resetting_the_app(monkeypatch: Any) -> None:
+    now = [100.0]
+    monkeypatch.setattr(retrieval_api, "monotonic", lambda: now[0])
+
+    def fetch(url: str, _etag: str | None, _modified: str | None) -> FeedFetchResult:
+        return FeedFetchResult(304, url, b"")
+
+    app = create_retriever_app(
+        fetch=fetch,
+        max_requests_global=1,
+        global_window_seconds=60,
+        max_requests_per_origin=2,
+    )
+
+    async def send() -> tuple[Response, Response, Response]:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://retriever"
+        ) as client:
+            first = await client.post("/v1/feeds/fetch", json={"url": URL})
+            limited = await client.post(
+                "/v1/feeds/fetch", json={"url": "https://other.public.example/feed"}
+            )
+            now[0] += 60
+            refilled = await client.post(
+                "/v1/feeds/fetch", json={"url": "https://other.public.example/feed"}
+            )
+            return first, limited, refilled
+
+    first, limited, refilled = asyncio.run(send())
+    assert (first.status_code, limited.status_code, refilled.status_code) == (200, 429, 200)
+
+
 def test_unicode_and_idna_host_forms_share_one_bucket() -> None:
     def fetch(url: str, _etag: str | None, _modified: str | None) -> FeedFetchResult:
         return FeedFetchResult(304, url, b"")
