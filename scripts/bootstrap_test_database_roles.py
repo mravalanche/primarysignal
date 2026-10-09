@@ -23,6 +23,7 @@ SOURCE_HEALTH_ROLE = "primary_signal_cap_source_health"
 EDITORIAL_READ_ROLE = "primary_signal_cap_editorial_read"
 ADMIN_SESSION_ROLE = "primary_signal_cap_admin_session"
 PUBLICATION_DECISION_ROLE = "primary_signal_cap_publication_decision"
+RETENTION_CLEANUP_ROLE = "primary_signal_cap_retention_cleanup"
 SCHEDULER_ROLE = "scheduler_test"
 PROCESSOR_ROLE = "processor_test"
 INVENTORY_ROLE = "inventory_test"
@@ -32,6 +33,7 @@ HEALTH_ROLE = "health_test"
 EDITORIAL_ROLE = "editorial_test"
 ADMIN_SESSION_LOGIN_ROLE = "admin_session_test"
 PUBLICATION_DECISION_LOGIN_ROLE = "publication_decision_test"
+RETENTION_CLEANUP_LOGIN_ROLE = "retention_cleanup_test"
 SCHEDULER_PASSWORD = "primary_signal_scheduler_test_only"  # noqa: S105  # pragma: allowlist secret
 PROCESSOR_PASSWORD = "primary_signal_processor_test_only"  # noqa: S105  # pragma: allowlist secret
 INVENTORY_PASSWORD = "primary_signal_inventory_test_only"  # noqa: S105  # pragma: allowlist secret
@@ -41,6 +43,7 @@ HEALTH_PASSWORD = "primary_signal_health_test_only"  # noqa: S105  # pragma: all
 EDITORIAL_PASSWORD = "primary_signal_editorial_test_only"  # noqa: S105  # pragma: allowlist secret
 ADMIN_SESSION_PASSWORD = "primary_signal_admin_session_test_only"  # noqa: S105  # pragma: allowlist secret
 PUBLICATION_DECISION_PASSWORD = "primary_signal_publication_decision_test_only"  # noqa: S105  # pragma: allowlist secret
+RETENTION_CLEANUP_PASSWORD = "primary_signal_retention_cleanup_test_only"  # noqa: S105  # pragma: allowlist secret
 
 
 def _role_rows(
@@ -161,6 +164,7 @@ def main() -> None:
         repository_root / "deploy/postgres/initdb/090_editorial_read_capability_role.sql",
         repository_root / "deploy/postgres/initdb/100_admin_session_capability_role.sql",
         repository_root / "deploy/postgres/initdb/110_publication_decision_capability_role.sql",
+        repository_root / "deploy/postgres/initdb/120_retention_cleanup_capability_role.sql",
     )
     engine = create_engine(database_url, hide_parameters=True)
     try:
@@ -231,6 +235,12 @@ def main() -> None:
                 role_name=PUBLICATION_DECISION_LOGIN_ROLE,
                 password=PUBLICATION_DECISION_PASSWORD,
                 capabilities=(PUBLICATION_DECISION_ROLE,),
+            )
+            _create_or_verify_login(
+                connection,
+                role_name=RETENTION_CLEANUP_LOGIN_ROLE,
+                password=RETENTION_CLEANUP_PASSWORD,
+                capabilities=(RETENTION_CLEANUP_ROLE,),
             )
     finally:
         engine.dispose()

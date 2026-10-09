@@ -16,7 +16,7 @@ trap cleanup EXIT
 PRIMARY_SIGNAL_PREVIEW_PORT="$port" "${compose[@]}" config --quiet
 PRIMARY_SIGNAL_PREVIEW_PORT="$port" "${compose[@]}" up --build --detach --wait
 "${compose[@]}" exec -T public python -c \
-  "from importlib.resources import files; from alembic.config import Config; from alembic.script import ScriptDirectory; from primary_signal.entrypoints.migrate import migration_config_path; root = files('primary_signal'); assert root.joinpath('db/migrations/versions/20261009_17_retention_preconditions.py').is_file(); assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_17'"
+  "from importlib.resources import files; from alembic.config import Config; from alembic.script import ScriptDirectory; from primary_signal.entrypoints.migrate import migration_config_path; root = files('primary_signal'); assert root.joinpath('db/migrations/versions/20261009_18_retention_cleanup.py').is_file(); assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_18'"
 test "$("${compose[@]}" exec -T public id -u)" = 10001
 
 curl --fail --silent --show-error "http://127.0.0.1:$port/__dev/preview" \
