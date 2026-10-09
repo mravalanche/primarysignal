@@ -65,6 +65,10 @@ def test_authenticated_publish_and_suppress_reach_public_html(
     monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_URL", admin_url)
     monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", expected_role)
     command.upgrade(Config(Path(__file__).resolve().parents[1] / "alembic.ini"), "head")
+    with admin.connect() as connection:
+        previous_login_attempt_id = connection.execute(
+            text("SELECT coalesce(max(id), 0) FROM primary_signal.admin_login_attempts")
+        ).scalar_one()
 
     writer_engine = create_engine(
         make_url(admin_url).set(username=PUBLICATION_ROLE, password=PUBLICATION_PASSWORD),
@@ -271,5 +275,10 @@ def test_authenticated_publish_and_suppress_reach_public_html(
                 ("suppressed", "site operator", "Synthetic suppression review"),
             ]
     finally:
+        with admin.begin() as connection:
+            connection.execute(
+                text("DELETE FROM primary_signal.admin_login_attempts WHERE id > :previous_id"),
+                {"previous_id": previous_login_attempt_id},
+            )
         for engine in (public, decisions, sessions, editorial, writer_engine, admin):
             engine.dispose()
