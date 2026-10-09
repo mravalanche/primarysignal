@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "article_urls",
     "articles",
     "content_versions",
+    "content_version_retention",
     "feed_entries",
     "feed_poll_runs",
     "feeds",
@@ -75,6 +76,7 @@ def test_metadata_contains_versioned_identity_and_provenance_contract() -> None:
             "extractor_version",
             "fetched_at",
         },
+        "content_version_retention": {"content_version_id", "superseded_at"},
         "jobs": {
             "job_type",
             "payload_version",

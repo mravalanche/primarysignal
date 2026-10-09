@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -133,6 +134,69 @@ def test_blank_postgresql_database_migrates_to_head(
             transaction = connection.begin()
             assert_history_and_parent_constraints(connection)
             transaction.rollback()
+
+        # Migration 16 must not infer old retirement dates from fetched_at.
+        command.downgrade(config, "20261009_15")
+        source_id, article_id, attempt_id, version_id = (uuid.uuid7() for _ in range(4))
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO primary_signal.sources "
+                    "(id, source_key, name, homepage_url) VALUES "
+                    "(:id, 'backfill-example', 'Synthetic source', 'https://public.example/')"
+                ),
+                {"id": source_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO primary_signal.articles "
+                    "(id, source_id, first_seen_at, last_seen_at) "
+                    "VALUES (:id, :source_id, :seen, :seen)"
+                ),
+                {
+                    "id": article_id,
+                    "source_id": source_id,
+                    "seen": datetime(2020, 1, 1, tzinfo=UTC),
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO primary_signal.fetch_attempts "
+                    "(id, article_id, retrieval_strategy, requested_url, redirect_chain, "
+                    "status, started_at) VALUES "
+                    "(:id, :article_id, 'direct_http', 'https://public.example/notice', "
+                    "'[]'::jsonb, 'running', now())"
+                ),
+                {"id": attempt_id, "article_id": article_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO primary_signal.content_versions "
+                    "(id, article_id, origin_fetch_attempt_id, raw_response_hash, "
+                    "normalized_content_hash, normalization_version, extracted_text, "
+                    "extractor_name, extractor_version, fetched_at) VALUES "
+                    "(:id, :article_id, :attempt_id, :hash, :hash, 1, 'Synthetic text', "
+                    "'synthetic-test', '1', :fetched_at)"
+                ),
+                {
+                    "id": version_id,
+                    "article_id": article_id,
+                    "attempt_id": attempt_id,
+                    "hash": "a" * 64,
+                    "fetched_at": datetime(2020, 1, 1, tzinfo=UTC),
+                },
+            )
+        before_upgrade = datetime.now(UTC)
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            superseded_at = connection.execute(
+                text(
+                    "SELECT superseded_at FROM primary_signal.content_version_retention "
+                    "WHERE content_version_id=:id"
+                ),
+                {"id": version_id},
+            ).scalar_one()
+            assert superseded_at >= before_upgrade
 
         command.upgrade(config, "head")
         command.downgrade(config, "base")
