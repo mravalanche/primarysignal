@@ -1,16 +1,16 @@
 # Primary Signal design system
 
-**Selected direction:** Harbour Blue, in light and dark modes. The public identity uses the original **A4c1 Valley** mark. Its vector geometry, including the open valley after the P, is unchanged. The other logo and palette studies were proposals, not selected assets.
+Primary Signal uses Harbour Blue in light and dark modes and the waveform P mark in its public identity.
 
 This document is the reference for new public and administration UI. The two interfaces can use different page layouts, but share these foundations. Primary Signal should read as an editorial security publication: strong type, restrained colour, thin rules and clear source provenance. Colour supports labels and evidence; it never substitutes for them or implies a composite confidence score.
 
-The operator selected the [Reading desk](admin-reading-desk.md) layout for administration story inspection. That approval does not cover the separate administration overview dashboard.
-
-The typography hierarchy takes inspiration from [Sajid's *The 80% of UI Design – Typography*](https://www.youtube.com/watch?v=9-oefwZ6Z74), whose official description focuses on font size, weight and colour. The video does not prescribe this palette or these token values.
+Administration story inspection uses the [Reading desk](admin-reading-desk.md) layout. The administration overview has no defined layout yet.
 
 ## Colour tokens
 
 Use named, fixed steps. `soft` is a quiet surface, `mid` is for a hover border or selected surface, `strong` is the primary coloured cue, and `ink` is coloured text on a soft surface. The light and dark values are chosen separately; dark mode is not a numerical inversion of light mode. The selected brand blue is separate from the cooler editorial blue. A hue being available does not give it a product meaning; assign semantic aliases only when a component needs one.
+
+![Light and dark Primary Signal colour ramps, with soft, mid, strong and ink steps plus neutrals](assets/design-palette.svg)
 
 | Hue step | Light | Dark |
 | --- | --- | --- |
@@ -69,7 +69,7 @@ Components use role aliases rather than choosing a hex value or hue step ad hoc.
 
 | Role | Token | Use |
 | --- | --- | --- |
-| Logo spectrum and wordmark | `--ps-logo-ink = --ps-neutral-ink` | Original A4c1 spectrum and masthead name |
+| Logo spectrum and wordmark | `--ps-logo-ink = --ps-neutral-ink` | Waveform spectrum and masthead name |
 | Logo P, ordinary links, primary action, active filter, focus | `--ps-logo-accent` / `--ps-link` / `--ps-action = --ps-brand-blue-strong` | One recognisable interactive brand blue |
 | Supply-chain tag | `--ps-blue-soft` fill with `--ps-blue-ink` label | Quiet editorial subject badge |
 | Advisory article rail | `--ps-amber-strong` | Article type cue, alongside “Advisory” text |
@@ -114,9 +114,9 @@ DaisyUI supplies primitives, not the publication's semantics. Map its base colou
 
 ## Typography
 
-The approved story headline keeps the existing Charter character. The earlier `Inter`/Arial-style 0.85rem sans summary felt cramped; the selected reading style uses a larger warm serif with more leading. Use a small type scale and vary weight and neutral tone for hierarchy before adding another size.
+Story headlines use Charter. Reading copy uses a larger serif with generous leading. Use a small type scale and vary weight and neutral tone for hierarchy before adding another size.
 
-| Role / proposed token | Font stack | Size / line height | Weight / measure |
+| Role / token | Font stack | Size / line height | Weight / measure |
 | --- | --- | --- | --- |
 | Editorial headline, `--ps-font-editorial` | `Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif` | Used at story, section and page sizes | 700 |
 | Reading copy, `--ps-font-reading` | `"Bitstream Charter", Charter, Cambria, Georgia, serif` | Base `1rem / 1.55` | 400, up to `62ch` |
@@ -129,13 +129,13 @@ The approved story headline keeps the existing Charter character. The earlier `I
 | `--ps-text-ui` | `0.875rem / 1.4` | Navigation, filters, tags, buttons |
 | `--ps-text-body` | `1rem / 1.55` | Story summary and article body |
 | `--ps-text-standfirst` | `1.125rem / 1.5` | Introductory paragraph |
-| `--ps-text-story` | `1.5rem / 1.15` | Preserves approved `1.48rem` mock-up character |
+| `--ps-text-story` | `1.5rem / 1.15` | Story headline |
 | `--ps-text-section` | `2rem / 1.1` | Major content section |
 | `--ps-text-page` | `clamp(2.5rem, 5vw, 3.5rem) / 1.05` | Latest and story title |
 
 Use `400`, `600` and `700` as the routine weights. Body copy uses neutral ink; bylines, dates and supporting copy use neutral muted. Never make a long summary tiny or low-contrast to create hierarchy. Keep line lengths near `62ch`; do not stretch full article text across the page.
 
-The VM has Bitstream Charter, DejaVu Sans and Liberation Mono available. This document does not add a webfont or remote font request. System fonts may resolve differently on the desktop or other platforms. If identical typography across clients becomes a requirement, select and self-host font files after checking their redistribution licence and testing render performance.
+Use the listed system font stacks without remote font requests. If identical typography across clients becomes necessary, self-host licensed font files and test render performance.
 
 ## Spacing and components
 
@@ -149,4 +149,4 @@ The VM has Bitstream Charter, DejaVu Sans and Liberation Mono available. This do
 
 ## Identity assets
 
-The public masthead uses an inline original A4c1 SVG so the spectrum follows `--ps-logo-ink` and the P follows `--ps-logo-accent` in either theme. The favicon uses the same paths. Its adaptive SVG follows the operating-system light/dark preference; explicit light and dark variants follow the in-site theme toggle. The logo is a mark and wordmark, not a story-type or signal indicator.
+The public masthead uses an inline SVG waveform mark. Its spectrum follows `--ps-logo-ink` and its P follows `--ps-logo-accent` in either theme. The favicon uses the same paths. Its adaptive SVG follows the operating-system light/dark preference; explicit light and dark variants follow the in-site theme toggle. The logo is a mark and wordmark, not a story-type or signal indicator.
