@@ -1,0 +1,15 @@
+{% extends "layouts/admin.html" %}
+{% block title %}Sign in — Primary Signal{% endblock %}
+{% block content %}
+<section class="ps-admin-login" aria-labelledby="admin-login-title">
+  <p class="ps-kicker">Primary Signal · Editorial</p>
+  <h1 id="admin-login-title">Sign in</h1>
+  <p>Access the Reading desk.</p>
+  {% if error %}<p class="ps-admin-login-error" role="alert">{{ error }}</p>{% endif %}
+  <form action="/admin/login" method="post" accept-charset="utf-8">
+    <label for="admin-password">Password</label>
+    <input id="admin-password" name="password" type="password" autocomplete="current-password" required autofocus>
+    <button class="btn btn-primary" type="submit">Sign in</button>
+  </form>
+</section>
+{% endblock %}

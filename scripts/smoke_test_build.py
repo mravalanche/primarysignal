@@ -50,6 +50,8 @@ def main() -> int:
         "db/migrations/versions/20261009_12_editorial_read.py",
         "db/migrations/versions/20261009_13_admin_sessions.py",
         "db/migrations/versions/20261009_14_publication_transitions.py",
+        "web/admin/templates/login.html",
+        "web/admin/templates/reading_desk_live.html",
     )
     import_check = (
         "from importlib.resources import files; "

@@ -203,6 +203,92 @@ def test_public_production_entrypoint_disposes_after_startup_failure(
     assert "private connection detail" not in error_output
 
 
+def test_admin_production_entrypoint_keeps_session_and_editorial_logins_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {"checked": [], "disposed": []}
+
+    class FakeConnection:
+        def __init__(self, kind: str) -> None:
+            self.kind = kind
+
+        def __enter__(self) -> FakeConnection:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class FakeEngine:
+        def __init__(self, kind: str) -> None:
+            self.kind = kind
+
+        def connect(self) -> FakeConnection:
+            return FakeConnection(self.kind)
+
+        def dispose(self) -> None:
+            cast(list[str], captured["disposed"]).append(self.kind)
+
+    class FakeAdminSettings:
+        public_origin = "https://public.example"
+
+        def auth_config(self) -> str:
+            return "synthetic-auth-config"
+
+    def fake_engine(settings: DatabaseSettings, *, search_path: str) -> Engine:
+        assert search_path == "pg_catalog"
+        return cast(Engine, FakeEngine(settings.application_name))
+
+    def check_session(connection: FakeConnection) -> None:
+        cast(list[str], captured["checked"]).append(connection.kind)
+
+    def check_editorial(connection: FakeConnection, role: str) -> None:
+        assert role == "editorial_test"
+        cast(list[str], captured["checked"]).append(connection.kind)
+
+    def fake_admin_app(_settings: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    def fake_auth_service(*_args: object) -> str:
+        return "auth-service"
+
+    def fake_editorial_reader(engine: Engine, **_kwargs: object) -> tuple[str, Engine]:
+        return "reader", engine
+
+    def fake_run(app: object, **_kwargs: object) -> None:
+        captured["app"] = app
+
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "production")
+    monkeypatch.setenv(
+        "PRIMARY_SIGNAL_DATABASE_URL", "postgresql+psycopg://session@db.public.example/app"
+    )
+    monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", "session_test")
+    monkeypatch.setenv(
+        "PRIMARY_SIGNAL_ADMIN_EDITORIAL_DATABASE_URL",
+        "postgresql+psycopg://editorial@db.public.example/app",
+    )
+    monkeypatch.setenv("PRIMARY_SIGNAL_ADMIN_EDITORIAL_DATABASE_EXPECTED_ROLE", "editorial_test")
+    monkeypatch.setattr(web, "create_database_engine", fake_engine)
+    monkeypatch.setattr(web, "assert_admin_session_database_role", check_session)
+    monkeypatch.setattr(web, "assert_editorial_database_role", check_editorial)
+    monkeypatch.setattr(web, "AdminAuthSettings", FakeAdminSettings)
+    monkeypatch.setattr(web, "AdminAuthService", fake_auth_service)
+    monkeypatch.setattr(web, "EditorialReader", fake_editorial_reader)
+    monkeypatch.setattr(web, "create_admin_app", fake_admin_app)
+    monkeypatch.setattr(web.uvicorn, "run", fake_run)
+
+    web.main(["--surface", "admin"])
+
+    assert captured["checked"] == ["primary_signal_admin_session", "primary_signal_admin_editorial"]
+    assert captured["disposed"] == [
+        "primary_signal_admin_session",
+        "primary_signal_admin_editorial",
+    ]
+    assert captured["auth_service"] == "auth-service"
+    assert captured["editorial_reader"][0] == "reader"  # type: ignore[index]
+    assert captured["public_origin"] == "https://public.example"
+
+
 def test_migrate_entrypoint_upgrades_to_head(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

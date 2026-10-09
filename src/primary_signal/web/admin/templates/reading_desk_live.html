@@ -1,0 +1,70 @@
+{% extends "layouts/admin.html" %}
+{% block title %}Reading desk — Primary Signal{% endblock %}
+{% block content %}
+<div class="ps-desk" id="stories">
+  <header class="ps-desk-heading">
+    <div class="ps-desk-heading-actions"><p class="ps-kicker">Editorial · Story inspection</p><form action="/admin/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="ps-desk-signout" type="submit">Sign out</button></form></div>
+    <h1>Reading desk</h1>
+    <p>Inspect candidates, recorded source lineage and the revision readers can see.</p>
+  </header>
+
+  <div class="ps-desk-grid">
+    <aside class="ps-desk-inventory" aria-labelledby="desk-inventory-title">
+      <div class="ps-desk-section-head"><h2 id="desk-inventory-title">Stories</h2><span>{{ stories | length }} shown</span></div>
+      <form class="ps-desk-filters" method="get" action="{{ inventory_url }}" role="search">
+        <label for="desk-search">Search stories</label>
+        <input id="desk-search" name="q" type="search" value="{{ filters.q }}" placeholder="Headline or slug">
+        <label for="desk-state">Publication state</label>
+        <select id="desk-state" name="state"><option value="">All states</option>{% for value, label in state_options %}<option value="{{ value }}"{% if filters.state == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <label for="desk-topic">Topic</label>
+        <select id="desk-topic" name="topic"><option value="">All topics</option>{% for value, label in topic_options %}<option value="{{ value }}"{% if filters.topic == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <label for="desk-source">Source key</label>
+        <input id="desk-source" name="source" type="search" value="{{ filters.source }}" maxlength="128" placeholder="Configured source key">
+        <div class="ps-desk-filter-actions"><button class="btn" type="submit">Apply filters</button><a href="{{ inventory_url }}">Clear</a></div>
+      </form>
+      {% if stories %}
+      <nav class="ps-desk-story-list" aria-label="Story inventory">
+        {% for item in stories %}
+        <a class="ps-desk-story{% if detail and item.row.slug == detail.story.slug %} is-current{% endif %}" href="{{ item.url }}#story-detail"{% if detail and item.row.slug == detail.story.slug %} aria-current="page"{% endif %}>
+          <span class="ps-desk-story-top"><span class="ps-desk-state ps-desk-state-{{ item.state }}">{{ item.state | replace('-', ' ') | title }}</span>{% if item.row.candidate_updated_at %}<time datetime="{{ item.row.candidate_updated_at.isoformat() }}" title="Latest material update">{{ item.row.candidate_updated_at.strftime('%d %b %Y') }}</time>{% endif %}</span>
+          <strong>{{ item.row.candidate_headline or item.row.slug }}</strong>
+          <span class="ps-desk-story-bottom">{% if item.row.candidate_topic %}{{ item.row.candidate_topic | replace('-', ' ') | title }}{% else %}No topic{% endif %} · {% if item.row.candidate_number %}Candidate r{{ item.row.candidate_number }}{% else %}No revision yet{% endif %}</span>
+        </a>
+        {% endfor %}
+      </nav>
+      {% if older_url %}<a class="ps-desk-older" href="{{ older_url }}">Older stories →</a>{% endif %}
+      {% else %}<div class="ps-desk-empty"><h3>No matching stories</h3><p>Try another search or clear the filters.</p></div>{% endif %}
+    </aside>
+
+    {% if detail %}
+    <article class="ps-desk-detail" id="story-detail" aria-labelledby="desk-story-title">
+      <a class="ps-desk-back" href="#stories">↑ Back to stories</a>
+      <header class="ps-desk-detail-head">
+        <p class="ps-kicker">{% if candidate %}{{ candidate.story_type | replace('-', ' ') | title }} · {{ candidate.primary_topic | replace('-', ' ') | title }}{% else %}Story record{% endif %}</p>
+        <h2 id="desk-story-title">{{ candidate.headline if candidate else detail.story.slug }}</h2>
+        {% if candidate %}<p class="ps-desk-lede">{{ candidate.synthesis }}</p>{% endif %}
+        <div class="ps-desk-revision-meta"><span class="ps-desk-state ps-desk-state-{{ 'suppressed' if detail.story.suppressed else detail.story.candidate_status or 'no-revision' }}">{{ 'Suppressed' if detail.story.suppressed else (detail.story.candidate_status or 'No revision') | title }}</span><span>Candidate {% if candidate %}revision {{ candidate.number }}{% else %}not recorded{% endif %}</span><span>Current public revision {% if detail.current_revision and not detail.story.suppressed %}{{ detail.current_revision.number }}{% else %}none{% endif %}</span></div>
+      </header>
+      {% if candidate %}<section class="ps-desk-reading" aria-labelledby="desk-why-title"><h3 id="desk-why-title">Why it matters</h3><p>{{ candidate.why_it_matters }}</p></section>{% endif %}
+      <section class="ps-desk-reading" aria-labelledby="desk-current-title">
+        <h3 id="desk-current-title">Current public version</h3>
+        {% if detail.current_revision and not detail.story.suppressed %}<div class="ps-desk-current"><p class="ps-kicker">Revision {{ detail.current_revision.number }}</p><h4>{{ detail.current_revision.headline }}</h4><p>{{ detail.current_revision.synthesis }}</p></div>{% if public_url %}<a href="{{ public_url }}" rel="noreferrer noopener">View current public story ↗</a>{% else %}<p class="ps-desk-muted">Public link is not configured for this installation.</p>{% endif %}
+        {% else %}<p class="ps-desk-muted">No public revision is visible.</p>{% endif %}
+      </section>
+      <section class="ps-desk-reading" aria-labelledby="desk-sources-title">
+        <div class="ps-desk-section-head"><h3 id="desk-sources-title">Candidate source trail</h3><span>{{ source_views | length }} shown{% if detail.sources_have_more %} · more than 50 recorded{% endif %}</span></div>
+        {% if source_views %}<ol class="ps-desk-sources">{% for entry in source_views %}<li class="ps-desk-source"><div class="ps-desk-source-heading"><span class="ps-desk-source-order">{{ entry.source.position }}</span><div><strong>{{ entry.source.publisher }}</strong><span class="ps-desk-source-role">{{ 'Primary' if entry.source.is_primary else 'Supporting' }} source</span></div></div>{% if entry.safe_url %}<a href="{{ entry.safe_url }}" rel="noreferrer noopener">{{ entry.source.title }} ↗</a>{% else %}<p>{{ entry.source.title }} · URL unavailable</p>{% endif %}<details class="ps-desk-lineage"><summary>Recorded lineage</summary><dl><div><dt>Article</dt><dd>{{ entry.source.article_id or 'Not recorded' }}</dd></div><div><dt>Content version</dt><dd>{{ entry.source.content_version_id or 'Not recorded' }}</dd></div><div><dt>Configured source</dt><dd>{{ entry.source.configured_source_name or 'Not recorded' }}</dd></div><div><dt>URL linked to article</dt><dd>{{ 'Yes' if entry.source.public_url_belongs_to_article else 'No' }}</dd></div><div><dt>Published</dt><dd>{% if entry.source.first_published_at %}<time datetime="{{ entry.source.first_published_at.isoformat() }}">{{ entry.source.first_published_at.strftime('%d %b %Y, %H:%M UTC') }}</time>{% else %}Not recorded{% endif %}</dd></div></dl></details></li>{% endfor %}</ol>{% else %}<p class="ps-desk-muted">No sources are attached to this candidate.</p>{% endif %}
+        {% if all_sources_url %}<a href="{{ all_sources_url }}#desk-sources-title">View all {{ detail.candidate_sources | length }} recorded sources →</a>{% endif %}
+        {% if detail.sources_have_more %}<p class="ps-desk-muted">Additional sources beyond the first 50 are not shown yet.</p>{% endif %}
+      </section>
+    </article>
+
+    <aside class="ps-desk-rail" aria-label="Review status">
+      <section class="ps-desk-rail-section" aria-labelledby="desk-validation-title"><h2 id="desk-validation-title">Validation</h2><p class="ps-desk-state-note">No current validation result is available in this view. Review the candidate and its sources before a publication decision.</p></section>
+      <section class="ps-desk-rail-section" aria-labelledby="desk-events-title"><h2 id="desk-events-title">Recorded decisions</h2>{% if detail.events %}<ol class="ps-desk-event-list">{% for event in detail.events[:8] %}<li><strong>{{ event.to_status | title }}</strong><time datetime="{{ event.occurred_at.isoformat() }}">{{ event.occurred_at.strftime('%d %b %Y, %H:%M UTC') }}</time><span>{{ event.reason }}</span></li>{% endfor %}</ol>{% if detail.events | length > 8 or detail.events_have_more %}<p class="ps-desk-muted">Showing the eight most recent of at least {{ detail.events | length }} recorded events.</p>{% endif %}{% else %}<p class="ps-desk-muted">No decision events are recorded.</p>{% endif %}</section>
+      <section class="ps-desk-rail-section" aria-labelledby="desk-decision-title"><h2 id="desk-decision-title">Decision</h2><p>Publication controls are not available in the read-only Reading desk.</p></section>
+    </aside>
+    {% else %}<div class="ps-desk-empty ps-desk-empty-detail"><h2>Select a story</h2><p>Choose an item from the inventory to inspect its candidate and source trail.</p></div>{% endif %}
+  </div>
+</div>
+{% endblock %}
