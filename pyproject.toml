@@ -48,6 +48,7 @@ primary-signal-retriever = "primary_signal.entrypoints.retriever:main"
 primary-signal-scheduler = "primary_signal.entrypoints.scheduler:main"
 primary-signal-migrate = "primary_signal.entrypoints.migrate:main"
 primary-signal-article-inventory = "primary_signal.entrypoints.article_inventory:main"
+primary-signal-source-health = "primary_signal.entrypoints.source_health:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/primary_signal"]

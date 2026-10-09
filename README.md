@@ -163,12 +163,32 @@ The JSON output includes an opaque cursor for the next page, but no extracted
 body or raw URL. This is an internal operator command, not a public story
 search endpoint. The public and administration sites do not expose this reader.
 
+### Source and feed health
+
+From a local terminal, use a dedicated database login with only the
+`primary_signal_cap_source_health` capability. Set
+`PRIMARY_SIGNAL_DATABASE_URL` and `PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE`
+for that login, then run:
+
+```sh
+uv run primary-signal-source-health --limit 100
+```
+
+The JSON report lists at most the requested number of sources and feeds each,
+ordered by source key and then feed name and ID. Truncation flags show when more
+rows exist. Feed status is `disabled` when the feed or its source is disabled;
+`stale` when it has failures, has never succeeded and is due, or its last
+success is more than two poll intervals old; and `healthy` otherwise. The
+report contains names and polling timestamps, but no configured URLs, error
+details, job payloads, or article content. It is a local operator command.
+
 ### Database capability roles
 
 Fresh Compose database volumes create two fixed, non-login queue capabilities,
 one feed-scheduling capability, one feed-poll capability, and one capability for
 article persistence, a metadata-only inventory search capability, and public
-projection owner/read capabilities, plus a publication-writer capability. The definitions
+projection owner/read capabilities, a publication-writer capability, and a
+source-health read capability. The definitions
 live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
 passwords and role membership remain deployment-owned. PostgreSQL only runs
 these files while creating a new data directory.
