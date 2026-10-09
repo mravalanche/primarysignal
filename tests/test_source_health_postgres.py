@@ -15,7 +15,7 @@ ROLE = "primary_signal_cap_source_health"
 
 
 @pytest.mark.postgres
-def test_source_health_capability() -> None:
+def test_source_health_capability(monkeypatch: pytest.MonkeyPatch) -> None:
     url = os.environ.get("PRIMARY_SIGNAL_TEST_DATABASE_URL")
     expected = os.environ.get("PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE")
     if not url or not expected:
@@ -33,6 +33,8 @@ def test_source_health_capability() -> None:
                 "_test"
             )
             assert connection.execute(text("SELECT current_user")).scalar_one() == expected
+        monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_URL", url)
+        monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", expected)
         command.upgrade(Config(Path(__file__).resolve().parents[1] / "alembic.ini"), "head")
         with health_engine.connect() as connection:
             assert connection.execute(text("SELECT current_user")).scalar_one() == "health_test"
