@@ -1,5 +1,6 @@
 """PostgreSQL public story reader behavior and restricted-role access."""
 
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
@@ -8,9 +9,11 @@ from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
+from primary_signal.config import RuntimeEnvironment, Settings
 from primary_signal.entrypoints.web import assert_public_database_role
 from primary_signal.publication import (
     InvalidCursor,
@@ -19,6 +22,7 @@ from primary_signal.publication import (
     TagKind,
     Topic,
 )
+from primary_signal.web.public import create_public_app
 
 
 class _Rows:
@@ -473,6 +477,28 @@ def test_synthetic_projection_order_and_children_with_restricted_login(
         assert story.tags[0].id == tag_id
         assert story.sources[0].id == f"synthetic-{nonce}-source-0"
         assert story.signals[0].evidence_source_ids == (story.sources[0].id,)
+
+        async def render_public_pages() -> tuple[str, str, str]:
+            app = create_public_app(
+                Settings(environment=RuntimeEnvironment.TEST), story_reader=reader
+            )
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="https://public.example"
+            ) as client:
+                latest = await client.get("/")
+                detail = await client.get(f"/stories/{slugs[0]}")
+                tag_page = await client.get(f"/tags/{tag_id}")
+            assert latest.status_code == detail.status_code == tag_page.status_code == 200
+            return latest.text, detail.text, tag_page.text
+
+        latest_html, detail_html, tag_html = asyncio.run(render_public_pages())
+        assert f'href="/stories/{slugs[0]}"' in latest_html
+        assert f'href="/tags/{tag_id}"' in latest_html
+        assert slugs[2] not in latest_html and slugs[3] not in latest_html
+        assert f'href="https://public.example/{nonce}/0"' in detail_html
+        assert f'id="source-synthetic-{nonce}-source-0"' in detail_html
+        assert f'href="/stories/{slugs[0]}"' in tag_html
+        assert slugs[2] not in tag_html and slugs[3] not in tag_html
     finally:
         public.dispose()
         admin.dispose()
