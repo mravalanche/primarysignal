@@ -130,6 +130,10 @@ class RecordingStoryReader:
     def get_story(self, slug: str) -> PublicStory | None:
         return self.stories.get(slug)
 
+    def get_tag(self, tag_id: str) -> PublicTag | None:
+        del tag_id
+        return None
+
 
 @dataclass(frozen=True)
 class CursorStoryReader:
@@ -144,6 +148,7 @@ class CursorStoryReader:
             if (query.topic is None or story.primary_topic is query.topic)
             and (query.story_type is None or story.story_type is query.story_type)
             and (query.uk_relevant is None or story.uk_relevant is query.uk_relevant)
+            and (query.tag_id is None or any(tag.id == query.tag_id for tag in story.tags))
         )
         ordered = sorted(filtered, key=lambda item: item.slug)
         ordered.sort(key=lambda item: item.latest_material_update_at, reverse=True)
@@ -172,6 +177,10 @@ class CursorStoryReader:
         del slug
         return None
 
+    def get_tag(self, tag_id: str) -> None:
+        del tag_id
+        return None
+
 
 def test_lists_published_story_summaries_with_filters() -> None:
     summary = story_summary()
@@ -184,7 +193,8 @@ def test_lists_published_story_summaries_with_filters() -> None:
     response = request(
         app,
         "/api/v1/stories?limit=10&cursor=current-page"
-        "&topic=vulnerabilities-and-exploitation&story_type=advisory&uk_relevant=true",
+        "&topic=vulnerabilities-and-exploitation&story_type=advisory"
+        "&uk_relevant=true&tag_id=cve-2026-12345",
     )
 
     assert response.status_code == 200
@@ -207,6 +217,7 @@ def test_lists_published_story_summaries_with_filters() -> None:
             topic=Topic.VULNERABILITIES_AND_EXPLOITATION,
             story_type=StoryType.ADVISORY,
             uk_relevant=True,
+            tag_id="cve-2026-12345",
         )
     ]
 
@@ -252,6 +263,7 @@ def test_empty_reader_and_http_errors() -> None:
     }
     assert request(app, "/api/v1/stories/not-published").status_code == 404
     assert request(app, "/api/v1/stories?limit=51").status_code == 422
+    assert request(app, "/api/v1/stories?tag_id=Bad ID").status_code == 422
     assert request(app, "/api/v1/stories/Not_Valid").status_code == 422
 
     invalid_reader = RecordingStoryReader(PublicStoryPage(items=()), {})
@@ -299,8 +311,35 @@ def test_cursor_is_stable_across_ties_and_bound_to_filters() -> None:
             first_page.next_cursor,
             StoryListQuery(limit=2, uk_relevant=False),
         )
+    with pytest.raises(InvalidCursor, match="filters"):
+        decode_cursor(
+            first_page.next_cursor, StoryListQuery(limit=2, uk_relevant=True, tag_id="other")
+        )
     with pytest.raises(InvalidCursor, match="invalid cursor"):
         decode_cursor("not-json", first_query)
+
+
+def test_tag_filter_pages_only_matching_stories_and_binds_cursor_to_tag() -> None:
+    reader = CursorStoryReader(
+        (
+            story_summary(slug="story-c"),
+            replace(
+                story_summary(slug="other-tag"),
+                tags=(PublicTag("other", "Other", TagKind.CURATED),),
+            ),
+            story_summary(slug="story-a"),
+            story_summary(slug="story-b"),
+        )
+    )
+    query = StoryListQuery(limit=2, tag_id="cve-2026-12345")
+    first = reader.list_stories(query)
+
+    assert [item.slug for item in first.items] == ["story-a", "story-b"]
+    assert first.next_cursor is not None
+    second = reader.list_stories(replace(query, cursor=first.next_cursor))
+    assert [item.slug for item in second.items] == ["story-c"]
+    with pytest.raises(InvalidCursor, match="filters"):
+        decode_cursor(first.next_cursor, replace(query, tag_id="other"))
 
 
 def test_publication_boundary_rejects_unsafe_source_values() -> None:
@@ -422,6 +461,8 @@ def test_publication_boundary_enforces_projection_invariants() -> None:
         StoryListQuery(limit=0)
     with pytest.raises(ValueError, match="cursor"):
         StoryListQuery(limit=10, cursor="")
+    with pytest.raises(ValueError, match="tag id"):
+        StoryListQuery(limit=10, tag_id="Bad ID")
 
 
 def test_cursor_rejects_unsupported_and_malformed_positions() -> None:
@@ -442,6 +483,7 @@ def test_cursor_rejects_unsupported_and_malformed_positions() -> None:
                         "topic": None,
                         "story_type": None,
                         "uk_relevant": None,
+                        "tag_id": None,
                     },
                 }
             ),

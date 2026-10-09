@@ -15,7 +15,7 @@
     <div class="ps-story-detail-body">
       <p class="ps-story-synthesis">{{ story.synthesis }}</p>
       <section aria-labelledby="why-title"><h2 id="why-title">Why it matters</h2><p>{{ story.why_it_matters }}</p></section>
-      {% if story.tags %}<div class="ps-story-tags tag-list" aria-label="Story tags">{% for tag in story.tags %}<span class="badge badge-sm ps-tag ps-tag-{{ tag.kind.value }}">{{ tag.label }}</span>{% endfor %}</div>{% endif %}
+      {% if story.tags %}<div class="ps-story-tags tag-list" aria-label="Story tags">{% for tag in story.tags %}<a class="badge badge-sm ps-tag ps-tag-{{ tag.kind.value }}" href="/tags/{{ tag.id }}">{{ tag.label }}</a>{% endfor %}</div>{% endif %}
       {% if story.signals %}<section class="ps-story-detail-signals" aria-labelledby="signals-title"><h2 id="signals-title">Signals</h2><div class="ps-signal-list">{% for signal in story.signals %}<div class="ps-signal-detail" id="signal-{{ signal.kind.value }}"><h3>{{ signal_details[signal.kind][0] }}</h3><p>{{ signal_details[signal.kind][1] }}</p><p>Evidence: {% for source_id in signal.evidence_source_ids %}<a href="#source-{{ source_id }}">{{ source_lookup[source_id].publisher }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p></div>{% endfor %}</div></section>{% endif %}
       <section class="ps-source-trail" id="sources" aria-labelledby="sources-title">
         <h2 id="sources-title">Sources for this story <span>{{ story.source_count }}</span></h2>

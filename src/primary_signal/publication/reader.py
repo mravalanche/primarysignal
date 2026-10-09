@@ -2,7 +2,12 @@
 
 from typing import Protocol
 
-from primary_signal.publication.models import PublicStory, PublicStoryPage, StoryListQuery
+from primary_signal.publication.models import (
+    PublicStory,
+    PublicStoryPage,
+    PublicTag,
+    StoryListQuery,
+)
 
 
 class StoryReader(Protocol):
@@ -21,6 +26,10 @@ class StoryReader(Protocol):
         """Return one currently published story, or ``None``."""
         ...
 
+    def get_tag(self, tag_id: str) -> PublicTag | None:
+        """Return a canonical tag visible on published stories, or ``None``."""
+        ...
+
 
 class EmptyStoryReader:
     """Non-production reader used before the persistence adapter exists."""
@@ -31,4 +40,8 @@ class EmptyStoryReader:
 
     def get_story(self, slug: str) -> None:
         del slug
+        return None
+
+    def get_tag(self, tag_id: str) -> None:
+        del tag_id
         return None

@@ -30,6 +30,7 @@ def _filter_values(query: StoryListQuery) -> dict[str, str | bool | None]:
         "topic": query.topic.value if query.topic is not None else None,
         "story_type": query.story_type.value if query.story_type is not None else None,
         "uk_relevant": query.uk_relevant,
+        "tag_id": query.tag_id,
     }
 
 

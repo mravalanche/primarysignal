@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from functools import partial
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -13,6 +14,7 @@ from primary_signal.publication import (
     InvalidCursor,
     PublicSignalKind,
     PublicStorySummary,
+    PublicTag,
     StoryListQuery,
     StoryReader,
     StoryType,
@@ -114,6 +116,7 @@ def latest_url(
     topic: Topic | None = None,
     story_type: StoryType | None = None,
     uk_relevant: bool = False,
+    tag_id: str | None = None,
 ) -> str:
     parameters: dict[str, str] = {}
     if topic is not None:
@@ -124,16 +127,18 @@ def latest_url(
         parameters["uk_relevant"] = "true"
     if cursor is not None:
         parameters["cursor"] = cursor
-    return "/" + ("?" + urlencode(parameters) if parameters else "")
+    path = f"/tags/{tag_id}" if tag_id is not None else "/"
+    return path + ("?" + urlencode(parameters) if parameters else "")
 
 
-def _context(**extra: object) -> dict[str, object]:
+def _context(*, tag: PublicTag | None = None, **extra: object) -> dict[str, object]:
     return {
         "topics": TOPIC_LABELS,
         "story_types": TYPE_LABELS,
         "signal_details": SIGNAL_DETAILS,
         "utc_display": utc_display,
-        "latest_url": latest_url,
+        "latest_url": partial(latest_url, tag_id=tag.id if tag is not None else None),
+        "tag": tag,
         **extra,
     }
 
@@ -162,6 +167,42 @@ def latest_page(
 ) -> HTMLResponse:
     """Render published stories with linkable, cursor-bound filters."""
 
+    return _listing_page(request, reader, cursor, topic, story_type, uk_relevant)
+
+
+@router.get("/tags/{tag_id}", response_class=HTMLResponse)
+def tag_page(
+    request: Request,
+    tag_id: Annotated[str, Path(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$", max_length=160)],
+    reader: ReaderDependency,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=500)] = None,
+    topic: Annotated[str | None, Query(max_length=80)] = None,
+    story_type: Annotated[str | None, Query(max_length=80)] = None,
+    uk_relevant: bool = False,
+) -> HTMLResponse:
+    """Show one canonical tag and its currently published stories."""
+
+    tag = reader.get_tag(tag_id)
+    if tag is None:
+        return templates.TemplateResponse(
+            request=request,
+            name="tag_not_found.html",
+            status_code=404,
+            context={},
+        )
+    return _listing_page(request, reader, cursor, topic, story_type, uk_relevant, tag=tag)
+
+
+def _listing_page(
+    request: Request,
+    reader: StoryReader,
+    cursor: str | None,
+    topic: str | None,
+    story_type: str | None,
+    uk_relevant: bool,
+    *,
+    tag: PublicTag | None = None,
+) -> HTMLResponse:
     selected_topic = _optional_filter(topic, Topic)
     selected_type = _optional_filter(story_type, StoryType)
     filters = {
@@ -177,6 +218,7 @@ def latest_page(
                 topic=selected_topic,
                 story_type=selected_type,
                 uk_relevant=True if uk_relevant else None,
+                tag_id=tag.id if tag is not None else None,
             )
         )
     except InvalidCursor:
@@ -185,6 +227,7 @@ def latest_page(
             name="latest.html",
             status_code=400,
             context=_context(
+                tag=tag,
                 groups=(),
                 next_url=None,
                 filters=filters,
@@ -195,6 +238,7 @@ def latest_page(
         request=request,
         name="latest.html",
         context=_context(
+            tag=tag,
             groups=group_by_update_day(page.items),
             next_url=(
                 latest_url(
@@ -202,6 +246,7 @@ def latest_page(
                     topic=selected_topic,
                     story_type=selected_type,
                     uk_relevant=uk_relevant,
+                    tag_id=tag.id if tag is not None else None,
                 )
                 if page.next_cursor
                 else None

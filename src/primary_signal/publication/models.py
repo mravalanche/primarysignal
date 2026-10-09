@@ -273,9 +273,12 @@ class StoryListQuery:
     topic: Topic | None = None
     story_type: StoryType | None = None
     uk_relevant: bool | None = None
+    tag_id: str | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= self.limit <= 50:
             raise ValueError("limit must be between 1 and 50")
         if self.cursor is not None and (not self.cursor or len(self.cursor) > 500):
             raise ValueError("cursor is not valid")
+        if self.tag_id is not None:
+            validate_public_identifier(self.tag_id, name="tag id")

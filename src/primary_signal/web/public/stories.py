@@ -30,6 +30,9 @@ def list_stories(
     topic: Topic | None = None,
     story_type: StoryType | None = None,
     uk_relevant: bool | None = None,
+    tag_id: Annotated[
+        str | None, Query(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$", max_length=160)
+    ] = None,
 ) -> StoryPageResponse:
     """List currently published stories from the curated public projection."""
 
@@ -41,6 +44,7 @@ def list_stories(
                 topic=topic,
                 story_type=story_type,
                 uk_relevant=uk_relevant,
+                tag_id=tag_id,
             )
         )
     except InvalidCursor as error:
