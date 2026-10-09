@@ -52,6 +52,33 @@ The pre-commit hook runs the offline gate and secret scan. Before pushing, run
 `uv run poe check` to add Python and frontend advisory audits and the package
 build.
 
+### Complete VM test gate
+
+On an Ubuntu 26.04 development VM, run `scripts/dev_test_env.sh` from a source
+checkout. It installs PostgreSQL 18 and Python's 3.14 virtual-environment
+package if needed, bootstraps uv 0.12.21 if absent, downloads the exact Node
+version in `.node-version` into a private user cache, syncs locked Python and
+npm dependencies, and runs the full `poe check` gate. The script needs `sudo`
+only for missing apt packages.
+
+```sh
+bash scripts/dev_test_env.sh
+```
+
+The gate starts a fresh PostgreSQL cluster in a temporary directory with TCP
+disabled and an owner-only Unix socket. It creates the synthetic capability
+roles, applies migrations, runs all tests including PostgreSQL privilege tests,
+then stops and removes that cluster even if a check fails. No existing database
+or Compose volume is touched. The cluster uses local socket trust authentication;
+only its owning VM user can reach the socket. Use `--offline` for the deterministic
+gate, `--setup-only` to install tools without running tests, or `--skip-apt` when
+the system packages are already installed.
+
+The tests take their database endpoints from the `PRIMARY_SIGNAL_TEST_*_DATABASE_URL`
+settings exported by this script. That keeps a future Docker-backed test runner
+limited to provisioning a disposable database and supplying the same settings;
+Docker and daemon permissions are not needed for this VM gate.
+
 ### Feed scheduler
 
 The scheduler queues due feed polls and does no network work itself. It runs
@@ -103,13 +130,17 @@ required before live polling can be enabled.
 The local retriever also has a fixed article-fetch endpoint. It applies the
 same address and redirect policy, extracts bounded plain text from HTML inside
 the database-free retriever, and returns content hashes and redirect history.
-Raw HTML is discarded there. Article job handling and content-version
-persistence are the next step; live article retrieval remains disabled.
+Raw HTML is discarded there. An explicit, injectable article job handler now
+records fetch attempts and immutable extracted-text versions in PostgreSQL.
+Repeated content reuses the same version. Live article retrieval remains
+disabled until deployment egress controls, a retention rule, and source-disable
+serialization are settled.
 
 ### Database capability roles
 
 Fresh Compose database volumes create two fixed, non-login queue capabilities,
-one feed-scheduling capability, and one feed-poll capability. The definitions
+one feed-scheduling capability, one feed-poll capability, and one capability for
+article persistence. The definitions
 live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
 passwords and role membership remain deployment-owned. PostgreSQL only runs
 these files while creating a new data directory.
@@ -122,9 +153,10 @@ does not put a password on the command line:
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/010_queue_capability_roles.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/040_article_persist_capability_role.sql'
 ```
 
-Run all three commands before applying migrations. The migrations grant access to
+Run all four commands before applying migrations. The migrations grant access to
 the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any

@@ -24,6 +24,7 @@ SUBMIT_ROLE = "primary_signal_cap_queue_submit"
 CONSUME_ROLE = "primary_signal_cap_queue_consume"
 FEED_SCHEDULE_ROLE = "primary_signal_cap_feed_schedule"
 FEED_POLL_ROLE = "primary_signal_cap_feed_poll"
+ARTICLE_PERSIST_ROLE = "primary_signal_cap_article_persist"
 SCHEDULER_LOGIN = "scheduler_test"
 PROCESSOR_LOGIN = "processor_test"
 
@@ -383,7 +384,7 @@ def test_restricted_logins_have_only_expected_attributes_and_memberships(
     scheduler, processor = restricted_engines
     expected_memberships = {
         SCHEDULER_LOGIN: {SUBMIT_ROLE, FEED_SCHEDULE_ROLE},
-        PROCESSOR_LOGIN: {SUBMIT_ROLE, CONSUME_ROLE, FEED_POLL_ROLE},
+        PROCESSOR_LOGIN: {SUBMIT_ROLE, CONSUME_ROLE, FEED_POLL_ROLE, ARTICLE_PERSIST_ROLE},
     }
     migrator = os.environ["PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE"]
 

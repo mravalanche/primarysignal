@@ -41,6 +41,7 @@ def main() -> int:
         "db/migrations/versions/20261001_03_queue_capability_grants.py",
         "db/migrations/versions/20261001_04_feed_scheduler_grants.py",
         "db/migrations/versions/20261007_05_feed_poll_grants.py",
+        "db/migrations/versions/20261009_06_article_persist_grants.py",
     )
     import_check = (
         "from importlib.resources import files; "
@@ -54,7 +55,7 @@ def main() -> int:
         "missing=[path for path in required if not root.joinpath(path).is_file()]; "
         "assert not missing, f'missing packaged UI resources: {missing}'; "
         "assert migration_config_path().is_file(); "
-        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261007_05'; "
+        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_06'; "
         "assert create_admin_app().title; "
         "assert create_public_app().title"
     )
