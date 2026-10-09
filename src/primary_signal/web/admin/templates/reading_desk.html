@@ -1,0 +1,111 @@
+{% extends "layouts/admin.html" %}
+{% block title %}Story inspection — Primary Signal{% endblock %}
+{% block content %}
+<div class="ps-desk">
+  <header class="ps-desk-heading">
+    <p class="ps-kicker">Editorial · Story inspection</p>
+    <h1>Reading desk</h1>
+    <p>Inspect the candidate, its evidence and the version readers can see.</p>
+  </header>
+
+  <div class="ps-desk-grid">
+    <aside class="ps-desk-inventory" aria-labelledby="desk-inventory-title">
+      <div class="ps-desk-section-head">
+        <h2 id="desk-inventory-title">Stories</h2>
+        <span>{{ stories | length }} shown</span>
+      </div>
+      <form class="ps-desk-filters" method="get" action="{{ inventory_url }}" role="search">
+        <label for="desk-search">Search stories</label>
+        <input id="desk-search" name="q" type="search" value="{{ filters.q }}" placeholder="Headline or slug">
+        <label for="desk-state">Publication state</label>
+        <select id="desk-state" name="state">
+          <option value="">All states</option>
+          {% for value, label in state_options %}<option value="{{ value }}"{% if filters.state == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <label for="desk-topic">Topic</label>
+        <select id="desk-topic" name="topic">
+          <option value="">All topics</option>
+          {% for value, label in topic_options %}<option value="{{ value }}"{% if filters.topic == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <label for="desk-source">Source</label>
+        <select id="desk-source" name="source">
+          <option value="">All sources</option>
+          {% for value, label in source_options %}<option value="{{ value }}"{% if filters.source == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <div class="ps-desk-filter-actions"><button class="btn" type="submit">Apply filters</button><a href="{{ inventory_url }}">Clear</a></div>
+      </form>
+      {% if stories %}
+      <nav class="ps-desk-story-list" aria-label="Story inventory">
+        {% for item in stories %}
+        <a class="ps-desk-story{% if story and item.slug == story.slug %} is-current{% endif %}" href="{{ item.url }}"{% if story and item.slug == story.slug %} aria-current="page"{% endif %}>
+          <span class="ps-desk-story-top"><span class="ps-desk-state ps-desk-state-{{ item.state }}">{{ item.state_label }}</span><time datetime="{{ item.updated_at.isoformat() }}">{{ item.updated_label }}</time></span>
+          <strong>{{ item.headline }}</strong>
+          <span class="ps-desk-story-bottom">{{ item.topic }} · Candidate r{{ item.revision_number }}</span>
+        </a>
+        {% endfor %}
+      </nav>
+      {% if older_url %}<a class="ps-desk-older" href="{{ older_url }}">Older stories →</a>{% endif %}
+      {% else %}<div class="ps-desk-empty" role="status"><h3>No matching stories</h3><p>Try another search or clear the filters.</p></div>{% endif %}
+    </aside>
+
+    {% if story %}
+    <article class="ps-desk-detail" aria-labelledby="desk-story-title">
+      <header class="ps-desk-detail-head">
+        <p class="ps-kicker">{{ story.story_type }} · {{ story.topic }}</p>
+        <h2 id="desk-story-title">{{ story.headline }}</h2>
+        <p class="ps-desk-lede">{{ story.synthesis }}</p>
+        <div class="ps-desk-revision-meta">
+          <span class="ps-desk-state ps-desk-state-{{ story.state }}">{{ story.state_label }}</span>
+          <span>Candidate revision {{ story.candidate_number }}</span>
+          <span>Current public revision {% if story.current_number %}{{ story.current_number }}{% else %}none{% endif %}</span>
+        </div>
+      </header>
+
+      <section class="ps-desk-reading" aria-labelledby="desk-why-title">
+        <h3 id="desk-why-title">Why it matters</h3>
+        <p>{{ story.why_it_matters }}</p>
+      </section>
+      <section class="ps-desk-reading" aria-labelledby="desk-changes-title">
+        <h3 id="desk-changes-title">Changes from the public version</h3>
+        {% if story.changes %}<p>{{ story.changes }}</p>{% else %}<p class="ps-desk-muted">No public revision exists yet.</p>{% endif %}
+        {% if story.current_number %}<div class="ps-desk-current"><p class="ps-kicker">Currently public · revision {{ story.current_number }}</p><h4>{{ story.current_headline }}</h4><p>{{ story.current_synthesis }}</p></div>{% endif %}
+        {% if public_url %}<a href="{{ public_url }}" rel="noopener noreferrer">View current public story ↗</a>{% endif %}
+      </section>
+      <section class="ps-desk-reading" aria-labelledby="desk-sources-title">
+        <div class="ps-desk-section-head"><h3 id="desk-sources-title">Source trail</h3><span>{{ sources | length }} shown</span></div>
+        {% if sources %}
+          <ol class="ps-desk-sources">
+          {% for source in sources %}
+            <li class="ps-desk-source">
+              <div class="ps-desk-source-heading"><span class="ps-desk-source-order">{{ loop.index }}</span><div><strong>{{ source.publisher }}</strong><span class="ps-desk-source-role">{{ source.role }}</span></div></div>
+              <a href="{{ source.public_url }}" rel="noopener noreferrer">{{ source.title }} ↗</a>
+              <p>{{ source.supports }}</p>
+              <dl class="ps-desk-lineage"><div><dt>Article</dt><dd>{{ source.article_id }}</dd></div><div><dt>Content version</dt><dd>{{ source.content_version_id }}</dd></div><div><dt>Source URL</dt><dd><a href="{{ source.source_url }}" rel="noopener noreferrer">{{ source.source_url }}</a></dd></div><div><dt>Published</dt><dd>{% if source.published_at %}<time datetime="{{ source.published_at.isoformat() }}">{{ source.published_label }}</time>{% else %}Not stated{% endif %}</dd></div></dl>
+            </li>
+          {% endfor %}
+          </ol>
+        {% else %}<p class="ps-desk-muted">No eligible sources are attached to this candidate.</p>{% endif %}
+        {% if all_sources_url %}<a href="{{ all_sources_url }}">View all sources →</a>{% endif %}
+      </section>
+    </article>
+
+    <aside class="ps-desk-rail" aria-label="Validation and decision">
+      <section class="ps-desk-rail-section" aria-labelledby="desk-validation-title">
+        <h2 id="desk-validation-title">Validation</h2>
+        <p class="ps-desk-state-note ps-desk-state-note-{{ publication_state.kind }}" role="status">{{ publication_state.message }}{% if publication_state.public_url %} <a href="{{ publication_state.public_url }}">View public story ↗</a>{% endif %}</p>
+        <ul class="ps-desk-checks">
+          {% for check in checks %}<li class="{% if check.passed %}is-passed{% else %}is-failed{% endif %}"><span aria-hidden="true">{% if check.passed %}✓{% else %}!{% endif %}</span>{{ check.label }}</li>{% endfor %}
+        </ul>
+        <dl class="ps-desk-facts"><div><dt>Input fingerprint</dt><dd><code>{{ validation.fingerprint }}</code></dd></div><div><dt>Validated</dt><dd><time datetime="{{ validation.validated_at.isoformat() }}">{{ validation.validated_label }}</time></dd></div><div><dt>Unresolved conflicts</dt><dd>{{ validation.conflicts }}</dd></div></dl>
+      </section>
+      <section class="ps-desk-rail-section" aria-labelledby="desk-decision-title">
+        <h2 id="desk-decision-title">Decision</h2>
+        <p>Publishing candidate revision {{ story.candidate_number }} would replace {% if story.current_number %}public revision {{ story.current_number }}{% else %}the unpublished state{% endif %}.</p>
+        <p class="ps-desk-muted">Publication actions are unavailable.</p>
+        <div class="ps-desk-decision-actions"><button class="btn btn-primary" type="button" disabled>Publish revision {{ story.candidate_number }}</button><button class="btn" type="button" disabled>Suppress…</button></div>
+      </section>
+    </aside>
+    {% else %}<div class="ps-desk-empty ps-desk-empty-detail" role="status"><h2>Select a story</h2><p>Choose an item from the inventory to inspect its candidate and source trail.</p></div>{% endif %}
+  </div>
+</div>
+{% endblock %}
