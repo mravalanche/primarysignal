@@ -422,19 +422,21 @@ Exit: all release gates pass and deployment is recoverable.
 
 ## 17. Immediate next step
 
-The database schema, durable queue, feed scheduler, and controlled synthetic
-scheduler-to-entry path are in place. Local article retrieval and bounded
-plain-text extraction use the isolated retriever. An injectable retrieval job
-handler now records attempts and immutable extracted-text versions. An internal
-read-only inventory searches the current version of each article through
-PostgreSQL; the local operator command returns metadata only. Production
-retrieval remains unbound. Verify deployment egress controls, service
-readiness, source-disable serialization, and extracted-text retention before
-live polling is enabled. Present editorial UI mock-ups for approval before
-expanding the M2 public or administration pages.
+The non-AI publication path now includes a restricted public reader, Latest and
+story pages, an authenticated Reading desk, and database-backed publish and
+suppress decisions. Verify the complete path with a disposable PostgreSQL
+database and synthetic stories: make a decision in the browser, check what the
+public reader can see, then suppress the story and check its audit history.
 
-The M0 reference corpus, signal evidence matrix, and open operator decisions
-remain separate work before automated publication can be evaluated.
+Build the versioned M0 reference corpus and labelling rules in parallel. The
+corpus must contain real, public article references and independent story
+labels before clustering or automated publication can be evaluated. Keep full
+article text and private processing history out of the repository.
+
+Production retrieval remains unbound. Before live polling, verify deployment
+egress controls, service readiness, source-disable serialization, and an
+extracted-text retention policy. Do not treat the local retriever's test opt-in
+as a production deployment configuration.
 
 ## 18. V1 security baseline
 
