@@ -16,7 +16,7 @@ def upgrade() -> None:
     op.execute("""
 CREATE TABLE primary_signal.publication_events (
     id uuid PRIMARY KEY,
-    story_id uuid NOT NULL REFERENCES primary_signal.stories(id) ON DELETE RESTRICT,
+    story_id uuid NOT NULL,
     revision_id uuid NOT NULL,
     from_status text,
     to_status text NOT NULL CHECK (to_status IN
