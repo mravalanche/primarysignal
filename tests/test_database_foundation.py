@@ -13,6 +13,8 @@ from primary_signal.db import engine as engine_module
 from primary_signal.db.models import *  # noqa: F403 - verifies complete metadata registration
 
 EXPECTED_TABLES = {
+    "admin_login_attempts",
+    "admin_sessions",
     "article_urls",
     "articles",
     "content_versions",

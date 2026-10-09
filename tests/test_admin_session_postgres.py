@@ -44,6 +44,8 @@ def test_restricted_admin_session_store(monkeypatch: pytest.MonkeyPatch) -> None
                 connection.execute(text("SELECT current_user")).scalar_one() == "admin_session_test"
             )
             assert_admin_session_database_role(connection)
+        with engine.connect() as connection, pytest.raises(RuntimeError, match="restricted"):
+            assert_admin_session_database_role(connection)
         store = PostgresSessionStore(restricted)
         now = datetime.now(UTC)
         digest = b"d" * 32

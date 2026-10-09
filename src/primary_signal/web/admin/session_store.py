@@ -116,7 +116,7 @@ class PostgresSessionStore:
             row = (
                 connection.execute(
                     text(
-                    "UPDATE primary_signal.admin_sessions SET last_seen_at=greatest(last_seen_at,:now) "
+                        "UPDATE primary_signal.admin_sessions SET last_seen_at=greatest(last_seen_at,:now) "
                         "WHERE digest=:digest AND revoked_at IS NULL AND last_seen_at > :idle_since "
                         "AND created_at > :absolute_since "
                         "RETURNING digest,csrf_secret,created_at,last_seen_at"

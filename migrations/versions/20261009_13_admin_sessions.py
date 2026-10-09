@@ -1,4 +1,4 @@
-"""Store opaque admin-session digests and bounded login failures."""
+"""Store opaque admin-session digests and bounded login attempts."""
 
 from collections.abc import Sequence
 
