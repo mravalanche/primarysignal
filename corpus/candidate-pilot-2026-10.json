@@ -1,0 +1,87 @@
+{
+  "kind": "availability_pilot",
+  "selection_plan": "selection-2026-10.md",
+  "verified_on": "2026-10-09",
+  "articles": [
+    {
+      "url": "https://www.ncsc.gov.uk/news/uk-allies-expose-spyware-iranian-state-actors-target-dissidents-activists-journalists",
+      "publisher": "UK National Cyber Security Centre",
+      "ownership_group": "UK government",
+      "source_category": "national_authority",
+      "published_on": "2026-09-15",
+      "title": "UK and allies expose spyware used by Iranian state actors to target dissidents, activists and journalists"
+    },
+    {
+      "url": "https://cert.europa.eu/publications/security-advisories/2026-014",
+      "publisher": "CERT-EU",
+      "ownership_group": "EU institutions",
+      "source_category": "national_authority",
+      "published_on": "2026-09-27",
+      "title": "Critical Vulnerabilities in Citrix NetScaler ADC and Gateway"
+    },
+    {
+      "url": "https://www.enisa.europa.eu/news/the-cra-single-reporting-platform-is-launched",
+      "publisher": "ENISA",
+      "ownership_group": "EU institutions",
+      "source_category": "standards_policy_government",
+      "published_on": "2026-09-11",
+      "title": "The CRA Single Reporting Platform is launched"
+    },
+    {
+      "url": "https://blog.cloudflare.com/containers-cross-tenant-vulnerability/",
+      "publisher": "Cloudflare",
+      "ownership_group": "Cloudflare",
+      "source_category": "affected_organisation_statement",
+      "published_on": "2026-09-24",
+      "title": "How Cloudflare addressed a cross-tenant data exposure vulnerability in Containers"
+    },
+    {
+      "url": "https://blog.google/security/agentic-hacks-real-proofs-inside-googles-pagebreak-project/",
+      "publisher": "Google Security Blog",
+      "ownership_group": "Google",
+      "source_category": "papers_datasets_tools",
+      "published_on": "2026-09-24",
+      "title": "Agentic Hacks, Real Proofs: Inside Google's PageBreak Project"
+    },
+    {
+      "url": "https://github.blog/changelog/2026-09-09-block-pull-requests-with-exposed-secrets-from-merging/",
+      "publisher": "GitHub Changelog",
+      "ownership_group": "Microsoft",
+      "source_category": "vendor_notice",
+      "published_on": "2026-09-09",
+      "title": "Block pull requests with exposed secrets from merging"
+    },
+    {
+      "url": "https://www.welivesecurity.com/en/eset-research/beware-sparrowock-backdoor-bites-commands-catch/",
+      "publisher": "ESET Research",
+      "ownership_group": "ESET",
+      "source_category": "independent_research",
+      "published_on": "2026-09-17",
+      "title": "Beware the SparroWock: The backdoor that bites, the commands that catch"
+    },
+    {
+      "url": "https://www.bleepingcomputer.com/news/microsoft/microsoft-september-2026-patch-tuesday-fixes-966-flaws-2-zero-days/",
+      "publisher": "BleepingComputer",
+      "ownership_group": "BleepingComputer",
+      "source_category": "cyber_newsroom",
+      "published_on": "2026-09-08",
+      "title": "Microsoft September 2026 Patch Tuesday fixes 966 flaws, 2 zero-days"
+    },
+    {
+      "url": "https://www.sec.gov/Archives/edgar/data/1645113/000164511326000065/nvcr-20260901.htm",
+      "publisher": "NovoCure Limited",
+      "ownership_group": "NovoCure",
+      "source_category": "affected_organisation_statement",
+      "published_on": "2026-09-01",
+      "title": "NovoCure Limited Form 8-K"
+    },
+    {
+      "url": "https://www.gov.uk/government/publications/dcms-cyber-security-newsletter-september-2026/dcms-cyber-security-newsletter-september-2026",
+      "publisher": "UK Department for Digital, Culture, Media and Sport",
+      "ownership_group": "UK government",
+      "source_category": "standards_policy_government",
+      "published_on": "2026-09-15",
+      "title": "DCMS cyber security newsletter - September 2026"
+    }
+  ]
+}

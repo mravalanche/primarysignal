@@ -5,6 +5,9 @@ clustering and publication rules. `synthetic-v1.json` is a small, invented fixtu
 that exercises the format; it is not the v1 acceptance corpus.
 
 The fixed first collection plan is in [selection-2026-10.md](selection-2026-10.md).
+The small [candidate pilot](candidate-pilot-2026-10.json) records verified public
+URLs and dates from several source categories. It checks source availability;
+it is neither a sampled candidate pool nor a labelled acceptance set.
 
 ## Labelling guide
 
