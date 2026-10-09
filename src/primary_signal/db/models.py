@@ -10,6 +10,7 @@ from primary_signal.ingestion.models import (
 )
 from primary_signal.jobs.models import Job, JobAttempt
 from primary_signal.publication.storage import (
+    PublicationEvent,
     RevisionSignal,
     RevisionSource,
     RevisionTag,
@@ -30,6 +31,7 @@ __all__ = [
     "FetchAttempt",
     "Job",
     "JobAttempt",
+    "PublicationEvent",
     "RevisionSignal",
     "RevisionSource",
     "RevisionTag",
