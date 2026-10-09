@@ -96,6 +96,109 @@ def test_web_entrypoint_runs_selected_surface(monkeypatch: pytest.MonkeyPatch) -
     assert captured["app"].state.surface == "public"  # type: ignore[union-attr]
 
 
+def test_public_production_entrypoint_uses_restricted_database_reader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeConnection:
+        def __enter__(self) -> FakeConnection:
+            captured["connected"] = True
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def execute(self, _statement: object) -> object:
+            captured["capability_checked"] = True
+
+            class RestrictedResult:
+                def scalar_one(self) -> bool:
+                    return True
+
+            return RestrictedResult()
+
+    class FakeEngine:
+        def connect(self) -> FakeConnection:
+            return FakeConnection()
+
+        def dispose(self) -> None:
+            captured["disposed"] = True
+
+    engine = cast(Engine, FakeEngine())
+    reader = object()
+
+    def fake_create_engine(settings: DatabaseSettings, *, search_path: str) -> Engine:
+        captured["database_settings"] = settings
+        captured["search_path"] = search_path
+        return engine
+
+    def fake_run(app: object, **_kwargs: object) -> None:
+        captured["app"] = app
+
+    def fake_reader(actual_engine: Engine) -> object:
+        assert actual_engine is engine
+        return reader
+
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "production")
+    monkeypatch.setenv(
+        "PRIMARY_SIGNAL_DATABASE_URL",
+        "postgresql+psycopg://public_reader@db.public.example/app",
+    )
+    monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", "public_reader")
+    monkeypatch.setattr(web, "create_database_engine", fake_create_engine)
+    monkeypatch.setattr(web, "PostgresStoryReader", fake_reader)
+    monkeypatch.setattr(web.uvicorn, "run", fake_run)
+
+    web.main(["--surface", "public"])
+
+    assert captured["connected"] is True
+    assert captured["capability_checked"] is True
+    assert captured["disposed"] is True
+    assert captured["search_path"] == "pg_catalog"
+    assert captured["app"].state.story_reader is reader  # type: ignore[union-attr]
+    database_settings = cast(DatabaseSettings, captured["database_settings"])
+    assert database_settings.expected_role == "public_reader"
+    assert database_settings.application_name == "primary_signal_public_web"
+    assert database_settings.max_overflow == 0
+
+
+def test_public_production_entrypoint_disposes_after_startup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeEngine:
+        def connect(self) -> None:
+            raise RuntimeError("private connection detail")
+
+        def dispose(self) -> None:
+            captured["disposed"] = True
+
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "production")
+    monkeypatch.setenv(
+        "PRIMARY_SIGNAL_DATABASE_URL",
+        "postgresql+psycopg://public_reader@db.public.example/app",
+    )
+    monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", "public_reader")
+
+    def fake_create_engine(_settings: DatabaseSettings, *, search_path: str) -> Engine:
+        assert search_path == "pg_catalog"
+        return cast(Engine, FakeEngine())
+
+    monkeypatch.setattr(web, "create_database_engine", fake_create_engine)
+
+    with pytest.raises(SystemExit) as raised:
+        web.main(["--surface", "public"])
+
+    assert raised.value.code == 1
+    assert captured["disposed"] is True
+    error_output = capsys.readouterr().err
+    assert "web.failed" in error_output
+    assert "private connection detail" not in error_output
+
+
 def test_migrate_entrypoint_upgrades_to_head(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
