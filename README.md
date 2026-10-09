@@ -136,11 +136,27 @@ Repeated content reuses the same version. Live article retrieval remains
 disabled until deployment egress controls, a retention rule, and source-disable
 serialization are settled.
 
+### Internal article inventory
+
+The article inventory reads only each article's current extracted version. It
+uses PostgreSQL English-language full-text search and returns source, title,
+date, and word-count metadata. From a local terminal with a dedicated inventory
+database login configured through `PRIMARY_SIGNAL_DATABASE_URL` and
+`PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE`, run:
+
+```sh
+uv run primary-signal-article-inventory --search "synthetic notice" --limit 20
+```
+
+The JSON output includes an opaque cursor for the next page, but no extracted
+body or raw URL. This is an internal operator command, not a public story
+search endpoint. The public and administration sites do not expose this reader.
+
 ### Database capability roles
 
 Fresh Compose database volumes create two fixed, non-login queue capabilities,
 one feed-scheduling capability, one feed-poll capability, and one capability for
-article persistence. The definitions
+article persistence, plus a metadata-only inventory search capability. The definitions
 live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
 passwords and role membership remain deployment-owned. PostgreSQL only runs
 these files while creating a new data directory.
@@ -154,9 +170,10 @@ docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POST
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/040_article_persist_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/050_article_inventory_capability_role.sql'
 ```
 
-Run all four commands before applying migrations. The migrations grant access to
+Run all five commands before applying migrations. The migrations grant access to
 the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any
