@@ -1,6 +1,20 @@
 {% extends "layouts/admin.html" %}
 {% block title %}Reading desk — Primary Signal{% endblock %}
 {% block content %}
+{% macro decision_form(action, kind, mode) %}
+<form class="ps-desk-decision-form" method="post" action="{{ action.url }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="expected_current_revision_id" value="{{ action.expected_current_revision_id or '' }}">
+  {% if kind == 'publish' %}<input type="hidden" name="candidate_revision_id" value="{{ action.candidate_revision_id }}"><input type="hidden" name="evidence_fingerprint" value="{{ action.evidence_fingerprint }}">{% endif %}
+  <label for="decision-{{ kind }}-reason-{{ mode }}">Reason for {{ 'publishing' if kind == 'publish' else 'suppression' }}</label>
+  <textarea id="decision-{{ kind }}-reason-{{ mode }}" name="reason" required maxlength="1024" rows="4"></textarea>
+  <p class="ps-desk-muted" id="decision-{{ kind }}-help-{{ mode }}">This reason is recorded in the publication history.</p>
+  <div class="ps-desk-decision-actions">
+    <button class="btn ps-desk-decision-submit ps-desk-decision-submit-{{ kind }}" type="submit">Confirm {{ 'publication' if kind == 'publish' else 'suppression' }}</button>
+    {% if mode == 'dialog' %}<button class="btn ps-desk-dialog-cancel" type="button">Cancel</button>{% endif %}
+  </div>
+</form>
+{% endmacro %}
 <div class="ps-desk" id="stories">
   <header class="ps-desk-heading">
     <div class="ps-desk-heading-actions"><p class="ps-kicker">Editorial · Story inspection</p><form action="/admin/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="ps-desk-signout" type="submit">Sign out</button></form></div>
@@ -62,8 +76,37 @@
     <aside class="ps-desk-rail" aria-label="Review status">
       <section class="ps-desk-rail-section" aria-labelledby="desk-validation-title"><h2 id="desk-validation-title">Validation</h2><p class="ps-desk-state-note">No current validation result is available in this view. Review the candidate and its sources before a publication decision.</p></section>
       <section class="ps-desk-rail-section" aria-labelledby="desk-events-title"><h2 id="desk-events-title">Recorded decisions</h2>{% if detail.events %}<ol class="ps-desk-event-list">{% for event in detail.events[:8] %}<li><strong>{{ event.to_status | title }}</strong><time datetime="{{ event.occurred_at.isoformat() }}">{{ event.occurred_at.strftime('%d %b %Y, %H:%M UTC') }}</time><span>{{ event.reason }}</span></li>{% endfor %}</ol>{% if detail.events | length > 8 or detail.events_have_more %}<p class="ps-desk-muted">Showing the eight most recent of at least {{ detail.events | length }} recorded events.</p>{% endif %}{% else %}<p class="ps-desk-muted">No decision events are recorded.</p>{% endif %}</section>
-      <section class="ps-desk-rail-section" aria-labelledby="desk-decision-title"><h2 id="desk-decision-title">Decision</h2><p>Publication controls are not available in the read-only Reading desk.</p></section>
+      <section class="ps-desk-rail-section" aria-labelledby="desk-decision-title">
+        <h2 id="desk-decision-title">Decision</h2>
+        {% if publication_controls is defined and publication_controls %}
+          {% if publication_controls.get('stale') %}<p class="ps-desk-decision-notice is-stale" role="alert">This story changed since you opened it. <a href="{{ publication_controls.reload_url }}#story-detail">Reload and review the current revision.</a></p>{% endif %}
+          {% if publication_controls.error %}<p class="ps-desk-decision-notice is-error" role="alert">{{ publication_controls.error }}</p>{% endif %}
+          {% if publication_controls.publish_blocked_reason %}<p class="ps-desk-state-note">{{ publication_controls.publish_blocked_reason }}</p>{% endif %}
+          {% if publication_controls.success %}<p class="ps-desk-decision-notice is-success" role="status">{{ publication_controls.success }}</p>{% endif %}
+          <p>Review the candidate and source trail before deciding. Publication checks the stored evidence when you confirm.</p>
+          {% if not publication_controls.get('stale') %}
+            {% if publication_controls.publish %}
+              <div class="ps-desk-decision-choice">
+                <button class="btn ps-desk-decision-open ps-desk-decision-submit-publish" type="button" data-decision-dialog="decision-publish-dialog" hidden>Publish revision {{ candidate.number }}</button>
+                <details class="ps-desk-decision-fallback is-publish"><summary>Publish revision {{ candidate.number }}</summary><div class="ps-desk-decision-confirm"><h3>Publish revision {{ candidate.number }}?</h3><p>{% if detail.current_revision and not detail.story.suppressed %}This replaces public revision {{ detail.current_revision.number }}.{% else %}This makes the story visible to readers.{% endif %} The decision will be checked against the current record before it takes effect.</p>{{ decision_form(publication_controls.publish, 'publish', 'fallback') }}</div></details>
+              </div>
+            {% endif %}
+            {% if publication_controls.suppress %}
+              <div class="ps-desk-decision-choice">
+                <button class="btn ps-desk-decision-open ps-desk-decision-open-suppress" type="button" data-decision-dialog="decision-suppress-dialog" hidden>Suppress public story…</button>
+                <details class="ps-desk-decision-fallback is-suppress"><summary>Suppress public story…</summary><div class="ps-desk-decision-confirm"><h3>Suppress public revision {{ detail.current_revision.number }}?</h3><p>Readers will no longer see this story. The revision remains in the publication history.</p>{{ decision_form(publication_controls.suppress, 'suppress', 'fallback') }}</div></details>
+              </div>
+            {% endif %}
+          {% endif %}
+          {% if not publication_controls.publish and not publication_controls.suppress and not publication_controls.get('stale') %}<p class="ps-desk-muted">No publication action is available for this story.</p>{% endif %}
+        {% else %}<p>Publication controls are not available in the read-only Reading desk.</p>{% endif %}
+      </section>
     </aside>
+    {% if publication_controls is defined and publication_controls and not publication_controls.get('stale') %}
+      {% if publication_controls.publish %}<dialog class="ps-desk-decision-dialog" id="decision-publish-dialog" aria-labelledby="decision-publish-title" aria-describedby="decision-publish-description"><h2 id="decision-publish-title">Publish revision {{ candidate.number }}?</h2><p id="decision-publish-description">{% if detail.current_revision and not detail.story.suppressed %}This replaces public revision {{ detail.current_revision.number }}.{% else %}This makes the story visible to readers.{% endif %} The decision will be checked against the current record before it takes effect.</p>{{ decision_form(publication_controls.publish, 'publish', 'dialog') }}</dialog>{% endif %}
+      {% if publication_controls.suppress %}<dialog class="ps-desk-decision-dialog is-suppress" id="decision-suppress-dialog" aria-labelledby="decision-suppress-title" aria-describedby="decision-suppress-description"><h2 id="decision-suppress-title">Suppress public revision {{ detail.current_revision.number }}?</h2><p id="decision-suppress-description">Readers will no longer see this story. The revision remains in the publication history.</p>{{ decision_form(publication_controls.suppress, 'suppress', 'dialog') }}</dialog>{% endif %}
+      <script src="{{ url_for('admin-assets', path='/decision-dialog.js') }}" defer></script>
+    {% endif %}
     {% else %}<div class="ps-desk-empty ps-desk-empty-detail"><h2>Select a story</h2><p>Choose an item from the inventory to inspect its candidate and source trail.</p></div>{% endif %}
   </div>
 </div>

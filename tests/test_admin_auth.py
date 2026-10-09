@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 from urllib.parse import urlencode
@@ -18,6 +19,7 @@ from primary_signal.publication.editorial_reader import (
     EditorialStoryPage,
     EditorialStoryRow,
 )
+from primary_signal.publication.writer import PublicationConflict
 from primary_signal.web.admin import create_admin_app
 from primary_signal.web.admin.auth import AdminAuthConfig, AdminAuthService, StoredSession
 from primary_signal.web.admin.settings import AdminAuthSettings
@@ -93,6 +95,12 @@ def test_production_admin_requires_authentication_config() -> None:
             Settings(environment=RuntimeEnvironment.TEST),
             auth_service=auth_service(),
             public_origin=f"{ORIGIN}:8443",
+        )
+    with pytest.raises(ValueError, match="named decision actor"):
+        create_admin_app(
+            Settings(environment=RuntimeEnvironment.TEST),
+            decision_writer=MagicMock(),
+            decision_actor="system",
         )
 
 
@@ -257,6 +265,245 @@ def test_admin_http_boundary_and_cookie() -> None:
             assert (
                 await client.get("/health/live", headers={"X-Forwarded-Host": "admin.example.test"})
             ).status_code == 400
+
+    asyncio.run(exercise())
+
+
+def test_browser_publication_forms_require_reviewed_values_and_csrf() -> None:
+    auth = auth_service()
+    reader = MagicMock()
+    writer = MagicMock()
+    now = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
+    story_id = uuid.uuid7()
+    revision_id = uuid.uuid7()
+    current_id = uuid.uuid7()
+    row = EditorialStoryRow(
+        story_id=story_id,
+        slug="synthetic-story",
+        current_revision_id=current_id,
+        suppressed=False,
+        created_at=now,
+        candidate_revision_id=revision_id,
+        candidate_number=2,
+        candidate_status="draft",
+        candidate_headline="Synthetic update",
+        candidate_topic="security-engineering",
+        candidate_updated_at=now,
+    )
+    candidate = EditorialRevision(
+        id=revision_id,
+        number=2,
+        status="draft",
+        headline="Synthetic update",
+        synthesis="A synthetic update.",
+        why_it_matters="A synthetic source changed.",
+        primary_topic="security-engineering",
+        story_type="advisory",
+        first_reported_at=now,
+        latest_material_update_at=now,
+        published_at=None,
+        created_at=now,
+    )
+    current = EditorialRevision(
+        id=current_id,
+        number=1,
+        status="published",
+        headline="Earlier report",
+        synthesis="A synthetic earlier report.",
+        why_it_matters="A synthetic explanation.",
+        primary_topic="security-engineering",
+        story_type="advisory",
+        first_reported_at=now,
+        latest_material_update_at=now,
+        published_at=now,
+        created_at=now,
+    )
+    reader.list_stories.return_value = EditorialStoryPage(items=(row,), next_position=None)
+    reader.get_story.return_value = EditorialStoryDetail(
+        story=row,
+        revisions=(candidate, current),
+        revisions_have_more=False,
+        current_revision=current,
+        candidate_sources=(),
+        sources_have_more=False,
+        current_sources=(),
+        current_sources_have_more=False,
+        events=(),
+        events_have_more=False,
+        candidate_draft_fingerprint="a" * 64,
+    )
+    app = create_admin_app(
+        Settings(environment=RuntimeEnvironment.TEST),
+        auth_service=auth,
+        editorial_reader=reader,
+        decision_writer=writer,
+    )
+
+    async def exercise() -> None:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+            path = "/admin/desk/stories/synthetic-story"
+            assert (await client.post(f"{path}/publish")).status_code == 401
+            assert (await client.get("/assets/admin/decision-dialog.js")).status_code == 401
+            login = await client.post(
+                "/admin/login", data={"password": PASSWORD}, headers={"Origin": ORIGIN}
+            )
+            session = auth.authenticate(login.cookies["__Host-primary_signal_admin"])
+            assert session is not None
+            fields = {
+                "csrf_token": session.csrf_secret.hex(),
+                "candidate_revision_id": str(revision_id),
+                "evidence_fingerprint": "a" * 64,
+                "expected_current_revision_id": str(current_id),
+                "reason": "Reviewed the synthetic source trail",
+            }
+            page = await client.get(path)
+            assert page.status_code == 200
+            assert (await client.get("/assets/admin/decision-dialog.js")).status_code == 200
+            assert 'name="evidence_fingerprint"' in page.text
+            assert "a" * 64 in page.text
+            forged = await client.get(f"{path}?decision=published")
+            assert "Publication recorded" not in forged.text
+            complete_detail = reader.get_story.return_value
+            reader.get_story.return_value = replace(complete_detail, sources_have_more=True)
+            truncated = await client.get(path)
+            assert 'name="evidence_fingerprint"' not in truncated.text
+            assert "Publish revision" not in truncated.text
+            reader.get_story.return_value = complete_detail
+            assert (await client.post(f"{path}/publish", data=fields)).status_code == 403
+            assert (
+                await client.post(
+                    f"{path}/publish", data=fields, headers={"Origin": "https://wrong.example.test"}
+                )
+            ).status_code == 403
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data=fields,
+                    headers={"Origin": ORIGIN, "Host": "other.example.test"},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data={**fields, "csrf_token": "0" * 64},
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 403
+            duplicated = urlencode(fields) + "&reason=another"
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    content=duplicated,
+                    headers={"Origin": ORIGIN, "Content-Type": "application/x-www-form-urlencoded"},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data={**fields, "reason": "x" * 4096},
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    content=b"not a form",
+                    headers={"Origin": ORIGIN, "Content-Type": "text/plain"},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data={**fields, "candidate_revision_id": "bad"},
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data={**fields, "candidate_revision_id": revision_id.hex},
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data={**fields, "evidence_fingerprint": "not-a-fingerprint"},
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data={key: value for key, value in fields.items() if key != "reason"},
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    data={**fields, "reason": "   "},
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    f"{path}/publish",
+                    content=b"reason=\xff",
+                    headers={"Origin": ORIGIN, "Content-Type": "application/x-www-form-urlencoded"},
+                )
+            ).status_code == 400
+            assert (
+                await client.post(
+                    "/admin/desk/stories/invalid--slug/publish",
+                    data=fields,
+                    headers={"Origin": ORIGIN},
+                )
+            ).status_code == 404
+            reader.get_story.return_value = None
+            assert (
+                await client.post(f"{path}/publish", data=fields, headers={"Origin": ORIGIN})
+            ).status_code == 404
+            reader.get_story.return_value = complete_detail
+            writer.publish_reviewed.assert_not_called()
+            published = await client.post(
+                f"{path}/publish", data=fields, headers={"Origin": ORIGIN}
+            )
+            assert published.status_code == 303
+            writer.publish_reviewed.assert_called_once()
+            assert writer.publish_reviewed.call_args.kwargs["story_id"] == story_id
+            assert writer.publish_reviewed.call_args.kwargs["input_fingerprint"] == "a" * 64
+            assert writer.publish_reviewed.call_args.kwargs["decision"].actor == "site operator"
+            writer.publish_reviewed.side_effect = PublicationConflict("changed")
+            stale_publish = await client.post(
+                f"{path}/publish", data=fields, headers={"Origin": ORIGIN}
+            )
+            assert stale_publish.status_code == 409
+            assert "No decision was recorded" in stale_publish.text
+            writer.suppress.side_effect = PublicationConflict("changed")
+            suppressed = await client.post(
+                f"{path}/suppress",
+                data={
+                    "csrf_token": session.csrf_secret.hex(),
+                    "expected_current_revision_id": str(current_id),
+                    "reason": "Synthetic suppression review",
+                },
+                headers={"Origin": ORIGIN},
+            )
+            assert suppressed.status_code == 409
+            assert "No decision was recorded" in suppressed.text
+            assert "Review the current version" in suppressed.text
+            writer.suppress.side_effect = None
+            done = await client.post(
+                f"{path}/suppress",
+                data={
+                    "csrf_token": session.csrf_secret.hex(),
+                    "expected_current_revision_id": str(current_id),
+                    "reason": "Synthetic suppression review",
+                },
+                headers={"Origin": ORIGIN},
+            )
+            assert done.status_code == 303
 
     asyncio.run(exercise())
 

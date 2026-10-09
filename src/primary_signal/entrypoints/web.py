@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 from collections.abc import Callable, Sequence
 from typing import cast
 
@@ -13,6 +14,10 @@ from primary_signal.config import RuntimeEnvironment, Settings
 from primary_signal.db import DatabaseSettings, create_database_engine
 from primary_signal.observability import configure_logging, log_exception
 from primary_signal.publication import PostgresStoryReader
+from primary_signal.publication.decision_writer import (
+    PublicationDecisionWriter,
+    assert_publication_decision_role,
+)
 from primary_signal.publication.editorial_reader import (
     EditorialReader,
     assert_editorial_database_role,
@@ -23,7 +28,11 @@ from primary_signal.web.admin.session_store import (
     PostgresSessionStore,
     assert_admin_session_database_role,
 )
-from primary_signal.web.admin.settings import AdminAuthSettings, AdminEditorialDatabaseSettings
+from primary_signal.web.admin.settings import (
+    AdminAuthSettings,
+    AdminDecisionDatabaseSettings,
+    AdminEditorialDatabaseSettings,
+)
 from primary_signal.web.public import create_public_app
 
 LOGGER = logging.getLogger(__name__)
@@ -125,6 +134,21 @@ def admin_editorial_database_settings() -> AdminEditorialDatabaseSettings:
     )
 
 
+def admin_decision_database_settings() -> AdminDecisionDatabaseSettings | None:
+    """Enable browser decisions only when a separate restricted login is configured."""
+
+    url = os.environ.get("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL")
+    role = os.environ.get("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_EXPECTED_ROLE")
+    if url is None and role is None:
+        return None
+    if not url or not role:
+        raise RuntimeError("admin publication database URL and role must be set together")
+    load_settings = cast(Callable[[], AdminDecisionDatabaseSettings], AdminDecisionDatabaseSettings)
+    return load_settings().model_copy(
+        update={"application_name": "primary_signal_admin_decision", "max_overflow": 0}
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run exactly one web surface."""
 
@@ -132,6 +156,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     configure_logging(level="INFO")
     engine: Engine | None = None
     editorial_engine: Engine | None = None
+    decision_engine: Engine | None = None
     exit_code = 0
     try:
         settings = Settings()
@@ -167,12 +192,27 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
                 with editorial_engine.connect() as connection:
                     assert_editorial_database_role(connection, editorial_settings.expected_role)
+                decision_settings = admin_decision_database_settings()
+                decision_writer = None
+                if decision_settings is not None:
+                    decision_engine = create_database_engine(
+                        decision_settings, search_path="pg_catalog"
+                    )
+                    with decision_engine.connect() as connection:
+                        assert_publication_decision_role(
+                            connection, decision_settings.expected_role
+                        )
+                    decision_writer = PublicationDecisionWriter(
+                        decision_engine, expected_role=decision_settings.expected_role
+                    )
                 app = create_admin_app(
                     settings,
                     auth_service=admin_auth,
                     editorial_reader=EditorialReader(
                         editorial_engine, expected_role=editorial_settings.expected_role
                     ),
+                    decision_writer=decision_writer,
+                    decision_actor=admin_settings.decision_actor,
                     public_origin=admin_settings.public_origin,
                 )
             else:
@@ -201,6 +241,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 editorial_engine.dispose()
             except Exception as exception:
                 log_exception(LOGGER, "web.editorial.dispose.failed", exception, result="fatal")
+                exit_code = 1
+        if decision_engine is not None:
+            try:
+                decision_engine.dispose()
+            except Exception as exception:
+                log_exception(LOGGER, "web.decision.dispose.failed", exception, result="fatal")
                 exit_code = 1
     if exit_code:
         raise SystemExit(exit_code)

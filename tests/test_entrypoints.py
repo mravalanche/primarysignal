@@ -203,8 +203,10 @@ def test_public_production_entrypoint_disposes_after_startup_failure(
     assert "private connection detail" not in error_output
 
 
+@pytest.mark.parametrize("with_decision", [False, True])
 def test_admin_production_entrypoint_keeps_session_and_editorial_logins_separate(
     monkeypatch: pytest.MonkeyPatch,
+    with_decision: bool,
 ) -> None:
     captured: dict[str, object] = {"checked": [], "disposed": []}
 
@@ -230,6 +232,7 @@ def test_admin_production_entrypoint_keeps_session_and_editorial_logins_separate
 
     class FakeAdminSettings:
         public_origin = "https://public.example"
+        decision_actor = "site operator"
 
         def auth_config(self) -> str:
             return "synthetic-auth-config"
@@ -245,6 +248,10 @@ def test_admin_production_entrypoint_keeps_session_and_editorial_logins_separate
         assert role == "editorial_test"
         cast(list[str], captured["checked"]).append(connection.kind)
 
+    def check_decision(connection: FakeConnection, role: str) -> None:
+        assert role == "decision_test"
+        cast(list[str], captured["checked"]).append(connection.kind)
+
     def fake_admin_app(_settings: object, **kwargs: object) -> object:
         captured.update(kwargs)
         return object()
@@ -254,6 +261,9 @@ def test_admin_production_entrypoint_keeps_session_and_editorial_logins_separate
 
     def fake_editorial_reader(engine: Engine, **_kwargs: object) -> tuple[str, Engine]:
         return "reader", engine
+
+    def fake_decision_writer(engine: Engine, **_kwargs: object) -> tuple[str, Engine]:
+        return "writer", engine
 
     def fake_run(app: object, **_kwargs: object) -> None:
         captured["app"] = app
@@ -268,9 +278,19 @@ def test_admin_production_entrypoint_keeps_session_and_editorial_logins_separate
         "postgresql+psycopg://editorial@db.public.example/app",
     )
     monkeypatch.setenv("PRIMARY_SIGNAL_ADMIN_EDITORIAL_DATABASE_EXPECTED_ROLE", "editorial_test")
+    if with_decision:
+        monkeypatch.setenv(
+            "PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL",
+            "postgresql+psycopg://decision@db.public.example/app",
+        )
+        monkeypatch.setenv(
+            "PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_EXPECTED_ROLE", "decision_test"
+        )
     monkeypatch.setattr(web, "create_database_engine", fake_engine)
     monkeypatch.setattr(web, "assert_admin_session_database_role", check_session)
     monkeypatch.setattr(web, "assert_editorial_database_role", check_editorial)
+    monkeypatch.setattr(web, "assert_publication_decision_role", check_decision)
+    monkeypatch.setattr(web, "PublicationDecisionWriter", fake_decision_writer)
     monkeypatch.setattr(web, "AdminAuthSettings", FakeAdminSettings)
     monkeypatch.setattr(web, "AdminAuthService", fake_auth_service)
     monkeypatch.setattr(web, "EditorialReader", fake_editorial_reader)
@@ -279,14 +299,35 @@ def test_admin_production_entrypoint_keeps_session_and_editorial_logins_separate
 
     web.main(["--surface", "admin"])
 
-    assert captured["checked"] == ["primary_signal_admin_session", "primary_signal_admin_editorial"]
-    assert captured["disposed"] == [
+    expected = [
         "primary_signal_admin_session",
         "primary_signal_admin_editorial",
     ]
+    if with_decision:
+        expected.append("primary_signal_admin_decision")
+    assert captured["checked"] == expected
+    assert captured["disposed"] == expected
     assert captured["auth_service"] == "auth-service"
     assert captured["editorial_reader"][0] == "reader"  # type: ignore[index]
     assert captured["public_origin"] == "https://public.example"
+    if with_decision:
+        assert captured["decision_writer"][0] == "writer"  # type: ignore[index]
+    else:
+        assert captured["decision_writer"] is None
+
+
+def test_admin_decision_login_requires_both_private_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL", raising=False)
+    monkeypatch.delenv("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_EXPECTED_ROLE", raising=False)
+    assert web.admin_decision_database_settings() is None
+    monkeypatch.setenv(
+        "PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL",
+        "postgresql+psycopg://decision@db.public.example/app",
+    )
+    with pytest.raises(RuntimeError, match="must be set together"):
+        web.admin_decision_database_settings()
 
 
 def test_migrate_entrypoint_upgrades_to_head(monkeypatch: pytest.MonkeyPatch) -> None:

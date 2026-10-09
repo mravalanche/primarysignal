@@ -165,6 +165,50 @@ async def _page(
         if detail and detail.current_revision and public_origin
         else None
     )
+    controls_enabled = request.app.state.decision_writer is not None
+    expected_current = (
+        str(detail.story.current_revision_id) if detail and detail.story.current_revision_id else ""
+    )
+    publication_controls = (
+        {
+            "publish": (
+                {
+                    "url": f"/admin/desk/stories/{detail.story.slug}/publish",
+                    "candidate_revision_id": str(candidate.id),
+                    "evidence_fingerprint": detail.candidate_draft_fingerprint,
+                    "expected_current_revision_id": expected_current,
+                }
+                if controls_enabled
+                and detail
+                and candidate
+                and candidate.status == "draft"
+                and not detail.story.suppressed
+                and not detail.sources_have_more
+                and detail.candidate_draft_fingerprint
+                else None
+            ),
+            "suppress": (
+                {
+                    "url": f"/admin/desk/stories/{detail.story.slug}/suppress",
+                    "expected_current_revision_id": expected_current,
+                }
+                if controls_enabled
+                and detail
+                and detail.story.current_revision_id
+                and not detail.story.suppressed
+                else None
+            ),
+            "success": None,
+            "error": None,
+            "publish_blocked_reason": (
+                "Publication is unavailable because this view cannot show every candidate source."
+                if detail and candidate and candidate.status == "draft" and detail.sources_have_more
+                else None
+            ),
+        }
+        if controls_enabled
+        else None
+    )
     return templates.TemplateResponse(
         request=request,
         name="reading_desk_live.html",
@@ -185,6 +229,7 @@ async def _page(
             ),
             "public_url": public_url,
             "csrf_token": request.state.admin_session.csrf_secret.hex(),
+            "publication_controls": publication_controls,
         },
         headers={"Cache-Control": "no-store"},
     )

@@ -1,5 +1,6 @@
 """Administration web application composition."""
 
+import re
 from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 from primary_signal.config import RuntimeEnvironment, Settings
 from primary_signal.publication.editorial_reader import EditorialReader
 from primary_signal.web.admin.auth import COOKIE_NAME, AdminAuthService
+from primary_signal.web.admin.decisions import router as decision_router
 from primary_signal.web.admin.desk import router as desk_router
 from primary_signal.web.admin.health import router as admin_health_router
 from primary_signal.web.admin.login_pages import router as login_page_router
@@ -24,6 +26,8 @@ def create_admin_app(
     *,
     auth_service: AdminAuthService | None = None,
     editorial_reader: EditorialReader | None = None,
+    decision_writer: object | None = None,
+    decision_actor: str = "site operator",
     public_origin: str | None = None,
 ) -> FastAPI:
     """Create the administration application and its explicit route set."""
@@ -33,6 +37,10 @@ def create_admin_app(
         raise RuntimeError("production administration requires configured authentication")
     if resolved_settings.environment is RuntimeEnvironment.PRODUCTION and editorial_reader is None:
         raise RuntimeError("production administration requires restricted editorial reader")
+    if decision_writer is not None and (
+        not decision_actor.strip() or decision_actor == "system" or len(decision_actor) > 160
+    ):
+        raise ValueError("a named decision actor is required")
     if public_origin is not None:
         parsed = urlsplit(public_origin)
         if (
@@ -53,6 +61,8 @@ def create_admin_app(
     app = create_base_app(settings=resolved_settings, surface=Surface.ADMIN)
     app.state.admin_auth = auth_service
     app.state.editorial_reader = editorial_reader
+    app.state.decision_writer = decision_writer
+    app.state.decision_actor = decision_actor
     app.state.public_origin = public_origin
 
     def private_headers(response: Response) -> Response:
@@ -105,8 +115,14 @@ def create_admin_app(
                     return private_headers(
                         JSONResponse({"detail": "Request origin denied"}, status_code=403)
                     )
-                if request.url.path != "/admin/logout" and not auth_service.valid_csrf(
-                    session, request.headers.get("x-csrf-token")
+                form_decision = request.method == "POST" and re.fullmatch(
+                    r"/admin/desk/stories/[a-z0-9][a-z0-9-]{0,159}/(publish|suppress)",
+                    request.url.path,
+                )
+                if (
+                    request.url.path != "/admin/logout"
+                    and not form_decision
+                    and not auth_service.valid_csrf(session, request.headers.get("x-csrf-token"))
                 ):
                     return private_headers(
                         JSONResponse({"detail": "Request verification failed"}, status_code=403)
@@ -121,4 +137,6 @@ def create_admin_app(
         app.include_router(login_page_router)
         if editorial_reader is not None:
             app.include_router(desk_router)
+            if decision_writer is not None:
+                app.include_router(decision_router)
     return app

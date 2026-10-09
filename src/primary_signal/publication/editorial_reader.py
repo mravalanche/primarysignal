@@ -148,6 +148,7 @@ class EditorialStoryDetail:
     current_sources_have_more: bool
     events: tuple[EditorialEvent, ...]
     events_have_more: bool
+    candidate_draft_fingerprint: str | None = None
 
 
 def assert_editorial_database_role(connection: Connection, expected_role: str) -> None:
@@ -445,6 +446,19 @@ class EditorialReader:
                 .mappings()
                 .all()
             )
+            fingerprint = (
+                connection.execute(
+                    text(
+                        "SELECT input_fingerprint FROM primary_signal.publication_events "
+                        "WHERE story_id = :story_id AND revision_id = :revision_id "
+                        "AND to_status = 'draft' "
+                        "ORDER BY occurred_at DESC, id DESC LIMIT 1"
+                    ),
+                    {"story_id": story.story_id, "revision_id": story.candidate_revision_id},
+                ).scalar_one_or_none()
+                if story.candidate_revision_id is not None
+                else None
+            )
 
         def make_revision(row: RowMapping) -> EditorialRevision:
             return EditorialRevision(
@@ -480,4 +494,5 @@ class EditorialReader:
             current_sources_have_more=len(current_source_rows) > 50,
             events=events,
             events_have_more=len(event_rows) > 50,
+            candidate_draft_fingerprint=fingerprint,
         )

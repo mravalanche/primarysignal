@@ -34,6 +34,7 @@ def main() -> int:
         "web/public/static/public.css",
         "web/admin/templates/layouts/admin.html",
         "web/admin/static/admin.css",
+        "web/admin/static/decision-dialog.js",
         "db/alembic.ini",
         "db/migrations/env.py",
         "db/migrations/versions/20261001_01_initial_ingestion_schema.py",
@@ -50,8 +51,10 @@ def main() -> int:
         "db/migrations/versions/20261009_12_editorial_read.py",
         "db/migrations/versions/20261009_13_admin_sessions.py",
         "db/migrations/versions/20261009_14_publication_transitions.py",
+        "db/migrations/versions/20261009_15_publication_decision_grants.py",
         "web/admin/templates/login.html",
         "web/admin/templates/reading_desk_live.html",
+        "web/admin/templates/decision_conflict.html",
     )
     import_check = (
         "from importlib.resources import files; "
@@ -65,7 +68,7 @@ def main() -> int:
         "missing=[path for path in required if not root.joinpath(path).is_file()]; "
         "assert not missing, f'missing packaged UI resources: {missing}'; "
         "assert migration_config_path().is_file(); "
-        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_14'; "
+        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_15'; "
         "assert create_admin_app().title; "
         "assert create_public_app().title"
     )

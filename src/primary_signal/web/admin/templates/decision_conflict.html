@@ -1,0 +1,10 @@
+{% extends "layouts/admin.html" %}
+{% block title %}Story changed — Primary Signal{% endblock %}
+{% block content %}
+<main class="ps-desk" aria-labelledby="decision-conflict-title">
+  <p class="ps-kicker">Editorial · Publication</p>
+  <h1 id="decision-conflict-title">Story changed</h1>
+  <p>The story or its source evidence changed while you were reviewing it. No decision was recorded.</p>
+  <p><a href="{{ story_url }}#story-detail">Review the current version →</a></p>
+</main>
+{% endblock %}
