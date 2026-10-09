@@ -40,6 +40,18 @@ def test_retention_clock_and_historical_publication_protection(
     monkeypatch.setenv("PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE", expected_role)
     command.upgrade(Config(Path(__file__).resolve().parents[1] / "alembic.ini"), "head")
 
+    if os.environ.get("PRIMARY_SIGNAL_TEST_PROCESSOR_DATABASE_URL"):
+        with engine.connect() as connection:
+            for role in ("processor_test", "public_test"):
+                assert not connection.execute(
+                    text(
+                        "SELECT has_table_privilege(:role, "
+                        "'primary_signal.content_version_retention', "
+                        "'SELECT,INSERT,UPDATE,DELETE')"
+                    ),
+                    {"role": role},
+                ).scalar_one()
+
     source_id, article_id = uuid.uuid7(), uuid.uuid7()
     first_id, second_id = uuid.uuid7(), uuid.uuid7()
     now = datetime.now(UTC)
@@ -196,3 +208,16 @@ def test_inventory_rejects_unbounded_page() -> None:
     for limit in (0, 501):
         with pytest.raises(ValueError, match="between 1 and 500"):
             list_retention_candidates(None, limit=limit)  # type: ignore[arg-type]
+
+
+def test_migration_installs_pointer_trigger_before_backfill() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations/versions/20261009_16_retention_tracking.py"
+    ).read_text(encoding="utf-8")
+    trigger = migration.index("CREATE TRIGGER track_content_version_transition")
+    backfill = migration.index(
+        "INSERT INTO primary_signal.content_version_retention\n"
+        "    (content_version_id, superseded_at)\nSELECT"
+    )
+    assert trigger < backfill

@@ -23,18 +23,6 @@ CREATE INDEX ix_content_version_retention_superseded
 REVOKE ALL ON primary_signal.content_version_retention FROM PUBLIC;
 """
     )
-    # The precise transition time is unknown for old rows. Start their clock
-    # at migration time, regardless of fetched_at or any earlier observation.
-    op.execute(
-        """
-INSERT INTO primary_signal.content_version_retention
-    (content_version_id, superseded_at)
-SELECT version.id, clock_timestamp()
-FROM primary_signal.content_versions AS version
-JOIN primary_signal.articles AS article ON article.id = version.article_id
-WHERE article.current_content_version_id IS DISTINCT FROM version.id;
-"""
-    )
     op.execute(
         """
 CREATE FUNCTION primary_signal.track_content_version_transition()
@@ -61,6 +49,20 @@ REVOKE ALL ON FUNCTION primary_signal.track_content_version_transition() FROM PU
 CREATE TRIGGER track_content_version_transition
 AFTER UPDATE OF current_content_version_id ON primary_signal.articles
 FOR EACH ROW EXECUTE FUNCTION primary_signal.track_content_version_transition();
+"""
+    )
+    # CREATE TRIGGER takes an article-table lock through the transaction. Install
+    # it before reading old pointers so no concurrent update can escape both
+    # the backfill and trigger while this migration commits.
+    # Existing transition times are unknown: start their clock now.
+    op.execute(
+        """
+INSERT INTO primary_signal.content_version_retention
+    (content_version_id, superseded_at)
+SELECT version.id, clock_timestamp()
+FROM primary_signal.content_versions AS version
+JOIN primary_signal.articles AS article ON article.id = version.article_id
+WHERE article.current_content_version_id IS DISTINCT FROM version.id;
 """
     )
 
