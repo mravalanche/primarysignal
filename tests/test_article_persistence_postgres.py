@@ -10,7 +10,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, func, insert, select, text, update
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from primary_signal.identity.urls import identify_url
 from primary_signal.ingestion.article_results import (
@@ -124,11 +124,68 @@ def test_article_versions_and_attempts_are_persisted_atomically(
                 assert [summary.stored for summary in summaries] == [True, False, True]
                 assert summaries[0].content_version_id == summaries[1].content_version_id
                 assert summaries[0].content_version_id != summaries[2].content_version_id
+                # The historical row remains as provenance after text removal.
+                # A repeat fetch must create a fresh text-bearing version.
+                cleared_id = summaries[0].content_version_id
+                assert cleared_id is not None
+                with pytest.raises(DBAPIError), connection.begin_nested():
+                    connection.execute(
+                        update(ContentVersion)
+                        .where(ContentVersion.id == summaries[2].content_version_id)
+                        .values(extracted_text=None)
+                    )
+                with pytest.raises(DBAPIError), connection.begin_nested():
+                    connection.execute(
+                        update(ContentVersion)
+                        .where(ContentVersion.id == cleared_id)
+                        .values(extracted_title="Changed", extracted_text=None)
+                    )
+                connection.execute(
+                    update(ContentVersion)
+                    .where(ContentVersion.id == cleared_id)
+                    .values(extracted_text=None)
+                )
+                job = queue.enqueue(
+                    job_type="articles.retrieve",
+                    payload_version=1,
+                    payload=RetrieveArticleV1(article_id=article_id, article_url_id=url_id),
+                )
+                connection.execute(text("SET LOCAL ROLE processor_test"))
+                try:
+                    assert connection.execute(text("SELECT current_user")).scalar_one() == (
+                        "processor_test"
+                    )
+                    restored = repository.record_result(
+                        target=target,
+                        job_id=job.job_id,
+                        result=first,
+                        started_at=now + timedelta(minutes=3),
+                        completed_at=now + timedelta(minutes=3, seconds=1),
+                    )
+                finally:
+                    connection.execute(text("RESET ROLE"))
+                assert restored.stored
+                assert restored.content_version_id != cleared_id
+                assert (
+                    connection.execute(
+                        select(ContentVersion.extracted_text).where(ContentVersion.id == cleared_id)
+                    ).scalar_one()
+                    is None
+                )
+                assert first.extraction is not None
+                assert (
+                    connection.execute(
+                        select(ContentVersion.normalized_content_hash).where(
+                            ContentVersion.id == cleared_id
+                        )
+                    ).scalar_one()
+                    == first.extraction.normalized_content_hash
+                )
                 assert (
                     connection.execute(
                         select(Article.current_content_version_id).where(Article.id == article_id)
                     ).scalar_one()
-                    == summaries[2].content_version_id
+                    == restored.content_version_id
                 )
                 assert (
                     connection.execute(
@@ -136,7 +193,7 @@ def test_article_versions_and_attempts_are_persisted_atomically(
                         .select_from(ContentVersion)
                         .where(ContentVersion.article_id == article_id)
                     ).scalar_one()
-                    == 2
+                    == 3
                 )
                 assert (
                     connection.execute(
@@ -147,7 +204,7 @@ def test_article_versions_and_attempts_are_persisted_atomically(
                             FetchAttempt.status == "fetched",
                         )
                     ).scalar_one()
-                    == 3
+                    == 4
                 )
                 job = queue.enqueue(
                     job_type="articles.retrieve",

@@ -130,10 +130,7 @@ def test_new_result_creates_terminal_attempt_and_content_pointer() -> None:
     assert "FOR UPDATE" in statements[2]
     assert "INSERT INTO primary_signal.fetch_attempts" in statements[4]
     assert "INSERT INTO primary_signal.content_versions" in statements[5]
-    assert (
-        "ON CONFLICT (article_id, normalization_version, normalized_content_hash) DO NOTHING"
-        in statements[5]
-    )
+    assert "ON CONFLICT DO NOTHING" in statements[5]
     assert "UPDATE primary_signal.fetch_attempts" in statements[6]
     assert "UPDATE primary_signal.articles" in statements[7]
     attempt_values = (
@@ -160,7 +157,7 @@ def test_duplicate_content_reuses_version_and_records_new_attempt() -> None:
     assert summary.status == "fetched"
     assert not summary.stored
     assert summary.content_version_id == existing_id
-    assert "SELECT primary_signal.content_versions.id" in _statements(connection)[6]
+    assert "primary_signal.find_text_bearing_content_version" in _statements(connection)[6]
 
 
 def test_changed_or_disabled_target_is_skipped_without_writes() -> None:
