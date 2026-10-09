@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient, Response
 from jinja2 import UndefinedError
 
 from primary_signal.config import RuntimeEnvironment, Settings
-from primary_signal.publication import PublicStory, PublicStoryPage, StoryListQuery
+from primary_signal.publication import PublicStory, PublicStoryPage, PublicTag, StoryListQuery
 from primary_signal.web.common.templates import TemplateSurface, create_templates
 from primary_signal.web.public import create_public_app
 
@@ -21,6 +21,10 @@ class SafeTestStoryReader:
 
     def get_story(self, slug: str) -> PublicStory | None:
         del slug
+        return None
+
+    def get_tag(self, tag_id: str) -> PublicTag | None:
+        del tag_id
         return None
 
 

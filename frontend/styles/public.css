@@ -367,6 +367,8 @@
   font-size: 1.06rem;
   line-height: 1.5;
 }
+.ps-latest-heading .ps-story-kicker { font-family: var(--font-sans); font-size: 0.69rem; }
+.ps-latest-heading .ps-story-kicker a { text-underline-offset: 0.15em; }
 
 .ps-latest-topics {
   display: flex;
@@ -469,6 +471,10 @@
 
 .ps-story-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-block-start: 0.8rem; }
 .ps-story-tags .ps-tag { border-radius: 0.2rem; color: var(--color-base-content); font-weight: 550; }
+.ps-story-tags a.ps-tag { text-decoration: none; }
+.ps-story-tags a.ps-tag:hover,
+.ps-story-tags a.ps-tag:focus-visible { color: var(--color-base-content); text-decoration: underline; text-underline-offset: 0.15em; }
+.ps-story-tags a.ps-tag[aria-current="page"] { outline: 1px solid currentColor; outline-offset: 2px; }
 .ps-tag-curated,
 .ps-tag-technology { background: color-mix(in oklab, var(--color-secondary) 22%, var(--color-base-100)); border-color: var(--color-secondary); }
 .ps-tag-product,

@@ -79,6 +79,9 @@ class Reader:
     detail: PublicStory | None = None
     queries: list[StoryListQuery] = field(default_factory=lambda: list[StoryListQuery]())
     requested_slugs: list[str] = field(default_factory=lambda: list[str]())
+    tags: dict[str, PublicTag] = field(
+        default_factory=lambda: {"identity": PublicTag("identity", "Identity", TagKind.CURATED)}
+    )
 
     def list_stories(self, query: StoryListQuery) -> PublicStoryPage:
         self.queries.append(query)
@@ -89,6 +92,9 @@ class Reader:
     def get_story(self, slug: str) -> PublicStory | None:
         self.requested_slugs.append(slug)
         return self.detail
+
+    def get_tag(self, tag_id: str) -> PublicTag | None:
+        return self.tags.get(tag_id)
 
 
 def get(app: FastAPI, path: str) -> Response:
@@ -119,7 +125,7 @@ def test_latest_renders_provenance_and_neutral_exact_timestamps() -> None:
     assert "/stories/identity-advisory#sources" in response.text
     assert "Official advisory" in response.text
     assert 'aria-describedby="signal-help-identity-advisory-official-advisory"' in response.text
-    assert 'class="badge badge-sm ps-tag ps-tag-curated"' in response.text
+    assert 'class="badge badge-sm ps-tag ps-tag-curated" href="/tags/identity"' in response.text
     assert "cursor=opaque.cursor" in response.text
     assert reader.requested_slugs == []  # Listing never fetches full stories per row.
 
@@ -179,7 +185,7 @@ def test_blank_select_values_represent_all_and_preserve_uk_filter() -> None:
     ]
 
 
-def test_latest_escapes_story_text_and_does_not_offer_unimplemented_tag_links() -> None:
+def test_latest_escapes_story_text_and_uses_canonical_tag_links() -> None:
     hostile = replace(
         _summary(),
         headline="<script>alert(1)</script>",
@@ -191,7 +197,47 @@ def test_latest_escapes_story_text_and_does_not_offer_unimplemented_tag_links() 
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in response.text
     assert "<script>alert(1)</script>" not in response.text
     assert "&lt;tag&gt;" in response.text
+    assert 'href="/tags/tag"' in response.text
     assert "?tag=" not in response.text
+
+
+def test_tag_page_uses_canonical_label_and_preserves_tag_in_pagination() -> None:
+    reader = Reader(PublicStoryPage((_summary(),), next_cursor="next+cursor"))
+    response = get(
+        app_for(reader),
+        "/tags/identity?topic=security-engineering&story_type=advisory&uk_relevant=true",
+    )
+
+    assert response.status_code == 200
+    assert "Identity — Tags — Primary Signal" in response.text
+    assert 'href="/tags/identity" aria-current="page"' in response.text
+    assert 'action="/tags/identity"' in response.text
+    assert 'href="/tags/identity?story_type=advisory&amp;uk_relevant=true"' in response.text
+    assert (
+        "/tags/identity?topic=security-engineering&amp;story_type=advisory"
+        "&amp;uk_relevant=true&amp;cursor=next%2Bcursor"
+    ) in response.text
+    assert reader.queries == [
+        StoryListQuery(
+            limit=20,
+            tag_id="identity",
+            topic=Topic.SECURITY_ENGINEERING,
+            story_type=StoryType.ADVISORY,
+            uk_relevant=True,
+        )
+    ]
+
+
+def test_tag_page_unknown_invalid_empty_and_cursor_states() -> None:
+    reader = Reader(PublicStoryPage(()))
+    app = app_for(reader)
+
+    assert get(app, "/tags/unknown").status_code == 404
+    assert get(app, "/tags/INVALID").status_code == 422
+    assert "No stories found" in get(app, "/tags/identity").text
+    invalid = get(app, "/tags/identity?cursor=bad")
+    assert invalid.status_code == 400
+    assert 'href="/tags/identity"' in invalid.text
 
 
 def test_detail_has_full_source_trail_and_signal_evidence() -> None:

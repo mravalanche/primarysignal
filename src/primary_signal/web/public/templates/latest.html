@@ -1,11 +1,10 @@
 {% extends "layouts/public.html" %}
-{% block title %}Latest reporting — Primary Signal{% endblock %}
-{% block masthead_context %}<nav aria-label="Primary"><a href="/" aria-current="page">Latest reporting</a></nav>{% endblock %}
+{% block title %}{% if tag %}{{ tag.label }} — Tags — Primary Signal{% else %}Latest reporting — Primary Signal{% endif %}{% endblock %}
+{% block masthead_context %}<nav aria-label="Primary"><a href="/"{% if not tag %} aria-current="page"{% endif %}>Latest reporting</a></nav>{% endblock %}
 {% block content %}
   <section class="ps-latest-page" aria-labelledby="latest-title">
     <header class="ps-latest-heading">
-      <h1 id="latest-title">Latest reporting</h1>
-      <p>New developments from curated security sources, grouped by story.</p>
+      {% if tag %}<p class="ps-story-kicker"><a href="/">Latest reporting</a> · Tag</p><h1 id="latest-title">{{ tag.label }}</h1><p>Stories tagged {{ tag.label }}.</p>{% else %}<h1 id="latest-title">Latest reporting</h1><p>New developments from curated security sources, grouped by story.</p>{% endif %}
     </header>
 
     <nav class="ps-latest-topics" aria-label="Topics">
@@ -13,7 +12,7 @@
       {% for value, label in topics.items() %}<a class="ps-latest-topic-link{% if filters.topic == value %} is-active{% endif %}" href="{{ latest_url(topic=value, story_type=filters.story_type, uk_relevant=filters.uk_relevant) }}"{% if filters.topic == value %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
     </nav>
 
-    <form class="ps-latest-filters" method="get" action="/" aria-label="Filter latest reporting">
+    <form class="ps-latest-filters" method="get" action="{{ latest_url() }}" aria-label="Filter latest reporting">
       {% if filters.topic %}<input type="hidden" name="topic" value="{{ filters.topic.value }}">{% endif %}
       <label for="latest-type">Story type</label>
       <select id="latest-type" name="story_type">
@@ -22,11 +21,11 @@
       </select>
       <label class="ps-latest-uk"><input type="checkbox" name="uk_relevant" value="true"{% if filters.uk_relevant %} checked{% endif %}> UK impact</label>
       <button class="btn btn-sm" type="submit">Apply filters</button>
-      {% if filters.topic or filters.story_type or filters.uk_relevant %}<a class="ps-latest-clear" href="/">Clear</a>{% endif %}
+      {% if filters.topic or filters.story_type or filters.uk_relevant %}<a class="ps-latest-clear" href="{{ latest_url() }}">Clear</a>{% endif %}
     </form>
 
     {% if error %}
-      <div class="ps-latest-empty" role="alert"><h2>Page unavailable</h2><p>{{ error }}</p><a href="/">Return to latest reporting</a></div>
+      <div class="ps-latest-empty" role="alert"><h2>Page unavailable</h2><p>{{ error }}</p><a href="{{ latest_url() }}">Return to {% if tag %}{{ tag.label }}{% else %}latest reporting{% endif %}</a></div>
     {% elif groups %}
       <div class="ps-latest-list">
         {% for group in groups %}
@@ -38,7 +37,7 @@
                   <p class="ps-story-kicker"><span>{{ story_types[item.story_type] }}</span> · {{ topics[item.primary_topic] }}</p>
                   <h3 class="ps-story-title"><a href="/stories/{{ item.slug }}">{{ item.headline }}</a></h3>
                   <p class="ps-story-summary">{{ item.synthesis }}</p>
-                  {% if item.tags %}<div class="ps-story-tags tag-list" aria-label="Story tags">{% for tag in item.tags %}<span class="badge badge-sm ps-tag ps-tag-{{ tag.kind.value }}">{{ tag.label }}</span>{% endfor %}</div>{% endif %}
+                  {% if item.tags %}<div class="ps-story-tags tag-list" aria-label="Story tags">{% for item_tag in item.tags %}<a class="badge badge-sm ps-tag ps-tag-{{ item_tag.kind.value }}" href="/tags/{{ item_tag.id }}"{% if tag and tag.id == item_tag.id %} aria-current="page"{% endif %}>{{ item_tag.label }}</a>{% endfor %}</div>{% endif %}
                   <div class="ps-story-actions">
                     {% if item.signals %}<div class="ps-signal-list" aria-label="Story signals">{% for signal in item.signals %}<span class="ps-signal-control"><a class="ps-signal-chip" href="/stories/{{ item.slug }}#signal-{{ signal.kind.value }}" aria-describedby="signal-help-{{ item.slug }}-{{ signal.kind.value }}">{{ signal_details[signal.kind][0] }}</a><span class="ps-signal-tooltip" id="signal-help-{{ item.slug }}-{{ signal.kind.value }}" role="tooltip">{{ signal_details[signal.kind][1] }}</span></span>{% endfor %}</div>{% endif %}
                     <div class="ps-source-control"><a class="ps-source-trigger ps-source-link" href="/stories/{{ item.slug }}#sources" data-source-preview="/stories/{{ item.slug }}/sources-preview">{{ item.source_count }} {% if item.source_count == 1 %}source{% else %}sources{% endif %} <span aria-hidden="true">↗</span></a><div class="ps-source-panel" id="source-preview-{{ item.slug }}" hidden role="region" aria-label="Sources for {{ item.headline }}"></div></div>
@@ -55,7 +54,7 @@
       </div>
       {% if next_url %}<nav class="ps-latest-pagination" aria-label="Pagination"><a href="{{ next_url }}">Older stories →</a></nav>{% endif %}
     {% else %}
-      <div class="ps-latest-empty" role="status"><h2>No stories found</h2><p>Try another topic or remove a filter.</p>{% if filters.topic or filters.story_type or filters.uk_relevant %}<a href="/">Clear filters</a>{% endif %}</div>
+      <div class="ps-latest-empty" role="status"><h2>No stories found</h2><p>Try another topic or remove a filter.</p>{% if filters.topic or filters.story_type or filters.uk_relevant %}<a href="{{ latest_url() }}">Clear filters</a>{% endif %}</div>
     {% endif %}
   </section>
 {% endblock %}
