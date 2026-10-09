@@ -73,7 +73,9 @@ def test_database_url_file_for_each_role(
     prefix: str,
     settings_type: type[DatabaseSettings],
 ) -> None:
-    url_value = "postgresql+psycopg://reader:example@db.public.example/app"  # pragma: allowlist secret
+    url_value = (
+        "postgresql+psycopg://reader:example@db.public.example/app"  # pragma: allowlist secret
+    )
     file_path = tmp_path / "database-url"
     file_path.write_text(url_value + "\n", encoding="utf-8")
     monkeypatch.delenv(prefix + "URL", raising=False)

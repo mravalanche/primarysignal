@@ -76,8 +76,8 @@ most 4096 bytes; a final newline is allowed. The same `URL_FILE` alternative
 works for the admin editorial and publication logins using their respective
 `PRIMARY_SIGNAL_ADMIN_EDITORIAL_DATABASE_` and
 `PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_` prefixes. The processor,
-scheduler, inventory, source-health command, and migration command use the
-ordinary `PRIMARY_SIGNAL_DATABASE_` prefix. Keep the expected-role variable
+scheduler, inventory, source-health, retention-cleanup, and migration commands
+use the ordinary `PRIMARY_SIGNAL_DATABASE_` prefix. Keep the expected-role variable
 for every login. Never set `URL` and `URL_FILE` together for one prefix.
 An administrator must provision the login and grant, and remove its `CREATE`
 privilege on PostgreSQL's default
