@@ -56,7 +56,9 @@ STORIES = [
 ]
 
 
-def _reader() -> tuple[PostgresStoryReader, list[tuple[str, dict[str, Any]]]]:
+def _reader(
+    search_rows: list[dict[str, Any]] | None = None,
+) -> tuple[PostgresStoryReader, list[tuple[str, dict[str, Any]]]]:
     engine = MagicMock(spec=Engine)
     connection = engine.connect.return_value.__enter__.return_value
     statements: list[tuple[str, dict[str, Any]]] = []
@@ -67,7 +69,28 @@ def _reader() -> tuple[PostgresStoryReader, list[tuple[str, dict[str, Any]]]]:
         statements.append((sql, values))
         if sql.startswith("SET TRANSACTION"):
             return _Rows([])
+        if sql == "SET LOCAL statement_timeout = '2s'":
+            return _Rows([])
         if "FROM primary_signal_public.stories" in sql:
+            if "plainto_tsquery" in sql and search_rows is not None:
+                rows = search_rows
+                if "cursor_rank" in values:
+                    rows = [
+                        row
+                        for row in rows
+                        if row["rank"] < values["cursor_rank"]
+                        or (
+                            row["rank"] == values["cursor_rank"]
+                            and (
+                                row["latest_material_update_at"] < values["cursor_time"]
+                                or (
+                                    row["latest_material_update_at"] == values["cursor_time"]
+                                    and row["slug"] > values["cursor_slug"]
+                                )
+                            )
+                        )
+                    ]
+                return _Rows(rows[: values["page_size"]])
             if "WHERE slug = :slug" in sql:
                 return _Rows([row for row in STORIES if row["slug"] == values["slug"]])
             if "cursor_slug" in values:
@@ -144,6 +167,7 @@ def test_keyset_page_and_hydrated_public_children() -> None:
     assert values["page_size"] == 2
     assert values["tag_id"] == "synthetic-tag"
     assert statements[0][0] == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+    assert not any("statement_timeout" in sql for sql, _ in statements)
 
     second = reader.list_stories(
         StoryListQuery(
@@ -168,6 +192,56 @@ def test_keyset_page_and_hydrated_public_children() -> None:
     assert reader.get_story("synthetic-missing") is None
 
 
+def test_search_uses_public_projection_and_stable_relevance_cursor() -> None:
+    rows = [
+        {**STORIES[0], "rank": 0.3},
+        {**STORIES[1], "rank": 0.3},
+        {**STORIES[0], "slug": "synthetic-c", "rank": 0.1},
+    ]
+    reader, statements = _reader(search_rows=rows)
+    query = StoryListQuery(limit=1, q="Synthetic advisory", tag_id="synthetic-tag")
+    first = reader.list_stories(query)
+    assert [item.slug for item in first.items] == ["synthetic-a"]
+    assert first.next_cursor is not None
+    assert statements[1][0] == "SET LOCAL statement_timeout = '2s'"
+    sql, values = statements[2]
+    assert "FROM primary_signal_public.stories" in sql
+    assert "plainto_tsquery('english', :q)" in sql
+    assert "story.headline" in sql and "story.synthesis" in sql
+    assert "story.why_it_matters" in sql
+    assert "article" not in sql and "content_versions" not in sql
+    assert "ORDER BY rank DESC, story.latest_material_update_at DESC, story.slug ASC" in sql
+    assert values["q"] == "synthetic advisory"
+    assert values["tag_id"] == "synthetic-tag"
+    second = reader.list_stories(
+        StoryListQuery(
+            limit=1, q="synthetic advisory", tag_id="synthetic-tag", cursor=first.next_cursor
+        )
+    )
+    assert [item.slug for item in second.items] == ["synthetic-b"]
+    third = reader.list_stories(
+        StoryListQuery(
+            limit=1, q="synthetic advisory", tag_id="synthetic-tag", cursor=second.next_cursor
+        )
+    )
+    assert [item.slug for item in third.items] == ["synthetic-c"]
+    assert third.next_cursor is None
+    with pytest.raises(InvalidCursor):
+        reader.list_stories(
+            StoryListQuery(limit=1, q="other", tag_id="synthetic-tag", cursor=first.next_cursor)
+        )
+
+
+def test_search_empty_results_and_malicious_query_are_bound() -> None:
+    reader, statements = _reader(search_rows=[])
+    page = reader.list_stories(StoryListQuery(limit=20, q="' OR 1=1 --"))
+    assert page.items == () and page.next_cursor is None
+    assert statements[1][0] == "SET LOCAL statement_timeout = '2s'"
+    sql, values = statements[2]
+    assert "or 1 1" not in sql.lower()
+    assert values["q"] == "or 1 1"
+
+
 @pytest.mark.postgres
 def test_restricted_public_login_can_read_projection() -> None:
     url = os.environ.get("PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL")
@@ -184,6 +258,13 @@ def test_restricted_public_login_can_read_projection() -> None:
             assert connection.execute(text("SELECT current_user")).scalar_one() == "public_test"
         reader = PostgresStoryReader(engine)
         page = reader.list_stories(StoryListQuery(limit=2))
+        search_page = reader.list_stories(StoryListQuery(limit=2, q="synthetic"))
+        assert all(
+            "synthetic" in item.headline.casefold()
+            or "synthetic" in item.synthesis.casefold()
+            or "synthetic" in item.why_it_matters.casefold()
+            for item in search_page.items
+        )
         for summary in page.items:
             story = reader.get_story(summary.slug)
             assert story is not None and story.source_count == len(story.sources)

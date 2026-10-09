@@ -38,6 +38,8 @@ class PostgresStoryReader:
 
     def list_stories(self, query: StoryListQuery) -> PublicStoryPage:
         position = decode_cursor(query.cursor, query) if query.cursor is not None else None
+        if query.q is not None:
+            return self._search_stories(query, position)
         conditions: list[str] = []
         parameters: dict[str, Any] = {"page_size": query.limit + 1}
         if query.topic is not None:
@@ -79,6 +81,72 @@ class PostgresStoryReader:
             last = items[-1]
             next_cursor = encode_cursor(
                 StoryCursor(last.latest_material_update_at, last.slug), query
+            )
+        return PublicStoryPage(items=items, next_cursor=next_cursor)
+
+    def _search_stories(
+        self, query: StoryListQuery, position: StoryCursor | None
+    ) -> PublicStoryPage:
+        """Rank only curated public columns, with a total keyset order."""
+
+        conditions = ["search_document @@ search_terms.term"]
+        parameters: dict[str, Any] = {"q": query.q, "page_size": query.limit + 1}
+        if query.topic is not None:
+            conditions.append("story.primary_topic = :topic")
+            parameters["topic"] = query.topic.value
+        if query.story_type is not None:
+            conditions.append("story.story_type = :story_type")
+            parameters["story_type"] = query.story_type.value
+        if query.uk_relevant is not None:
+            conditions.append("story.uk_relevant = :uk_relevant")
+            parameters["uk_relevant"] = query.uk_relevant
+        if query.tag_id is not None:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM primary_signal_public.story_tags AS relation "
+                "WHERE relation.slug = story.slug AND relation.tag_id = :tag_id)"
+            )
+            parameters["tag_id"] = query.tag_id
+        if position is not None:
+            conditions.append(
+                "(rank < :cursor_rank OR (rank = :cursor_rank AND "
+                "(story.latest_material_update_at < :cursor_time OR "
+                "(story.latest_material_update_at = :cursor_time AND story.slug > :cursor_slug))))"
+            )
+            parameters.update(
+                cursor_rank=position.rank,
+                cursor_time=position.latest_material_update_at,
+                cursor_slug=position.slug,
+            )
+        # The LATERAL document is built exclusively from the restricted public view.
+        statement = text(
+            f"SELECT {_STORY_COLUMNS}, rank "  # noqa: S608
+            "FROM primary_signal_public.stories AS story "
+            "CROSS JOIN LATERAL (SELECT plainto_tsquery('english', :q) AS term) AS search_terms "
+            "CROSS JOIN LATERAL (SELECT "
+            "setweight(to_tsvector('english', coalesce(story.headline, '')), 'A') || "
+            "setweight(to_tsvector('english', coalesce(story.synthesis, '')), 'B') || "
+            "setweight(to_tsvector('english', coalesce(story.why_it_matters, '')), 'C') "
+            "AS search_document) AS document "
+            "CROSS JOIN LATERAL (SELECT ts_rank(document.search_document, search_terms.term) "
+            "AS rank) AS relevance "
+            f"WHERE {' AND '.join(conditions)} "
+            "ORDER BY rank DESC, story.latest_material_update_at DESC, story.slug ASC "
+            "LIMIT :page_size"
+        )
+        with self._snapshot() as connection:
+            # A keyword query can scan the public view; bound its database time
+            # without changing the budget for ordinary story listings.
+            connection.execute(text("SET LOCAL statement_timeout = '2s'"))
+            rows = connection.execute(statement, parameters).mappings().all()
+            visible_rows = rows[: query.limit]
+            children = self._load_children(connection, [row["slug"] for row in visible_rows])
+            items = tuple(self._summary(row, children) for row in visible_rows)
+        next_cursor = None
+        if len(rows) > query.limit:
+            last = visible_rows[-1]
+            next_cursor = encode_cursor(
+                StoryCursor(last["latest_material_update_at"], last["slug"], last["rank"]),
+                query,
             )
         return PublicStoryPage(items=items, next_cursor=next_cursor)
 
