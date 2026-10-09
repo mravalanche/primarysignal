@@ -15,6 +15,7 @@ SUBMIT_ROLE = "primary_signal_cap_queue_submit"
 CONSUME_ROLE = "primary_signal_cap_queue_consume"
 FEED_SCHEDULE_ROLE = "primary_signal_cap_feed_schedule"
 FEED_POLL_ROLE = "primary_signal_cap_feed_poll"
+ARTICLE_PERSIST_ROLE = "primary_signal_cap_article_persist"
 SCHEDULER_ROLE = "scheduler_test"
 PROCESSOR_ROLE = "processor_test"
 SCHEDULER_PASSWORD = "primary_signal_scheduler_test_only"  # noqa: S105  # pragma: allowlist secret
@@ -131,6 +132,7 @@ def main() -> None:
         repository_root / "deploy/postgres/initdb/010_queue_capability_roles.sql",
         repository_root / "deploy/postgres/initdb/020_feed_scheduler_capability_role.sql",
         repository_root / "deploy/postgres/initdb/030_feed_poll_capability_role.sql",
+        repository_root / "deploy/postgres/initdb/040_article_persist_capability_role.sql",
     )
     engine = create_engine(database_url, hide_parameters=True)
     try:
@@ -158,7 +160,7 @@ def main() -> None:
                 connection,
                 role_name=PROCESSOR_ROLE,
                 password=PROCESSOR_PASSWORD,
-                capabilities=(SUBMIT_ROLE, CONSUME_ROLE, FEED_POLL_ROLE),
+                capabilities=(SUBMIT_ROLE, CONSUME_ROLE, FEED_POLL_ROLE, ARTICLE_PERSIST_ROLE),
             )
     finally:
         engine.dispose()
