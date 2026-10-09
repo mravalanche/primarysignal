@@ -118,7 +118,9 @@ def test_retention_clock_and_historical_publication_protection(
                     .values(current_content_version_id=second_id)
                 )
                 assert connection.execute(
-                    select(ContentVersionRetention.content_version_id)
+                    select(ContentVersionRetention.content_version_id).where(
+                        ContentVersionRetention.content_version_id.in_((first_id, second_id))
+                    )
                 ).scalars().all() == [first_id]
                 old_time = now - timedelta(days=91)
                 connection.execute(
@@ -184,7 +186,9 @@ def test_retention_clock_and_historical_publication_protection(
                     .values(current_content_version_id=first_id)
                 )
                 assert connection.execute(
-                    select(ContentVersionRetention.content_version_id)
+                    select(ContentVersionRetention.content_version_id).where(
+                        ContentVersionRetention.content_version_id.in_((first_id, second_id))
+                    )
                 ).scalars().all() == [second_id]
                 connection.execute(
                     update(Article)

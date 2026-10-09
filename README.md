@@ -202,15 +202,11 @@ details, job payloads, or article content. It is a local operator command.
 
 ### Database capability roles
 
-Fresh Compose database volumes create two fixed, non-login queue capabilities,
-one feed-scheduling capability, one feed-poll capability, and one capability for
-article persistence, a metadata-only inventory search capability, and public
-projection owner/read capabilities, a publication-writer capability, and a
-source-health read capability, plus editorial read, admin session, and publication
-decision capabilities. The definitions live in the numbered SQL files under
-`deploy/postgres/initdb`. Login roles, passwords and role membership remain
-deployment-owned. PostgreSQL only runs
-these files while creating a new data directory.
+Fresh Compose database volumes create the fixed, non-login capability roles in
+the numbered SQL files under `deploy/postgres/initdb`. These include a dedicated
+extracted-text cleanup capability. Login roles, passwords and role membership
+remain deployment-owned. PostgreSQL only runs these files while creating a new
+data directory.
 
 For an existing development volume, apply the role bootstrap from inside the
 database container. The command uses the container's existing environment and
@@ -228,9 +224,10 @@ docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POST
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/090_editorial_read_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/100_admin_session_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/120_retention_cleanup_capability_role.sql'
 ```
 
-Run all eleven commands before applying migrations. The migrations grant access to
+Run all twelve commands before applying migrations. The migrations grant access to
 the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any
