@@ -35,8 +35,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             cleared = run_batch(engine, limit=args.limit)
         finally:
             engine.dispose()
-    except (ValidationError, SQLAlchemyError, UnexpectedDatabaseRoleError, RuntimeError) as error:
-        raise SystemExit("retention cleanup unavailable") from error
+    except ValueError, ValidationError, SQLAlchemyError, UnexpectedDatabaseRoleError, RuntimeError:
+        raise SystemExit("retention cleanup unavailable") from None
     print(json.dumps({"count": len(cleared), "content_version_ids": cleared}))
 
 

@@ -70,6 +70,15 @@ dedicated PostgreSQL login that inherits only
 the public process environment; see `.env.public.example` for placeholder
 names. The web process checks that role and its restricted privileges before
 accepting requests, then reads only the `primary_signal_public` projection.
+For a mounted secret file, set `PRIMARY_SIGNAL_DATABASE_URL_FILE` instead of
+`PRIMARY_SIGNAL_DATABASE_URL`. The file must contain one UTF-8 URL line of at
+most 4096 bytes; a final newline is allowed. The same `URL_FILE` alternative
+works for the admin editorial and publication logins using their respective
+`PRIMARY_SIGNAL_ADMIN_EDITORIAL_DATABASE_` and
+`PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_` prefixes. The processor,
+scheduler, inventory, source-health, retention-cleanup, and migration commands
+use the ordinary `PRIMARY_SIGNAL_DATABASE_` prefix. Keep the expected-role variable
+for every login. Never set `URL` and `URL_FILE` together for one prefix.
 An administrator must provision the login and grant, and remove its `CREATE`
 privilege on PostgreSQL's default
 `public` schema. Do not reuse migration or ingestion credentials.

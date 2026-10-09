@@ -11,6 +11,10 @@ from sqlalchemy.pool import NullPool
 from primary_signal.db import Base, DatabaseSettings
 from primary_signal.db import engine as engine_module
 from primary_signal.db.models import *  # noqa: F403 - verifies complete metadata registration
+from primary_signal.web.admin.settings import (
+    AdminDecisionDatabaseSettings,
+    AdminEditorialDatabaseSettings,
+)
 
 EXPECTED_TABLES = {
     "admin_login_attempts",
@@ -53,6 +57,81 @@ def test_database_settings_hide_url() -> None:
 
     assert "example" not in repr(settings)
     assert settings.url.get_secret_value().startswith("postgresql+psycopg://")
+
+
+@pytest.mark.parametrize(
+    ("prefix", "settings_type"),
+    [
+        ("PRIMARY_SIGNAL_DATABASE_", DatabaseSettings),
+        ("PRIMARY_SIGNAL_ADMIN_EDITORIAL_DATABASE_", AdminEditorialDatabaseSettings),
+        ("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_", AdminDecisionDatabaseSettings),
+    ],
+)
+def test_database_url_file_for_each_role(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    prefix: str,
+    settings_type: type[DatabaseSettings],
+) -> None:
+    url_value = (
+        "postgresql+psycopg://reader:example@db.public.example/app"  # pragma: allowlist secret
+    )
+    file_path = tmp_path / "database-url"
+    file_path.write_text(url_value + "\n", encoding="utf-8")
+    monkeypatch.delenv(prefix + "URL", raising=False)
+    monkeypatch.setenv(prefix + "URL_FILE", str(file_path))
+    monkeypatch.setenv(prefix + "EXPECTED_ROLE", "app_test")
+
+    settings = settings_type()
+
+    assert settings.url.get_secret_value() == url_value
+    assert url_value not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        b"",
+        b"\n",
+        b"not-a-url\n",
+        b"postgresql+psycopg://x@db.public.example/app\nother",
+        b"postgresql+psycopg://x@db.public.example/app\x00extra",
+        b"postgresql+psycopg://x@db.public.example/app\tmore",
+        b"x" * 4097,
+        b"\xff",
+    ],
+)
+def test_database_url_file_rejects_invalid_contents_without_leak(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, contents: bytes
+) -> None:
+    prefix = "PRIMARY_SIGNAL_DATABASE_"
+    file_path = tmp_path / "private-path"
+    file_path.write_bytes(contents)
+    monkeypatch.delenv(prefix + "URL", raising=False)
+    monkeypatch.setenv(prefix + "URL_FILE", str(file_path))
+    monkeypatch.setenv(prefix + "EXPECTED_ROLE", "app_test")
+
+    with pytest.raises((ValueError, ValidationError)) as caught:
+        DatabaseSettings()
+    assert str(file_path) not in str(caught.value)
+    assert "other" not in str(caught.value)
+
+
+def test_database_url_file_rejects_missing_and_conflicting_sources(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prefix = "PRIMARY_SIGNAL_DATABASE_"
+    file_path = tmp_path / "private-path"
+    monkeypatch.setenv(prefix + "URL_FILE", str(file_path))
+    monkeypatch.delenv(prefix + "URL", raising=False)
+    with pytest.raises(ValueError, match="could not be read") as caught:
+        DatabaseSettings(expected_role="app_test")
+    assert str(file_path) not in str(caught.value)
+
+    file_path.write_text("postgresql+psycopg://x@db.public.example/app", encoding="utf-8")
+    monkeypatch.setenv(prefix + "URL", "postgresql+psycopg://other@db.public.example/app")
+    with pytest.raises(ValueError, match="cannot both be set"):
+        DatabaseSettings(expected_role="app_test")
 
 
 def test_metadata_registers_only_expected_schema_tables() -> None:
