@@ -31,7 +31,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 report = read_health(connection, limit=limit)
         finally:
             engine.dispose()
-    except ValidationError, SQLAlchemyError, UnexpectedDatabaseRoleError:
+    except ValueError, ValidationError, SQLAlchemyError, UnexpectedDatabaseRoleError:
         parser.exit(1, "source health report unavailable\n")
     print(json.dumps(report.as_dict(), separators=(",", ":")))
 

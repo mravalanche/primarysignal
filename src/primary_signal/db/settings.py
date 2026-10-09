@@ -1,11 +1,40 @@
 """Typed, PostgreSQL-only database settings."""
 
-from typing import Self
+import os
+import stat
+from typing import Any, Self
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
+
+MAX_DATABASE_URL_BYTES = 4096
+
+
+def _read_database_url_file(path: str) -> SecretStr:
+    """Read one bounded UTF-8 secret without exposing its path or contents."""
+
+    try:
+        with open(path, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError("database URL file is invalid")
+            raw = stream.read(MAX_DATABASE_URL_BYTES + 3)
+    except OSError:
+        raise ValueError("database URL file could not be read") from None
+    if raw.endswith(b"\r\n"):
+        raw = raw[:-2]
+    elif raw.endswith(b"\n"):
+        raw = raw[:-1]
+    if not raw or len(raw) > MAX_DATABASE_URL_BYTES or b"\n" in raw or b"\r" in raw:
+        raise ValueError("database URL file must contain one bounded line")
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("database URL file must be UTF-8") from None
+    if any(ord(character) < 32 or ord(character) == 127 for character in decoded):
+        raise ValueError("database URL file contains control characters")
+    return SecretStr(decoded)
 
 
 class DatabaseSettings(BaseSettings):
@@ -17,6 +46,17 @@ class DatabaseSettings(BaseSettings):
         extra="ignore",
         frozen=True,
     )
+
+    def __init__(self, **data: Any) -> None:
+        prefix = str(self.model_config.get("env_prefix", "PRIMARY_SIGNAL_DATABASE_"))
+        file_path = os.environ.get(f"{prefix}URL_FILE")
+        if file_path is not None:
+            if "url" in data or os.environ.get(f"{prefix}URL") is not None:
+                raise ValueError("database URL and URL_FILE cannot both be set")
+            if not file_path:
+                raise ValueError("database URL file is invalid")
+            data["url"] = _read_database_url_file(file_path)
+        super().__init__(**data)
 
     url: SecretStr
     expected_role: str = Field(min_length=1, max_length=63, pattern=r"^[a-z_][a-z0-9_]*$")
@@ -40,8 +80,8 @@ class DatabaseSettings(BaseSettings):
 
         try:
             driver_name = make_url(self.url.get_secret_value()).drivername
-        except ArgumentError as error:
-            raise ValueError("database URL is invalid") from error
+        except ArgumentError:
+            raise ValueError("database URL is invalid") from None
         if driver_name != "postgresql+psycopg":
             raise ValueError("database URL must use postgresql+psycopg")
         return self

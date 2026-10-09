@@ -138,10 +138,11 @@ def admin_decision_database_settings() -> AdminDecisionDatabaseSettings | None:
     """Enable browser decisions only when a separate restricted login is configured."""
 
     url = os.environ.get("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL")
+    url_file = os.environ.get("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL_FILE")
     role = os.environ.get("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_EXPECTED_ROLE")
-    if url is None and role is None:
+    if url is None and url_file is None and role is None:
         return None
-    if not url or not role:
+    if (url is None and url_file is None) or not role:
         raise RuntimeError("admin publication database URL and role must be set together")
     load_settings = cast(Callable[[], AdminDecisionDatabaseSettings], AdminDecisionDatabaseSettings)
     return load_settings().model_copy(

@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -327,6 +328,29 @@ def test_admin_decision_login_requires_both_private_settings(
         "postgresql+psycopg://decision@db.public.example/app",
     )
     with pytest.raises(RuntimeError, match="must be set together"):
+        web.admin_decision_database_settings()
+
+
+def test_admin_decision_login_accepts_url_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    file_path = tmp_path / "database-url"
+    file_path.write_text("postgresql+psycopg://decision@db.public.example/app\n")
+    monkeypatch.delenv("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL", raising=False)
+    monkeypatch.setenv("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL_FILE", str(file_path))
+    monkeypatch.setenv("PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_EXPECTED_ROLE", "decision_test")
+
+    settings = web.admin_decision_database_settings()
+
+    assert settings is not None
+    assert settings.expected_role == "decision_test"
+    assert settings.application_name == "primary_signal_admin_decision"
+
+    monkeypatch.setenv(
+        "PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_URL",
+        "postgresql+psycopg://other@db.public.example/app",
+    )
+    with pytest.raises(ValueError, match="cannot both be set"):
         web.admin_decision_database_settings()
 
 
