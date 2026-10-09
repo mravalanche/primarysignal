@@ -274,11 +274,25 @@ class StoryListQuery:
     story_type: StoryType | None = None
     uk_relevant: bool | None = None
     tag_id: str | None = None
+    q: str | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= self.limit <= 50:
             raise ValueError("limit must be between 1 and 50")
-        if self.cursor is not None and (not self.cursor or len(self.cursor) > 500):
+        if self.cursor is not None and (not self.cursor or len(self.cursor) > 1024):
             raise ValueError("cursor is not valid")
         if self.tag_id is not None:
             validate_public_identifier(self.tag_id, name="tag id")
+        if self.q is not None:
+            object.__setattr__(self, "q", normalize_story_search(self.q))
+
+
+def normalize_story_search(value: str) -> str:
+    """Bound a plain keyword search before sending it to PostgreSQL."""
+
+    if len(value) > 100 or _has_control_characters(value):
+        raise ValueError("search query is not valid")
+    words = re.findall(r"[a-z0-9]+", value.casefold())
+    if not words or len(words) > 8 or any(len(word) > 40 for word in words):
+        raise ValueError("search query must contain 1 to 8 short terms")
+    return " ".join(words)

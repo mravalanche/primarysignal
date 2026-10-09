@@ -13,7 +13,8 @@ from primary_signal.publication.models import (
 class StoryReader(Protocol):
     """Read only currently published stories from a curated projection.
 
-    Listings use the total order ``latest_material_update_at DESC, slug ASC``.
+    Listings use ``latest_material_update_at DESC, slug ASC``. Keyword search
+    uses relevance descending before that same deterministic tie-break.
     Implementations must bind an opaque cursor to the active filters and raise
     :class:`InvalidCursor` when it is malformed or reused across filters.
     """

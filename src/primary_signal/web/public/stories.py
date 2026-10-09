@@ -26,27 +26,34 @@ ReaderDependency = Annotated[StoryReader, Depends(get_story_reader)]
 def list_stories(
     reader: ReaderDependency,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
-    cursor: Annotated[str | None, Query(min_length=1, max_length=500)] = None,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None,
     topic: Topic | None = None,
     story_type: StoryType | None = None,
     uk_relevant: bool | None = None,
     tag_id: Annotated[
         str | None, Query(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$", max_length=160)
     ] = None,
+    q: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
 ) -> StoryPageResponse:
     """List currently published stories from the curated public projection."""
 
     try:
-        page = reader.list_stories(
-            StoryListQuery(
-                limit=limit,
-                cursor=cursor,
-                topic=topic,
-                story_type=story_type,
-                uk_relevant=uk_relevant,
-                tag_id=tag_id,
-            )
+        listing = StoryListQuery(
+            limit=limit,
+            cursor=cursor,
+            topic=topic,
+            story_type=story_type,
+            uk_relevant=uk_relevant,
+            tag_id=tag_id,
+            q=q,
         )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid search query",
+        ) from error
+    try:
+        page = reader.list_stories(listing)
     except InvalidCursor as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
