@@ -53,9 +53,9 @@ async def read_login_password(request: Request) -> str:
         raise HTTPException(status_code=400, detail="Invalid login request")
     body = bytearray()
     async for chunk in request.stream():
-        body.extend(chunk)
-        if len(body) > 8192:
+        if len(body) + len(chunk) > 8192:
             raise HTTPException(status_code=400, detail="Invalid login request")
+        body.extend(chunk)
     try:
         payload: object = json.loads(body)
     except (ValueError, UnicodeDecodeError) as error:

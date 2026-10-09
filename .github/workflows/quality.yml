@@ -83,6 +83,7 @@ jobs:
           PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL: postgresql+psycopg://public_test:primary_signal_public_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL: postgresql+psycopg://health_test:primary_signal_health_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL: postgresql+psycopg://editorial_test:primary_signal_editorial_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
+          PRIMARY_SIGNAL_TEST_ADMIN_SESSION_DATABASE_URL: postgresql+psycopg://admin_session_test:primary_signal_admin_session_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
         run: uv run --offline --locked poe check-offline
 
       - name: Exercise PostgreSQL migrations

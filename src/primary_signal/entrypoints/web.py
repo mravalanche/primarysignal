@@ -147,6 +147,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 app = create_admin_app(settings, auth_service=admin_auth)
             else:
                 app = create_admin_app(settings)
+        # Do not let proxy headers rewrite client or scheme before the admin
+        # app can reject untrusted forwarding metadata.
         uvicorn.run(
             app,
             host=args.host,
