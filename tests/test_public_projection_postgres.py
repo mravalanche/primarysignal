@@ -3,6 +3,7 @@
 import os
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
+
+from primary_signal.publication import PostgresStoryReader, StoryListQuery
 
 
 @pytest.fixture
@@ -68,6 +71,60 @@ def _publish(connection: Connection, story_id: uuid.UUID, revision_id: uuid.UUID
         text("UPDATE primary_signal.stories SET current_revision_id=:revision WHERE id=:id"),
         {"revision": revision_id, "id": story_id},
     )
+
+
+@pytest.mark.postgres
+def test_search_sees_published_match_but_not_draft_or_suppressed(
+    migrated_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = f"needle{uuid.uuid4().hex}"
+    slugs = [
+        f"synthetic-search-{kind}-{uuid.uuid4().hex}"
+        for kind in ("published", "draft", "suppressed")
+    ]
+    with migrated_engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            revisions = [_revision(connection, slug=slug, number=1) for slug in slugs]
+            for index, (_, revision_id) in enumerate(revisions):
+                connection.execute(
+                    text(
+                        "UPDATE primary_signal.story_revisions SET headline=:headline "
+                        "WHERE id=:revision_id"
+                    ),
+                    {"headline": f"Synthetic {marker} {index}", "revision_id": revision_id},
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO primary_signal.revision_sources "
+                        "(revision_id,source_id,position,title,publisher,public_url) "
+                        "VALUES (:revision_id,'synthetic-source',1,'Synthetic source',"
+                        "'Public Example','https://public.example/source')"
+                    ),
+                    {"revision_id": revision_id},
+                )
+            _publish(connection, *revisions[0])
+            _publish(connection, *revisions[2])
+            connection.execute(
+                text("UPDATE primary_signal.stories SET suppressed=true WHERE id=:id"),
+                {"id": revisions[2][0]},
+            )
+            connection.execute(text("SET LOCAL ROLE public_test"))
+            assert connection.execute(text("SELECT current_user")).scalar_one() == "public_test"
+
+            @contextmanager
+            def same_transaction() -> Iterator[Connection]:
+                yield connection
+
+            reader = PostgresStoryReader(migrated_engine)
+            monkeypatch.setattr(reader, "_snapshot", same_transaction)
+            page = reader.list_stories(StoryListQuery(limit=10, q=marker))
+            assert [item.slug for item in page.items] == [slugs[0]]
+            assert page.items[0].headline == f"Synthetic {marker} 0"
+            absent = f"absent{uuid.uuid4().hex}"
+            assert reader.list_stories(StoryListQuery(limit=10, q=absent)).items == ()
+        finally:
+            transaction.rollback()
 
 
 @pytest.mark.postgres

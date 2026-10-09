@@ -134,6 +134,9 @@ class PostgresStoryReader:
             "LIMIT :page_size"
         )
         with self._snapshot() as connection:
+            # A keyword query can scan the public view; bound its database time
+            # without changing the budget for ordinary story listings.
+            connection.execute(text("SET LOCAL statement_timeout = '2s'"))
             rows = connection.execute(statement, parameters).mappings().all()
             visible_rows = rows[: query.limit]
             children = self._load_children(connection, [row["slug"] for row in visible_rows])

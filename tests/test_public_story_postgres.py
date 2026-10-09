@@ -69,6 +69,8 @@ def _reader(
         statements.append((sql, values))
         if sql.startswith("SET TRANSACTION"):
             return _Rows([])
+        if sql == "SET LOCAL statement_timeout = '2s'":
+            return _Rows([])
         if "FROM primary_signal_public.stories" in sql:
             if "plainto_tsquery" in sql and search_rows is not None:
                 rows = search_rows
@@ -165,6 +167,7 @@ def test_keyset_page_and_hydrated_public_children() -> None:
     assert values["page_size"] == 2
     assert values["tag_id"] == "synthetic-tag"
     assert statements[0][0] == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+    assert not any("statement_timeout" in sql for sql, _ in statements)
 
     second = reader.list_stories(
         StoryListQuery(
@@ -200,7 +203,8 @@ def test_search_uses_public_projection_and_stable_relevance_cursor() -> None:
     first = reader.list_stories(query)
     assert [item.slug for item in first.items] == ["synthetic-a"]
     assert first.next_cursor is not None
-    sql, values = statements[1]
+    assert statements[1][0] == "SET LOCAL statement_timeout = '2s'"
+    sql, values = statements[2]
     assert "FROM primary_signal_public.stories" in sql
     assert "plainto_tsquery('english', :q)" in sql
     assert "story.headline" in sql and "story.synthesis" in sql
@@ -232,7 +236,8 @@ def test_search_empty_results_and_malicious_query_are_bound() -> None:
     reader, statements = _reader(search_rows=[])
     page = reader.list_stories(StoryListQuery(limit=20, q="' OR 1=1 --"))
     assert page.items == () and page.next_cursor is None
-    sql, values = statements[1]
+    assert statements[1][0] == "SET LOCAL statement_timeout = '2s'"
+    sql, values = statements[2]
     assert "or 1 1" not in sql.lower()
     assert values["q"] == "or 1 1"
 
