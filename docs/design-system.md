@@ -4,6 +4,8 @@
 
 This document is the reference for new public and administration UI. The two interfaces can use different page layouts, but share these foundations. Primary Signal should read as an editorial security publication: strong type, restrained colour, thin rules and clear source provenance. Colour supports labels and evidence; it never substitutes for them or implies a composite confidence score.
 
+The operator selected the [Reading desk](admin-reading-desk.md) layout for administration story inspection. That approval does not cover the separate administration overview dashboard.
+
 The typography hierarchy takes inspiration from [Sajid's *The 80% of UI Design – Typography*](https://www.youtube.com/watch?v=9-oefwZ6Z74), whose official description focuses on font size, weight and colour. The video does not prescribe this palette or these token values.
 
 ## Colour tokens
