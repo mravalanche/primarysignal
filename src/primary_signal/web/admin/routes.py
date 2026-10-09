@@ -72,11 +72,9 @@ async def read_login_password(request: Request) -> str:
 async def login(request: Request, response: Response) -> LoginResponse:
     service = service_for(request)
     validate_origin(request, service)
-    if request.client is None:
-        raise HTTPException(status_code=403, detail="Request source denied")
     password = await read_login_password(request)
     try:
-        result = service.login(password, request.client.host)
+        result = service.login(password)
     except LoginRateLimited as error:
         raise HTTPException(status_code=429, detail="Login temporarily limited") from error
     if result is None:

@@ -19,24 +19,19 @@ PASSWORD = "synthetic-password-for-unit-tests"  # noqa: S105  # pragma: allowlis
 class FakeStore:
     def __init__(self) -> None:
         self.sessions: dict[bytes, StoredSession] = {}
-        self.attempts: list[tuple[bytes, datetime]] = []
+        self.attempts: list[datetime] = []
 
     def claim_login_attempt(
         self,
-        source_digest: bytes,
         *,
         since: datetime,
         at: datetime,
-        source_limit: int,
-        global_limit: int,
+        limit: int,
     ) -> bool:
-        recent = [item for item in self.attempts if item[1] >= since]
-        if (
-            len(recent) >= global_limit
-            or sum(source == source_digest for source, _ in recent) >= source_limit
-        ):
+        recent = [item for item in self.attempts if item >= since]
+        if len(recent) >= limit:
             return False
-        self.attempts.append((source_digest, at))
+        self.attempts.append(at)
         return True
 
     def create(self, session: StoredSession) -> None:
@@ -66,8 +61,7 @@ def auth_service(store: FakeStore | None = None) -> AdminAuthService:
         origin=ORIGIN,
         password_phc=hasher.hash(PASSWORD),
         session_key=b"synthetic-test-key-with-32-bytes-minimum",  # pragma: allowlist secret
-        source_attempts=3,
-        global_attempts=4,
+        login_attempts=4,
     )
     return AdminAuthService(config, store or FakeStore())
 
@@ -107,14 +101,14 @@ def test_private_settings_validate_origin_and_secret_format(
             ORIGIN, hasher.hash(PASSWORD), b"k" * 32, idle_seconds=60, absolute_seconds=30
         )
     with pytest.raises(ValueError, match="rate limits"):
-        AdminAuthConfig(ORIGIN, hasher.hash(PASSWORD), b"k" * 32, source_attempts=0)
+        AdminAuthConfig(ORIGIN, hasher.hash(PASSWORD), b"k" * 32, login_attempts=0)
 
 
 def test_session_rotation_csrf_expiry_and_rate_limits() -> None:
     store = FakeStore()
     auth = auth_service(store)
     now = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
-    first = auth.login(PASSWORD, "192.0.2.10", now=now)
+    first = auth.login(PASSWORD, now=now)
     assert first is not None
     assert len(first.identifier) == 64
     assert first.identifier.encode() not in repr(store.sessions).encode()
@@ -126,16 +120,17 @@ def test_session_rotation_csrf_expiry_and_rate_limits() -> None:
     assert (
         auth_service(store).authenticate(first.identifier, now=now + timedelta(minutes=1)) is None
     )
-    assert auth.login("wrong", "192.0.2.10", now=now) is None
-    assert auth.login("wrong", "192.0.2.10", now=now) is None
+    assert auth.login("wrong", now=now) is None
+    assert auth.login("wrong", now=now) is None
+    assert auth.login("wrong", now=now) is None
     from primary_signal.web.admin.auth import LoginRateLimited
 
     try:
-        auth.login(PASSWORD, "192.0.2.10", now=now)
+        auth.login(PASSWORD, now=now)
     except LoginRateLimited:
         pass
     else:
-        raise AssertionError("source attempt threshold was bypassed")
+        raise AssertionError("service attempt threshold was bypassed")
     assert auth.authenticate(first.identifier, now=now + timedelta(minutes=31)) is None
     digest = next(iter(store.sessions))
     store.sessions[digest] = StoredSession(
@@ -148,17 +143,17 @@ def test_session_rotation_csrf_expiry_and_rate_limits() -> None:
     assert auth.authenticate(first.identifier, now=now + timedelta(minutes=1)) is None
 
 
-def test_global_limit_is_shared_between_sources() -> None:
+def test_service_budget_expires_without_permanent_lockout() -> None:
     store = FakeStore()
     auth = auth_service(store)
     now = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
-    for index in range(4):
-        assert auth.login("wrong", f"192.0.2.{index + 1}", now=now) is None
+    for _ in range(4):
+        assert auth.login("wrong", now=now) is None
     from primary_signal.web.admin.auth import LoginRateLimited
 
     with pytest.raises(LoginRateLimited):
-        auth.login(PASSWORD, "192.0.2.20", now=now)
-    assert auth.login(PASSWORD, "192.0.2.20", now=now + timedelta(minutes=16)) is not None
+        auth.login(PASSWORD, now=now)
+    assert auth.login(PASSWORD, now=now + timedelta(minutes=16)) is not None
 
 
 def test_admin_http_boundary_and_cookie() -> None:

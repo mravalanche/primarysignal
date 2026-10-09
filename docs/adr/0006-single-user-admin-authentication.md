@@ -31,9 +31,10 @@ forwarded proxy headers, and all fetched or generated content are untrusted.
   should take roughly 250–750 ms without unsafe memory pressure.
 - The login form accepts the password only; there is no discoverable account
   name in v1. Do not log credentials, password hashes, cookies, or CSRF tokens.
-- Rate-limit login attempts by source and across the whole service. Use bounded
-  delays rather than permanent account lockout, which would create a simple
-  denial of service against the sole operator.
+- Rate-limit login attempts across the whole service. The reverse proxy hides
+  client addresses from this process, so v1 does not claim a per-client limit.
+  Use a bounded window rather than permanent account lockout, which would
+  create a simple denial of service against the sole operator.
 - Require authentication for every admin page and API except login and a
   minimal unauthenticated liveness response. Logout is an authenticated,
   CSRF-protected mutation. The public application factory must not register
@@ -88,8 +89,8 @@ not an email flow.
   unapproved hosts, and spoofed forwarding headers.
 - `GET` and `HEAD` requests do not change durable state.
 - Cookie tests assert the exact security attributes and absence of `Domain`.
-- Rate-limit tests cover repeated attempts across one source and many sources,
-  without creating a permanent lockout.
+- Rate-limit tests cover the shared service budget and window expiry, without
+  creating a permanent lockout.
 - Logs and error responses contain no submitted password, session identifier,
   CSRF token, password hash, or form body.
 - A production-mode startup check fails if HTTPS/proxy/origin settings are
@@ -103,8 +104,8 @@ deployment configuration rather than this repository:
 1. The admin origin and how its HTTPS certificate is issued and renewed.
 2. Idle and absolute session lifetimes. Proposed defaults are 30 minutes idle
    and 12 hours absolute.
-3. Login rate thresholds and the trusted proxy addresses. Proposed defaults are
-   five failed attempts per 15 minutes per source and 20 globally, followed by
-   bounded backoff.
+3. Login rate threshold and the trusted proxy addresses. The v1 default is 20
+   attempts across the service per 15 minutes; trusted client-address handling
+   needs a separate design before any per-client budget is claimed.
 4. The operator procedure for generating and replacing the Argon2id hash and
    session secret without placing either in source control or shell history.

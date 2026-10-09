@@ -26,7 +26,6 @@ CREATE TABLE primary_signal.admin_sessions (
     op.execute("""
 CREATE TABLE primary_signal.admin_login_attempts (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    source_digest bytea NOT NULL CHECK (octet_length(source_digest) = 32),
     occurred_at timestamptz NOT NULL
 )
 """)
@@ -34,7 +33,8 @@ CREATE TABLE primary_signal.admin_login_attempts (
         "CREATE INDEX ix_admin_login_attempts_recent ON primary_signal.admin_login_attempts(occurred_at)"
     )
     op.execute(f"GRANT USAGE ON SCHEMA primary_signal TO {ROLE}")
-    op.execute(f"GRANT SELECT,INSERT,UPDATE ON primary_signal.admin_sessions TO {ROLE}")
+    op.execute(f"GRANT SELECT,INSERT ON primary_signal.admin_sessions TO {ROLE}")
+    op.execute(f"GRANT UPDATE (last_seen_at,revoked_at) ON primary_signal.admin_sessions TO {ROLE}")
     op.execute(f"GRANT SELECT,INSERT ON primary_signal.admin_login_attempts TO {ROLE}")
     op.execute(f"GRANT USAGE ON SEQUENCE primary_signal.admin_login_attempts_id_seq TO {ROLE}")
 
@@ -42,7 +42,10 @@ CREATE TABLE primary_signal.admin_login_attempts (
 def downgrade() -> None:
     op.execute(f"REVOKE USAGE ON SEQUENCE primary_signal.admin_login_attempts_id_seq FROM {ROLE}")
     op.execute(f"REVOKE SELECT,INSERT ON primary_signal.admin_login_attempts FROM {ROLE}")
-    op.execute(f"REVOKE SELECT,INSERT,UPDATE ON primary_signal.admin_sessions FROM {ROLE}")
+    op.execute(
+        f"REVOKE UPDATE (last_seen_at,revoked_at) ON primary_signal.admin_sessions FROM {ROLE}"
+    )
+    op.execute(f"REVOKE SELECT,INSERT ON primary_signal.admin_sessions FROM {ROLE}")
     op.execute(f"REVOKE USAGE ON SCHEMA primary_signal FROM {ROLE}")
     op.execute("DROP TABLE primary_signal.admin_login_attempts")
     op.execute("DROP TABLE primary_signal.admin_sessions")

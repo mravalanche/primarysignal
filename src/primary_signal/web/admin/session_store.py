@@ -29,7 +29,16 @@ SELECT session_user = current_user
     AND NOT pg_catalog.has_schema_privilege(current_user, 'primary_signal_public', 'CREATE')
     AND pg_catalog.has_table_privilege(current_user, 'primary_signal.admin_sessions', 'SELECT')
     AND pg_catalog.has_table_privilege(current_user, 'primary_signal.admin_sessions', 'INSERT')
-    AND pg_catalog.has_table_privilege(current_user, 'primary_signal.admin_sessions', 'UPDATE')
+    AND pg_catalog.has_column_privilege(current_user, 'primary_signal.admin_sessions',
+                                        'last_seen_at', 'UPDATE')
+    AND pg_catalog.has_column_privilege(current_user, 'primary_signal.admin_sessions',
+                                        'revoked_at', 'UPDATE')
+    AND NOT pg_catalog.has_column_privilege(current_user, 'primary_signal.admin_sessions',
+                                            'digest', 'UPDATE')
+    AND NOT pg_catalog.has_column_privilege(current_user, 'primary_signal.admin_sessions',
+                                            'csrf_secret', 'UPDATE')
+    AND NOT pg_catalog.has_column_privilege(current_user, 'primary_signal.admin_sessions',
+                                            'created_at', 'UPDATE')
     AND pg_catalog.has_table_privilege(current_user, 'primary_signal.admin_login_attempts', 'SELECT')
     AND pg_catalog.has_table_privilege(current_user, 'primary_signal.admin_login_attempts', 'INSERT')
     AND pg_catalog.has_sequence_privilege(current_user,
@@ -66,31 +75,26 @@ class PostgresSessionStore:
 
     def claim_login_attempt(
         self,
-        source_digest: bytes,
         *,
         since: datetime,
         at: datetime,
-        source_limit: int,
-        global_limit: int,
+        limit: int,
     ) -> bool:
         with self.engine.begin() as connection:
             # Serialize the shared service budget across all app workers.
             connection.execute(text("SELECT pg_catalog.pg_advisory_xact_lock(1288737043)"))
             row = connection.execute(
                 text(
-                    "SELECT count(*) AS total, count(*) FILTER (WHERE source_digest=:source) AS source_total "
-                    "FROM primary_signal.admin_login_attempts WHERE occurred_at >= :since"
+                    "SELECT count(*) FROM primary_signal.admin_login_attempts "
+                    "WHERE occurred_at >= :since"
                 ),
-                {"source": source_digest, "since": since},
-            ).one()
-            if int(row.total) >= global_limit or int(row.source_total) >= source_limit:
+                {"since": since},
+            ).scalar_one()
+            if int(row) >= limit:
                 return False
             connection.execute(
-                text(
-                    "INSERT INTO primary_signal.admin_login_attempts (source_digest,occurred_at) "
-                    "VALUES (:source,:at)"
-                ),
-                {"source": source_digest, "at": at},
+                text("INSERT INTO primary_signal.admin_login_attempts (occurred_at) VALUES (:at)"),
+                {"at": at},
             )
         return True
 

@@ -14,8 +14,9 @@ identify the separate session-only login. Do not place their values in the
 repository, shell history, or logs. The password hash and session key are
 independent; replacing either invalidates existing sessions.
 
-The defaults are 30 minutes idle expiry, 12 hours absolute expiry, five login
-attempts per source and 20 across the service within 15 minutes. Admin login
+The defaults are 30 minutes idle expiry, 12 hours absolute expiry, and 20 login
+attempts across the service within 15 minutes. The reverse proxy hides the
+client address, so v1 does not claim a per-client limit. Admin login
 requires the configured `Origin` and `Host`. A successful response sets an
 opaque host-only secure cookie and returns a session-bound CSRF token. Clients
 send the token in `X-CSRF-Token` with every mutation. Forwarded headers are

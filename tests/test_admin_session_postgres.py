@@ -44,19 +44,30 @@ def test_restricted_admin_session_store(monkeypatch: pytest.MonkeyPatch) -> None
                 connection.execute(text("SELECT current_user")).scalar_one() == "admin_session_test"
             )
             assert_admin_session_database_role(connection)
+            for column in ("last_seen_at", "revoked_at"):
+                assert connection.execute(
+                    text(
+                        "SELECT pg_catalog.has_column_privilege(current_user, "
+                        "'primary_signal.admin_sessions', :column, 'UPDATE')"
+                    ),
+                    {"column": column},
+                ).scalar_one()
+            for column in ("digest", "csrf_secret", "created_at"):
+                assert not connection.execute(
+                    text(
+                        "SELECT pg_catalog.has_column_privilege(current_user, "
+                        "'primary_signal.admin_sessions', :column, 'UPDATE')"
+                    ),
+                    {"column": column},
+                ).scalar_one()
         with engine.connect() as connection, pytest.raises(RuntimeError, match="restricted"):
             assert_admin_session_database_role(connection)
         store = PostgresSessionStore(restricted)
         now = datetime.now(UTC)
         digest = b"d" * 32
-        source = b"s" * 32
         session = StoredSession(digest, b"c" * 32, now, now)
-        assert store.claim_login_attempt(
-            source, since=now - timedelta(minutes=15), at=now, source_limit=1, global_limit=2
-        )
-        assert not store.claim_login_attempt(
-            source, since=now - timedelta(minutes=15), at=now, source_limit=1, global_limit=2
-        )
+        assert store.claim_login_attempt(since=now - timedelta(minutes=15), at=now, limit=1)
+        assert not store.claim_login_attempt(since=now - timedelta(minutes=15), at=now, limit=1)
         store.create(session)
         assert (
             store.find_and_touch(
@@ -81,6 +92,8 @@ def test_restricted_admin_session_store(monkeypatch: pytest.MonkeyPatch) -> None
             "SELECT id FROM primary_signal.articles LIMIT 1",
             "SELECT id FROM primary_signal.stories LIMIT 1",
             "UPDATE primary_signal.story_revisions SET status = status WHERE false",
+            "UPDATE primary_signal.admin_sessions SET digest = digest WHERE false",
+            "UPDATE primary_signal.admin_sessions SET csrf_secret = csrf_secret WHERE false",
         ):
             with pytest.raises(DBAPIError), restricted.begin() as connection:
                 connection.execute(text(statement))

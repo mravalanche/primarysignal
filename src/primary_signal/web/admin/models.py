@@ -25,11 +25,7 @@ class AdminSession(Base):
 
 class AdminLoginAttempt(Base):
     __tablename__ = "admin_login_attempts"
-    __table_args__ = (
-        CheckConstraint("octet_length(source_digest) = 32", name="source_digest_length"),
-        Index("ix_admin_login_attempts_recent", "occurred_at"),
-    )
+    __table_args__ = (Index("ix_admin_login_attempts_recent", "occurred_at"),)
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    source_digest: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

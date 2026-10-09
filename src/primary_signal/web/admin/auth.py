@@ -1,7 +1,7 @@
 """Single-operator authentication primitives for the private admin origin.
 
 No bearer value is written to the database. Only HMAC digests of opaque
-session identifiers and source addresses cross the storage boundary.
+session identifiers cross the storage boundary.
 """
 
 import hashlib
@@ -31,8 +31,7 @@ class AdminAuthConfig:
     session_key: bytes
     idle_seconds: int = 30 * 60
     absolute_seconds: int = COOKIE_MAX_AGE
-    source_attempts: int = 5
-    global_attempts: int = 20
+    login_attempts: int = 20
     attempt_window_seconds: int = 15 * 60
 
     def __post_init__(self) -> None:
@@ -53,7 +52,7 @@ class AdminAuthConfig:
             raise ValueError("admin session key must contain at least 32 bytes")
         if not (0 < self.idle_seconds <= self.absolute_seconds <= 86400):
             raise ValueError("admin session lifetimes are invalid")
-        if min(self.source_attempts, self.global_attempts, self.attempt_window_seconds) < 1:
+        if min(self.login_attempts, self.attempt_window_seconds) < 1:
             raise ValueError("admin login rate limits are invalid")
 
     @property
@@ -74,12 +73,10 @@ class SessionStore(Protocol):
 
     def claim_login_attempt(
         self,
-        source_digest: bytes,
         *,
         since: datetime,
         at: datetime,
-        source_limit: int,
-        global_limit: int,
+        limit: int,
     ) -> bool: ...
     def create(self, session: StoredSession) -> None: ...
     def find_and_touch(
@@ -119,17 +116,12 @@ class AdminAuthService:
             return None
         return self._digest(b"session:", identifier)
 
-    def login(
-        self, password: str, source_address: str, *, now: datetime | None = None
-    ) -> LoginResult | None:
+    def login(self, password: str, *, now: datetime | None = None) -> LoginResult | None:
         now = now or datetime.now(UTC)
-        source = self._digest(b"source:", source_address)
         if not self.store.claim_login_attempt(
-            source,
             since=now - timedelta(seconds=self.config.attempt_window_seconds),
             at=now,
-            source_limit=self.config.source_attempts,
-            global_limit=self.config.global_attempts,
+            limit=self.config.login_attempts,
         ):
             raise LoginRateLimited
         try:
