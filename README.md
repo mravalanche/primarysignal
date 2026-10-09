@@ -45,6 +45,24 @@ uv run primary-signal-web --surface public
 Open <http://127.0.0.1:8000/__dev/preview>. The preview uses invented content
 and reserved example domains. It is not registered in production.
 
+The same public preview can run from the packaged image:
+
+```sh
+docker compose -f compose.preview.yaml up --build --wait
+# Open http://127.0.0.1:8000/__dev/preview
+docker compose -f compose.preview.yaml down
+```
+
+Set `PRIMARY_SIGNAL_PREVIEW_PORT` to use a different loopback port. This
+Compose file runs only the synthetic public preview. It has no database login
+or production data. `scripts/smoke_container_preview.sh` checks the image, page,
+and stylesheet in a disposable Compose project. On a VM with a root-owned Docker
+socket, run `sudo bash scripts/smoke_container_preview.sh`.
+
+The completed product is intended to run as Docker containers on a separate
+host. The production Compose stack and host egress policy remain separate
+delivery work; this preview file is not a production deployment definition.
+
 The production public surface uses `PostgresStoryReader` and requires a
 dedicated PostgreSQL login that inherits only
 `primary_signal_cap_public_read`. Configure its URL and exact login name with
@@ -188,8 +206,10 @@ Fresh Compose database volumes create two fixed, non-login queue capabilities,
 one feed-scheduling capability, one feed-poll capability, and one capability for
 article persistence, a metadata-only inventory search capability, and public
 projection owner/read capabilities, a publication-writer capability, and a
-source-health read capability. The definitions live in the numbered SQL files under `deploy/postgres/initdb`. Login roles,
-passwords and role membership remain deployment-owned. PostgreSQL only runs
+source-health read capability, plus editorial read, admin session, and publication
+decision capabilities. The definitions live in the numbered SQL files under
+`deploy/postgres/initdb`. Login roles, passwords and role membership remain
+deployment-owned. PostgreSQL only runs
 these files while creating a new data directory.
 
 For an existing development volume, apply the role bootstrap from inside the
@@ -205,9 +225,12 @@ docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POST
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/060_public_projection_roles.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/070_publication_writer_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/080_source_health_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/090_editorial_read_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/100_admin_session_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql'
 ```
 
-Run all eight commands before applying migrations. The migrations grant access to
+Run all eleven commands before applying migrations. The migrations grant access to
 the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any

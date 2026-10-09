@@ -1,0 +1,32 @@
+# Synthetic public preview only. No database, credentials, or production routing.
+name: primary-signal-preview
+
+services:
+  public:
+    build:
+      context: .
+      target: runtime
+    environment:
+      PRIMARY_SIGNAL_ENVIRONMENT: development
+      PRIMARY_SIGNAL_DEBUG: "false"
+      PRIMARY_SIGNAL_API_DOCS_ENABLED: "false"
+    command: ["primary-signal-web", "--surface", "public", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${PRIMARY_SIGNAL_PREVIEW_PORT:-8000}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1
+    init: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
