@@ -9,6 +9,7 @@ from primary_signal.web.common.health import router as health_router
 from primary_signal.web.common.templates import TemplateSurface
 from primary_signal.web.common.ui import mount_ui_assets
 from primary_signal.web.public.catalogue import router as catalogue_router
+from primary_signal.web.public.pages import router as pages_router
 from primary_signal.web.public.preview import router as preview_router
 from primary_signal.web.public.stories import router as stories_router
 
@@ -30,6 +31,7 @@ def create_public_app(
     mount_ui_assets(app, TemplateSurface.PUBLIC)
     app.include_router(health_router)
     app.include_router(stories_router)
+    app.include_router(pages_router)
     if resolved_settings.environment is not RuntimeEnvironment.PRODUCTION:
         app.include_router(catalogue_router)
         app.include_router(preview_router)
