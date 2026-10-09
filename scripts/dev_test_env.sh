@@ -166,6 +166,7 @@ export PRIMARY_SIGNAL_TEST_PROCESSOR_DATABASE_URL="${database_base}processor_tes
 export PRIMARY_SIGNAL_TEST_INVENTORY_DATABASE_URL="${database_base}inventory_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL="${database_base}public_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL="${database_base}health_test@${database_host}"
+export PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL="${database_base}editorial_test@${database_host}"
 export PRIMARY_SIGNAL_REQUIRE_RESTRICTED_ROLE_TESTS=true
 # This cluster is created for this gate and removed when it exits.
 export PRIMARY_SIGNAL_TEST_DATABASE_DISPOSABLE=true
