@@ -45,6 +45,17 @@ uv run primary-signal-web --surface public
 Open <http://127.0.0.1:8000/__dev/preview>. The preview uses invented content
 and reserved example domains. It is not registered in production.
 
+The production public surface uses `PostgresStoryReader` and requires a
+dedicated PostgreSQL login that inherits only
+`primary_signal_cap_public_read`. Configure its URL and exact login name with
+`PRIMARY_SIGNAL_DATABASE_URL` and `PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE` in
+the public process environment; see `.env.public.example` for placeholder
+names. The web process checks that role and its restricted privileges before
+accepting requests, then reads only the `primary_signal_public` projection.
+An administrator must provision the login and grant, and remove its `CREATE`
+privilege on PostgreSQL's default
+`public` schema. Do not reuse migration or ingestion credentials.
+
 Lifecycle scripts are disabled during installation; the pinned toolchain builds
 and tests successfully without them.
 

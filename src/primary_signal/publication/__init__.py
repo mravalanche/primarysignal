@@ -19,11 +19,13 @@ from primary_signal.publication.models import (
     TagKind,
     Topic,
 )
+from primary_signal.publication.postgres_reader import PostgresStoryReader
 from primary_signal.publication.reader import EmptyStoryReader, StoryReader
 
 __all__ = [
     "EmptyStoryReader",
     "InvalidCursor",
+    "PostgresStoryReader",
     "PublicSignal",
     "PublicSignalKind",
     "PublicSource",
