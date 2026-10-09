@@ -9,11 +9,30 @@
     })();
   </script>
   <link rel="stylesheet" href="{{ url_for('public-assets', path='/public.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('public-assets', path='/brand/favicon.svg') }}" data-light-icon="{{ url_for('public-assets', path='/brand/favicon-light.svg') }}" data-dark-icon="{{ url_for('public-assets', path='/brand/favicon-dark.svg') }}">
 {% endblock %}
 {% block body %}
   <header class="ps-masthead border-b ps-rule">
     <div class="ps-page flex min-h-16 items-center justify-between gap-4">
-      <a href="/" class="ps-wordmark tracking-[0.2em] uppercase">Primary Signal</a>
+      <a href="/" class="ps-brand">
+        <svg class="ps-brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+          <path d="M5 55V48l4-6 4 6 4-12 4 11 2-6v14zM49 55V44l3-8 3 10 3-6 1 7v8z" style="fill:var(--ps-logo-ink)"/>
+          <path d="M5 57h54" style="stroke:var(--ps-logo-ink)" stroke-width="3"/>
+          <defs>
+            <mask id="ps-brand-p-counter" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+              <path d="M0 0h64v64H0z" fill="white"/>
+              <path d="M32 30h4c3 0 5 2 5 5s-2 5-5 5h-4z" fill="black"/>
+            </mask>
+            <mask id="ps-brand-floor-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+              <path d="M0 0h64v64H0z" fill="white"/>
+              <path d="M40 56 43 49 47 56z" fill="black"/>
+            </mask>
+          </defs>
+          <path d="M25 55V23h11c8 0 12 5 12 12s-4 12-12 12h-4v8z" style="fill:var(--ps-logo-accent)" mask="url(#ps-brand-p-counter)"/>
+          <path d="M33 55v-3l3-2 3 3 3-6 3 5 4-1v4z" style="fill:var(--ps-logo-ink)" mask="url(#ps-brand-floor-cut)"/>
+        </svg>
+        <span class="ps-brand-name">Primary Signal</span>
+      </a>
       <div class="flex items-center gap-3">
         {% block masthead_context %}<span class="ps-preview-label">Component catalogue</span>{% endblock %}
         <button class="ps-theme-toggle" type="button" aria-label="Switch colour theme" aria-pressed="false" data-theme-toggle>Theme</button>
@@ -31,6 +50,8 @@
         const dark = current() === "primarysignal-dark";
         button.setAttribute("aria-pressed", String(dark));
         button.textContent = dark ? "Light" : "Dark";
+        const icon = document.querySelector('link[rel="icon"]');
+        if (icon) icon.href = dark ? icon.dataset.darkIcon : icon.dataset.lightIcon;
       };
       button.addEventListener("click", () => {
         const next = current() === "primarysignal-dark" ? "light" : "dark";
@@ -39,6 +60,7 @@
         update();
       });
       update();
+      matchMedia("(prefers-color-scheme: dark)").addEventListener("change", update);
 
       document.querySelectorAll("[data-source-toggle]").forEach((link) => {
         link.addEventListener("click", () => {
@@ -130,16 +152,42 @@
         });
         sourceControls.push({ control, trigger, panel, close });
       });
+      const signalControls = [...document.querySelectorAll(".ps-signal-control")];
+      signalControls.forEach((control) => {
+        const panel = control.querySelector(".ps-signal-tooltip");
+        const placeSignal = () => {
+          if (!control.open || !panel) return;
+          panel.style.insetInlineStart = "0px";
+          const bounds = panel.getBoundingClientRect();
+          const margin = 8;
+          const left = Math.max(margin, Math.min(bounds.left, window.innerWidth - margin - bounds.width));
+          panel.style.insetInlineStart = `${left - bounds.left}px`;
+        };
+        control.addEventListener("toggle", () => {
+          if (control.open) {
+            signalControls.forEach((other) => { if (other !== control) other.open = false; });
+            placeSignal();
+          }
+        });
+        window.addEventListener("resize", placeSignal);
+      });
       document.addEventListener("pointerdown", (event) => {
         sourceControls.forEach((item) => {
           if (!item.control.contains(event.target)) item.close();
         });
+        if (!event.target.closest(".ps-signal-control")) {
+          signalControls.forEach((control) => { control.open = false; });
+        }
       });
       document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
         sourceControls.forEach((item) => {
           if (!item.panel.hidden && item.panel.contains(document.activeElement)) item.trigger.focus();
           item.close();
+        });
+        signalControls.forEach((control) => {
+          if (control.open && control.contains(document.activeElement)) control.querySelector("summary")?.focus();
+          control.open = false;
         });
       });
 

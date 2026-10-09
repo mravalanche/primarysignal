@@ -309,20 +309,16 @@ observed time, producing rule/run, confidence, and override history.
 
 ## 12. Design system baseline
 
-- Source Serif 4 for editorial headlines; Source Sans 3 for body and UI;
-  monospace only for CVEs, timestamps, and technical metadata.
-- Warm paper/ink neutrals with one restrained blue-teal accent in both themes.
-- Semantic red/amber/green reserved for state, never decoration.
-- 4px spacing scale; 72rem page maximum; 44rem readable prose measure.
-- Thin borders, 8–12px radii, minimal shadow, elevation only for overlays.
-- Shared primary, secondary, quiet, and danger button variants.
-- At least 44px touch targets; visible focus; status never conveyed by colour
-  alone.
-- Topics are typographic kickers, tags are neutral chips, evidence/status is
-  icon plus text with a discoverable definition.
-
-Implement semantic CSS variables and shared components over DaisyUI rather than
-styling individual pages independently.
+The selected Harbour Blue direction is specified in
+[the design system](design-system.md). It fixes the original A4c1 Valley mark,
+Charter-style headlines, a larger reading serif, and a restrained blue-led
+palette in light and dark modes. A dedicated brand blue sits alongside a
+separate editorial blue, red, amber, teal, green, cyan, orange, violet and
+rose. Each ramp has strong and muted steps; available hues have no implied
+product meaning. Components use semantic aliases: for example,
+an incident rail uses strong red while a CVE tag uses muted red. Typography,
+spacing, source panels, buttons, tags, signals, and focus states share tokens
+across public and administration pages. Colour never replaces a text label.
 
 ## 13. Delivery milestones
 
