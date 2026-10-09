@@ -23,6 +23,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 
 from primary_signal.entrypoints.web import assert_public_database_role
+from primary_signal.publication.decision_writer import PublicationDecisionWriter
 from primary_signal.publication.models import PublicSource, PublicStory, StoryType, Topic
 from primary_signal.publication.writer import (
     DraftReference,
@@ -50,6 +51,8 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
     command.upgrade(Config(Path(__file__).resolve().parents[1] / "alembic.ini"), "head")
     role_url = make_url(url).set(username=PUBLICATION_ROLE, password=PUBLICATION_PASSWORD)
     writer_engine = create_engine(role_url, hide_parameters=True)
+    decision_url = os.environ.get("PRIMARY_SIGNAL_TEST_PUBLICATION_DECISION_DATABASE_URL")
+    decision_engine = create_engine(decision_url, hide_parameters=True) if decision_url else None
     public_url = make_url(url).set(username=PUBLIC_ROLE, password=PUBLIC_PASSWORD)
     public_engine = create_engine(public_url, hide_parameters=True)
     with writer_engine.connect() as connection:
@@ -77,6 +80,11 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
         )
     assert getattr(denied_event.value.orig, "sqlstate", None) == "42501"
     writer = PublicationWriter(writer_engine, expected_role=PUBLICATION_ROLE)
+    decision_writer = (
+        PublicationDecisionWriter(decision_engine, expected_role="publication_decision_test")
+        if decision_engine is not None
+        else writer
+    )
     now = datetime.now(UTC)
     source_id, article_id, article_url_id, attempt_id, version_id = (uuid.uuid7() for _ in range(5))
     with admin.begin() as connection:
@@ -239,7 +247,7 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
             ).scalar_one()
             == first_id
         )
-    writer.publish_reviewed(
+    decision_writer.publish_reviewed(
         story_id=story_id,
         revision_id=successor_id,
         input_fingerprint=successor_fingerprint,
@@ -272,7 +280,9 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
         )
     with writer_engine.begin() as connection, pytest.raises(DBAPIError):
         connection.execute(text("SELECT extracted_text FROM primary_signal.content_versions"))
-    writer.suppress(story_id=story_id, expected_current_revision_id=successor_id, decision=decision)
+    decision_writer.suppress(
+        story_id=story_id, expected_current_revision_id=successor_id, decision=decision
+    )
     with admin.connect() as connection:
         assert (
             connection.execute(
@@ -348,5 +358,7 @@ def test_writer_role_and_successor_atomicity(monkeypatch: pytest.MonkeyPatch) ->
             == 1
         )
     writer_engine.dispose()
+    if decision_engine is not None:
+        decision_engine.dispose()
     public_engine.dispose()
     admin.dispose()

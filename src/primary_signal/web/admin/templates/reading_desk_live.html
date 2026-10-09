@@ -81,6 +81,7 @@
         {% if publication_controls is defined and publication_controls %}
           {% if publication_controls.get('stale') %}<p class="ps-desk-decision-notice is-stale" role="alert">This story changed since you opened it. <a href="{{ publication_controls.reload_url }}#story-detail">Reload and review the current revision.</a></p>{% endif %}
           {% if publication_controls.error %}<p class="ps-desk-decision-notice is-error" role="alert">{{ publication_controls.error }}</p>{% endif %}
+          {% if publication_controls.publish_blocked_reason %}<p class="ps-desk-state-note">{{ publication_controls.publish_blocked_reason }}</p>{% endif %}
           {% if publication_controls.success %}<p class="ps-desk-decision-notice is-success" role="status">{{ publication_controls.success }}</p>{% endif %}
           <p>Review the candidate and source trail before deciding. Publication checks the stored evidence when you confirm.</p>
           {% if not publication_controls.get('stale') %}

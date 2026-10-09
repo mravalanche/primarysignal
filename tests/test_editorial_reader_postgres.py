@@ -202,10 +202,15 @@ def test_restricted_editorial_reader_sees_provenance_without_article_text(
             connection.execute(
                 text(
                     "INSERT INTO primary_signal.publication_events "
-                    "(id,story_id,revision_id,to_status,actor,reason) "
-                    "VALUES (:id,:story,:revision,'draft','test-editor','Synthetic draft')"
+                    "(id,story_id,revision_id,to_status,actor,reason,input_fingerprint) "
+                    "VALUES (:id,:story,:revision,'draft','test-editor','Synthetic draft',:fingerprint)"
                 ),
-                {"id": event_id, "story": story_id, "revision": revision_id},
+                {
+                    "id": event_id,
+                    "story": story_id,
+                    "revision": revision_id,
+                    "fingerprint": "a" * 64,
+                },
             )
 
         reader = EditorialReader(editorial, expected_role="editorial_test")
@@ -215,6 +220,7 @@ def test_restricted_editorial_reader_sees_provenance_without_article_text(
         assert detail.story.current_revision_id is None
         assert detail.revisions[0].status == "draft"
         assert detail.events[0].actor == "test-editor"
+        assert detail.candidate_draft_fingerprint == "a" * 64
         source = detail.candidate_sources[0]
         assert source.article_id == article_id
         assert source.content_version_id == version_id

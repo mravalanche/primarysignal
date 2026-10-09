@@ -106,6 +106,7 @@ source = ["primary_signal"]
 show_missing = true
 skip_covered = true
 fail_under = 95
+precision = 2
 
 [tool.poe.tasks]
 assets-install = { cmd = "npm ci --ignore-scripts", help = "Install the locked frontend build toolchain without lifecycle scripts" }

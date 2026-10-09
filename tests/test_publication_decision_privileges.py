@@ -10,7 +10,11 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
-from primary_signal.publication.decision_writer import assert_publication_decision_role
+from primary_signal.publication.decision_writer import (
+    PublicationDecisionWriter,
+    assert_publication_decision_role,
+)
+from primary_signal.publication.writer import OperatorDecision, PublicationConflict
 
 
 @pytest.mark.postgres
@@ -124,6 +128,32 @@ def test_publication_decision_login_is_transition_only(monkeypatch: pytest.Monke
                 },
             )
         assert getattr(rejected.value.orig, "sqlstate", None) == "P0001"
+        writer = PublicationDecisionWriter(restricted, expected_role="publication_decision_test")
+        with pytest.raises(ValueError, match="expected_role"):
+            PublicationDecisionWriter(restricted, expected_role="")
+        decision = OperatorDecision(actor="test-editor", reason="Synthetic decision probe")
+        with pytest.raises(ValueError, match="fingerprint"):
+            writer.publish_reviewed(
+                story_id=missing,
+                revision_id=missing,
+                input_fingerprint="invalid",
+                expected_current_revision_id=None,
+                decision=decision,
+            )
+        with pytest.raises(PublicationConflict, match="stored state"):
+            writer.publish_reviewed(
+                story_id=missing,
+                revision_id=missing,
+                input_fingerprint="a" * 64,
+                expected_current_revision_id=None,
+                decision=decision,
+            )
+        with pytest.raises(PublicationConflict, match="stored state"):
+            writer.suppress(
+                story_id=missing,
+                expected_current_revision_id=missing,
+                decision=decision,
+            )
         for statement in (
             "SELECT id FROM primary_signal.stories LIMIT 1",
             "SELECT extracted_text FROM primary_signal.content_versions LIMIT 1",

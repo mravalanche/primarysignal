@@ -1,8 +1,12 @@
-"""Privilege check for the admin publication decision connection."""
+"""Narrow database client for reviewed publication decisions."""
 
-from sqlalchemy import Connection, text
+import uuid
+
+from sqlalchemy import Connection, Engine, text
+from sqlalchemy.exc import DBAPIError
 
 from primary_signal.db.engine import assert_database_role
+from primary_signal.publication.writer import OperatorDecision, PublicationConflict
 
 _ROLE_CHECK = text(
     """
@@ -68,3 +72,79 @@ def assert_publication_decision_role(connection: Connection, expected_role: str)
     assert_database_role(connection, expected_role)
     if connection.execute(_ROLE_CHECK).scalar_one() is not True:
         raise RuntimeError("publication decision role lacks restricted privileges")
+
+
+class PublicationDecisionWriter:
+    """Execute transitions through a login with no draft or table privileges."""
+
+    def __init__(self, engine: Engine, *, expected_role: str) -> None:
+        if not expected_role:
+            raise ValueError("expected_role is required")
+        self.engine = engine
+        self.expected_role = expected_role
+
+    def publish_reviewed(
+        self,
+        *,
+        story_id: uuid.UUID,
+        revision_id: uuid.UUID,
+        input_fingerprint: str,
+        expected_current_revision_id: uuid.UUID | None,
+        decision: OperatorDecision,
+    ) -> None:
+        if len(input_fingerprint) != 64 or any(
+            char not in "0123456789abcdef" for char in input_fingerprint
+        ):
+            raise ValueError("input fingerprint is invalid")
+        with self.engine.begin() as connection:
+            assert_publication_decision_role(connection, self.expected_role)
+            try:
+                connection.execute(
+                    text(
+                        "SELECT primary_signal.publish_reviewed(:story, :revision, :fingerprint, "
+                        "CAST(:expected_current AS uuid), :actor, :reason)"
+                    ),
+                    {
+                        "story": story_id,
+                        "revision": revision_id,
+                        "fingerprint": input_fingerprint,
+                        "expected_current": expected_current_revision_id,
+                        "actor": decision.actor,
+                        "reason": decision.reason,
+                    },
+                )
+            except DBAPIError as error:
+                if getattr(error.orig, "sqlstate", None) == "P0001":
+                    raise PublicationConflict(
+                        "publication decision conflicts with stored state"
+                    ) from error
+                raise
+
+    def suppress(
+        self,
+        *,
+        story_id: uuid.UUID,
+        expected_current_revision_id: uuid.UUID,
+        decision: OperatorDecision,
+    ) -> None:
+        with self.engine.begin() as connection:
+            assert_publication_decision_role(connection, self.expected_role)
+            try:
+                connection.execute(
+                    text(
+                        "SELECT primary_signal.suppress_reviewed(:story, :expected_current, "
+                        ":actor, :reason)"
+                    ),
+                    {
+                        "story": story_id,
+                        "expected_current": expected_current_revision_id,
+                        "actor": decision.actor,
+                        "reason": decision.reason,
+                    },
+                )
+            except DBAPIError as error:
+                if getattr(error.orig, "sqlstate", None) == "P0001":
+                    raise PublicationConflict(
+                        "publication decision conflicts with stored state"
+                    ) from error
+                raise

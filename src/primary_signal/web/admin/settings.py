@@ -18,6 +18,17 @@ class AdminEditorialDatabaseSettings(DatabaseSettings):
     )
 
 
+class AdminDecisionDatabaseSettings(DatabaseSettings):
+    """Separate restricted login for reviewed publication decisions."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="PRIMARY_SIGNAL_ADMIN_PUBLICATION_DATABASE_",
+        case_sensitive=False,
+        extra="ignore",
+        frozen=True,
+    )
+
+
 class AdminAuthSettings(BaseSettings):
     """Loaded only by the admin process from deployment-owned environment."""
 
@@ -27,6 +38,7 @@ class AdminAuthSettings(BaseSettings):
 
     origin: str
     public_origin: str | None = None
+    decision_actor: str = Field(default="site operator", min_length=1, max_length=160)
     password_phc: SecretStr
     session_key_hex: SecretStr
     idle_seconds: int = Field(default=1800, ge=60, le=86400)
