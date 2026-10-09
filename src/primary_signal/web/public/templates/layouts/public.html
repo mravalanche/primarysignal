@@ -154,9 +154,22 @@
       });
       const signalControls = [...document.querySelectorAll(".ps-signal-control")];
       signalControls.forEach((control) => {
+        const panel = control.querySelector(".ps-signal-tooltip");
+        const placeSignal = () => {
+          if (!control.open || !panel) return;
+          panel.style.insetInlineStart = "0px";
+          const bounds = panel.getBoundingClientRect();
+          const margin = 8;
+          const left = Math.max(margin, Math.min(bounds.left, window.innerWidth - margin - bounds.width));
+          panel.style.insetInlineStart = `${left - bounds.left}px`;
+        };
         control.addEventListener("toggle", () => {
-          if (control.open) signalControls.forEach((other) => { if (other !== control) other.open = false; });
+          if (control.open) {
+            signalControls.forEach((other) => { if (other !== control) other.open = false; });
+            placeSignal();
+          }
         });
+        window.addEventListener("resize", placeSignal);
       });
       document.addEventListener("pointerdown", (event) => {
         sourceControls.forEach((item) => {
