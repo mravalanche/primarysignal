@@ -267,6 +267,77 @@ def test_global_rate_refills_without_resetting_the_app(monkeypatch: Any) -> None
     assert (first.status_code, limited.status_code, refilled.status_code) == (200, 429, 200)
 
 
+def test_rejected_origin_requests_do_not_drain_global_budget(monkeypatch: Any) -> None:
+    monkeypatch.setattr(retrieval_api, "monotonic", lambda: 100.0)
+
+    def fetch(url: str, _etag: str | None, _modified: str | None) -> FeedFetchResult:
+        return FeedFetchResult(304, url, b"")
+
+    app = create_retriever_app(
+        fetch=fetch,
+        max_requests_global=2,
+        max_requests_per_origin=1,
+    )
+
+    async def send() -> tuple[Response, list[Response], Response, Response]:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://retriever"
+        ) as client:
+            first = await client.post("/v1/feeds/fetch", json={"url": URL})
+            rejected = [await client.post("/v1/feeds/fetch", json={"url": URL}) for _ in range(10)]
+            other = await client.post(
+                "/v1/feeds/fetch", json={"url": "https://other.public.example/feed"}
+            )
+            full = await client.post(
+                "/v1/feeds/fetch", json={"url": "https://third.public.example/feed"}
+            )
+            return first, rejected, other, full
+
+    first, rejected, other, full = asyncio.run(send())
+    assert first.status_code == 200
+    assert all(response.json() == {"error": "origin_rate_limited"} for response in rejected)
+    assert other.status_code == 200
+    assert full.json() == {"error": "global_rate_limited"}
+
+
+def test_full_origin_registry_does_not_drain_global_budget(monkeypatch: Any) -> None:
+    now = [100.0]
+    monkeypatch.setattr(retrieval_api, "monotonic", lambda: now[0])
+
+    def fetch(url: str, _etag: str | None, _modified: str | None) -> FeedFetchResult:
+        return FeedFetchResult(304, url, b"")
+
+    app = create_retriever_app(
+        fetch=fetch,
+        max_requests_global=2,
+        global_window_seconds=600,
+        max_tracked_origins=1,
+        origin_window_seconds=60,
+    )
+
+    async def send() -> tuple[Response, list[Response], Response]:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://retriever"
+        ) as client:
+            first = await client.post("/v1/feeds/fetch", json={"url": URL})
+            rejected = [
+                await client.post(
+                    "/v1/feeds/fetch", json={"url": "https://other.public.example/feed"}
+                )
+                for _ in range(10)
+            ]
+            now[0] += 61
+            after_expiry = await client.post(
+                "/v1/feeds/fetch", json={"url": "https://other.public.example/feed"}
+            )
+            return first, rejected, after_expiry
+
+    first, rejected, after_expiry = asyncio.run(send())
+    assert first.status_code == 200
+    assert all(response.json() == {"error": "retriever_busy"} for response in rejected)
+    assert after_expiry.status_code == 200
+
+
 def test_unicode_and_idna_host_forms_share_one_bucket() -> None:
     def fetch(url: str, _etag: str | None, _modified: str | None) -> FeedFetchResult:
         return FeedFetchResult(304, url, b"")
@@ -304,7 +375,12 @@ def test_per_origin_concurrency_is_shared_across_routes() -> None:
         article_calls += 1
         return ArticleFetchResult(304, url, (), None, 0, None, None, None, None)
 
-    app = create_retriever_app(fetch=feed, fetch_article=article, max_concurrent_per_origin=1)
+    app = create_retriever_app(
+        fetch=feed,
+        fetch_article=article,
+        max_concurrent_per_origin=1,
+        max_requests_global=2,
+    )
 
     async def send() -> tuple[Response, Response, Response]:
         async with AsyncClient(

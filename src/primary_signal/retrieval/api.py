@@ -129,16 +129,12 @@ class _RateBucket:
     tokens: float
     updated: float
 
-    def take(self, *, now: float, capacity: int, window_seconds: float) -> bool:
+    def refill(self, *, now: float, capacity: int, window_seconds: float) -> None:
         self.tokens = min(
             float(capacity),
             self.tokens + max(0.0, now - self.updated) * capacity / window_seconds,
         )
         self.updated = now
-        if self.tokens < 1:
-            return False
-        self.tokens -= 1
-        return True
 
 
 @dataclass(slots=True)
@@ -147,24 +143,8 @@ class _OriginState:
     active: int = 0
 
 
-class _GlobalRateLimiter:
-    """One process-local token bucket shared by feed and article attempts."""
-
-    def __init__(self, *, max_requests: int, window_seconds: float) -> None:
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self._bucket = _RateBucket(float(max_requests), monotonic())
-        self._lock = threading.Lock()
-
-    def acquire(self) -> bool:
-        with self._lock:
-            return self._bucket.take(
-                now=monotonic(), capacity=self.max_requests, window_seconds=self.window_seconds
-            )
-
-
-class _OriginLimiter:
-    """Bound both routes by initial host, with no unbounded host registry.
+class _RequestLimiter:
+    """Atomically admit both routes under global and initial-host limits.
 
     The transport separately validates and caps redirects. Redirect destinations
     are not charged to this API-level bucket.
@@ -173,44 +153,61 @@ class _OriginLimiter:
     def __init__(
         self,
         *,
-        max_concurrent: int,
-        max_requests: int,
-        window_seconds: float,
+        max_requests_global: int,
+        global_window_seconds: float,
+        max_concurrent_per_origin: int,
+        max_requests_per_origin: int,
+        origin_window_seconds: float,
         max_origins: int,
     ) -> None:
-        self.max_concurrent = max_concurrent
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
+        self.max_requests_global = max_requests_global
+        self.global_window_seconds = global_window_seconds
+        self.max_concurrent_per_origin = max_concurrent_per_origin
+        self.max_requests_per_origin = max_requests_per_origin
+        self.origin_window_seconds = origin_window_seconds
         self.max_origins = max_origins
+        self._global_bucket = _RateBucket(float(max_requests_global), monotonic())
         self._states: OrderedDict[str, _OriginState] = OrderedDict()
         self._lock = threading.Lock()
 
     def acquire(self, hostname: str) -> str | None:
-        now = monotonic()
         with self._lock:
+            now = monotonic()
+            self._global_bucket.refill(
+                now=now,
+                capacity=self.max_requests_global,
+                window_seconds=self.global_window_seconds,
+            )
+            if self._global_bucket.tokens < 1:
+                return "global_rate_limited"
             state = self._states.get(hostname)
             if state is None:
                 if len(self._states) >= self.max_origins:
-                    # Only fully replenished, idle entries can be discarded.
+                    # Retain active and recent buckets so host rotation cannot reset rates.
                     for old_host, old_state in tuple(self._states.items()):
                         if (
                             old_state.active == 0
-                            and now - old_state.bucket.updated >= self.window_seconds
+                            and now - old_state.bucket.updated >= self.origin_window_seconds
                         ):
                             del self._states[old_host]
                             break
                     else:
                         return "retriever_busy"
-                state = _OriginState(_RateBucket(float(self.max_requests), now))
+                state = _OriginState(_RateBucket(float(self.max_requests_per_origin), now))
                 self._states[hostname] = state
             else:
                 self._states.move_to_end(hostname)
-            if state.active >= self.max_concurrent:
+            state.bucket.refill(
+                now=now,
+                capacity=self.max_requests_per_origin,
+                window_seconds=self.origin_window_seconds,
+            )
+            if state.active >= self.max_concurrent_per_origin:
                 return "retriever_busy"
-            if not state.bucket.take(
-                now=now, capacity=self.max_requests, window_seconds=self.window_seconds
-            ):
+            if state.bucket.tokens < 1:
                 return "origin_rate_limited"
+            self._global_bucket.tokens -= 1
+            state.bucket.tokens -= 1
             state.active += 1
         return None
 
@@ -247,13 +244,12 @@ def create_retriever_app(
     ):
         raise ValueError("retriever rate limits must be positive and finite")
     slots = threading.BoundedSemaphore(max_concurrent_fetches)
-    global_rate = _GlobalRateLimiter(
-        max_requests=max_requests_global, window_seconds=global_window_seconds
-    )
-    origins = _OriginLimiter(
-        max_concurrent=max_concurrent_per_origin,
-        max_requests=max_requests_per_origin,
-        window_seconds=origin_window_seconds,
+    limits = _RequestLimiter(
+        max_requests_global=max_requests_global,
+        global_window_seconds=global_window_seconds,
+        max_concurrent_per_origin=max_concurrent_per_origin,
+        max_requests_per_origin=max_requests_per_origin,
+        origin_window_seconds=origin_window_seconds,
         max_origins=max_tracked_origins,
     )
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -289,13 +285,13 @@ def create_retriever_app(
             return _error(502, error.code)
         if not slots.acquire(blocking=False):
             return _error(503, "retriever_busy")
-        if not global_rate.acquire():
-            slots.release()
-            return _error(429, "global_rate_limited")
-        rejected = origins.acquire(hostname)
+        rejected = limits.acquire(hostname)
         if rejected is not None:
             slots.release()
-            return _error(429 if rejected == "origin_rate_limited" else 503, rejected)
+            return _error(
+                429 if rejected in {"global_rate_limited", "origin_rate_limited"} else 503,
+                rejected,
+            )
         try:
             try:
                 result = await run_in_threadpool(
@@ -308,7 +304,7 @@ def create_retriever_app(
             except Exception:
                 return _error(502, "fetch_failed")
         finally:
-            origins.release(hostname)
+            limits.release(hostname)
             slots.release()
         return JSONResponse(
             {
@@ -349,13 +345,13 @@ def create_retriever_app(
             return _error(502, error.code)
         if not slots.acquire(blocking=False):
             return _error(503, "retriever_busy")
-        if not global_rate.acquire():
-            slots.release()
-            return _error(429, "global_rate_limited")
-        rejected = origins.acquire(hostname)
+        rejected = limits.acquire(hostname)
         if rejected is not None:
             slots.release()
-            return _error(429 if rejected == "origin_rate_limited" else 503, rejected)
+            return _error(
+                429 if rejected in {"global_rate_limited", "origin_rate_limited"} else 503,
+                rejected,
+            )
         try:
             try:
                 result = await run_in_threadpool(
@@ -368,7 +364,7 @@ def create_retriever_app(
             except Exception:
                 return _error(502, "fetch_failed")
         finally:
-            origins.release(hostname)
+            limits.release(hostname)
             slots.release()
         extraction = result.extraction
         return JSONResponse(
