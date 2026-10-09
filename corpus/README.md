@@ -8,6 +8,9 @@ The fixed first collection plan is in [selection-2026-10.md](selection-2026-10.m
 The small [candidate pilot](candidate-pilot-2026-10.json) records verified public
 URLs and dates from several source categories. It checks source availability;
 it is neither a sampled candidate pool nor a labelled acceptance set.
+The [second candidate batch](candidate-batch2-2026-10.json) adds another 15
+verified public references, including three accounts of the same F5 advisory.
+These remain availability candidates, not selected or labelled corpus articles.
 
 ## Labelling guide
 
