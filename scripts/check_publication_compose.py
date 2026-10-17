@@ -6,6 +6,12 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, TypedDict, cast
+
+
+class ComposeConfig(TypedDict):
+    services: dict[str, dict[str, Any]]
+    networks: dict[str, dict[str, Any]]
 
 
 def require(condition: bool, message: str) -> None:
@@ -17,7 +23,7 @@ IMAGE_DIGEST = "ghcr.io/mravalanche/primarysignal@sha256:" + "0" * 64
 RUNTIME_SERVICES = ("migrate", "seed", "public", "admin")
 
 
-def render_model(root: Path, filename: str) -> dict:
+def render_model(root: Path, filename: str) -> ComposeConfig:
     model = (root / filename).read_text(encoding="utf-8")
     for name in ("database", "migrate", "seed", "public", "admin"):
         source = f"env_file: .env.publication.{name}\n"
@@ -50,10 +56,10 @@ def render_model(root: Path, filename: str) -> dict:
             env=environment,
             text=True,
         )
-    return json.loads(result.stdout)
+    return cast(ComposeConfig, json.loads(result.stdout))
 
 
-def check_boundaries(config: dict, root: Path) -> None:
+def check_boundaries(config: ComposeConfig, root: Path) -> None:
     services = config["services"]
     for name in ("database", "migrate", "seed", "admin_tls"):
         require(not services[name].get("ports"), f"{name} must have no published port")
