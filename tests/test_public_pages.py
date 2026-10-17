@@ -122,10 +122,10 @@ def test_brand_and_source_loader_share_the_fixed_nine_pixel_grid() -> None:
     assert len(marks) == 2  # Header entrance and source-preview loading template.
     assert all(mark.count("<rect ") == 9 for mark in marks)
     assert all('viewBox="0 0 36 36"' in mark for mark in marks)
-    assert 'ps-brand-mark--entrance' in marks[0]
-    assert 'ps-brand-mark--loading' in marks[1]
+    assert "ps-brand-mark--entrance" in marks[0]
+    assert "ps-brand-mark--loading" in marks[1]
     assert '<span class="ps-source-loading" role="status">' in response.text
-    assert 'Loading sources…' in response.text
+    assert "Loading sources…" in response.text
 
 
 def test_latest_renders_provenance_and_neutral_exact_timestamps() -> None:
