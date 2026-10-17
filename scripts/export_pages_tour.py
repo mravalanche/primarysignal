@@ -33,6 +33,7 @@ ASSETS = (
     "brand/favicon-48.png",
     "brand/apple-touch-icon.png",
 )
+DESIGN_SHOWCASE = "design/component-showcase.html"
 URL_ATTRIBUTES = frozenset({"href", "src", "action", "data-light-icon", "data-dark-icon"})
 URL_PATTERN = re.compile(
     r"(?P<name>\b(?:href|src|action|data-light-icon|data-dark-icon))="
@@ -99,7 +100,9 @@ def validate_tour(output: Path, *, base_path: str = DEFAULT_BASE_PATH) -> None:
     """Fail closed on extra files, broken links, or route/data leaks."""
 
     expected = (
-        set(tour_pages().values()) | {f"assets/public/{name}" for name in ASSETS} | {".nojekyll"}
+        set(tour_pages().values())
+        | {f"assets/public/{name}" for name in ASSETS}
+        | {DESIGN_SHOWCASE, ".nojekyll"}
     )
     actual = {str(path.relative_to(output)) for path in output.rglob("*") if path.is_file()}
     if actual != expected:
@@ -171,6 +174,9 @@ def export_tour(output: Path, *, base_path: str = DEFAULT_BASE_PATH) -> None:
         destination = output / "assets/public" / asset
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(surface_static_root(TemplateSurface.PUBLIC) / asset, destination)
+    showcase = output / DESIGN_SHOWCASE
+    showcase.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(Path(__file__).resolve().parent.parent / DESIGN_SHOWCASE, showcase)
     (output / ".nojekyll").touch()
     validate_tour(output, base_path=base_path)
 

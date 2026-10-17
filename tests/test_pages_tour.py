@@ -27,6 +27,9 @@ def test_static_tour_export_is_closed_and_navigable(tmp_path: Path) -> None:
     assert "Sample identity service advisory" in story
     assert (output / "assets/public/brand/favicon-16.png").is_file()
     assert (output / "assets/public/brand/favicon.svg").is_file()
+    showcase = (output / "design/component-showcase.html").read_text(encoding="utf-8")
+    assert "Synthetic demonstration" in showcase
+    assert 'data-theme-family="harbour"' in showcase
     validate_tour(output)
 
 

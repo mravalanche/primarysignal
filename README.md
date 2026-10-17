@@ -34,8 +34,10 @@ and tested. The [delivery plan](docs/PLAN.md) describes the work ahead.
 ## About the project
 
 The [product contract](docs/product-contract.md) explains the editorial rules
-and intended scope. The [documentation index](docs/README.md) has development
-instructions, architecture decisions, and the current delivery plan.
+and intended scope. The [design dossier](DESIGN.md) compares the live visual
+theme with two studies. The [documentation index](docs/README.md) has
+development instructions, architecture decisions, and the current delivery
+plan.
 
 Please report security issues privately as described in [SECURITY.md](SECURITY.md).
 Primary Signal is licensed under [AGPL-3.0-or-later](LICENSE).

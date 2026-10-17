@@ -321,6 +321,12 @@ an incident rail uses strong red while a CVE tag uses muted red. Typography,
 spacing, source panels, buttons, tags, signals, and focus states share tokens
 across public and administration pages. Colour never replaces a text label.
 
+The [design dossier](design/README.md) records Harbour Blue as the live
+theme and Ember Ledger and Field Notes as exploratory palette studies. Its
+[component showcase](../design/component-showcase.html) uses the same fictional
+content across themes, with linked browser captures for review. Adopting an
+alternative in the application needs a separate decision.
+
 ## 13. Delivery milestones
 
 The delivery order favours a working site and real ingestion before model work.
