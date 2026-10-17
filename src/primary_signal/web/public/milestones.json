@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-17",
-  "reviewed_against": "Synthetic Docker, seed and ingestion gates; local processor lease recovery test; GHCR development image published and digest verified; M2 Compose remains a draft pending operator configuration, browser and restart evidence",
+  "reviewed_against": "Synthetic Docker, seed and ingestion gates; local processor lease recovery test; GHCR development image published and digest verified; fictional Pages tour and README documentation reviewed; M2 Compose remains a draft pending operator configuration, browser and restart evidence",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
@@ -13,7 +13,7 @@
         {"title": "Normal Latest, story and tag routes show fictional sample content", "done": true, "evidence": "DemoStoryReader and public route tests"},
         {"title": "Sample status stays visible on reading pages", "done": true, "evidence": "Latest and story templates"},
         {"title": "Container smoke covers health, reading pages and stylesheet", "done": true, "evidence": "scripts/smoke_container_preview.sh passed on 2026-10-17"},
-        {"title": "Clean-start and teardown steps are documented", "done": true, "evidence": "README.md"}
+        {"title": "Clean-start and teardown steps are documented", "done": true, "evidence": "docs/development.md"}
       ]
     },
     {
