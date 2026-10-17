@@ -68,8 +68,23 @@ and should only be used when its contents are no longer needed.
 
 On the Docker host, check that `docker info --format '{{.Architecture}}'`
 reports `x86_64` or `amd64`. The current development image is built for Linux
-amd64. Check out the exact `develop` commit whose Publish development image
-job succeeded. The bundle needs `compose.publication.image.yaml`, the five
+amd64. While this bundle is in draft PR #54, check out its
+`feat/disposable-publication-compose` branch on the Docker host. Choose the
+image digest from a successful Publish development image job on `develop`.
+The draft branch contains the Compose bundle; the successful `develop` run
+contains the published application image. After PR #54 merges, use a `develop`
+revision containing the bundle and the digest published for that revision.
+
+For the draft bundle, start with:
+
+```sh
+git clone --branch feat/disposable-publication-compose https://github.com/mravalanche/primarysignal.git
+cd primarysignal
+```
+
+After merge, clone `develop` instead and select its successful publish run.
+
+The bundle needs `compose.publication.image.yaml`, the five
 `.env.publication.*.example` templates, `deploy/postgres/initdb/`, and
 `deploy/publication/admin-nginx.conf`; a repository checkout supplies all of
 them. The image contains application code, assets and migrations, so no build
