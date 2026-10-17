@@ -431,8 +431,8 @@ Exit: release gates pass and the deployment is recoverable.
 
 ## 17. Immediate next step
 
-The synthetic reading pages and local Docker smoke have passed. Package and
-publish a versioned development image, then run the disposable PostgreSQL
+The synthetic reading pages and local Docker smoke have passed. Verify the
+versioned development image publication, then run the disposable PostgreSQL
 publication stack in M2 with operator-owned local configuration. Verify its
 publish, read and suppress flow in a browser and across a restart before
 marking the stack complete. The restricted public reader, Latest and story
