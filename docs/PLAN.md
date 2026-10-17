@@ -310,9 +310,10 @@ observed time, producing rule/run, confidence, and override history.
 ## 12. Design system baseline
 
 The selected Harbour Blue direction is specified in
-[the design system](design-system.md). It fixes the original A4c1 Valley mark,
-Charter-style headlines, a larger reading serif, and a restrained blue-led
-palette in light and dark modes. A dedicated brand blue sits alongside a
+[the design system](design-system.md). The selected 3×3 Spectrogram P has
+replaced the original A4c1 Valley mark. The system uses Charter-style
+headlines, a larger reading serif, and a restrained blue-led palette in light
+and dark modes. A dedicated brand blue sits alongside a
 separate editorial blue, red, amber, teal, green, cyan, orange, violet and
 rose. Each ramp has strong and muted steps; available hues have no implied
 product meaning. Components use semantic aliases: for example,
@@ -378,6 +379,14 @@ the reference corpus and retains source provenance.
 
 Exit: release gates pass and the deployment is recoverable.
 
+### After v1 — Installable public site
+
+Consider a web app manifest, 192px and 512px icons including a maskable icon,
+and an HTTPS install and launch check for the public site. Keep administration
+out of the installable scope. Decide how current stories and corrections should
+behave offline before adding a service worker or offline cache. This is a
+backlog item, not a v1 milestone check.
+
 ## 14. Cross-cutting acceptance criteria
 
 - Re-polling an unchanged feed creates no duplicate articles or active jobs.
@@ -431,13 +440,13 @@ Exit: release gates pass and the deployment is recoverable.
 
 ## 17. Immediate next step
 
-The synthetic reading pages and local Docker smoke have passed. Package and
-publish a versioned development image, then run the disposable PostgreSQL
-publication stack in M2 with operator-owned local configuration. Verify its
-publish, read and suppress flow in a browser and across a restart before
-marking the stack complete. The restricted public reader, Latest and story
-pages, authenticated Reading desk, and database-backed publish/suppress
-decisions already have isolated tests.
+The synthetic reading pages and local Docker smoke have passed. The development
+image has been published to GHCR and its digest verified. The disposable
+PostgreSQL publication stack is prepared in a draft pull request. It still
+needs operator-owned local configuration, a browser publish/read/suppress
+smoke, and a restart check before its M2 exit checks can close. The restricted
+public reader, Latest and story pages, authenticated Reading desk, and
+database-backed publish/suppress decisions already have isolated tests.
 
 Build the reference corpus before model evaluation in M4. It must contain real,
 public article references and independent story labels. Keep full article text
