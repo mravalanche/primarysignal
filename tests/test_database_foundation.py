@@ -1,3 +1,4 @@
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -5,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from pydantic import SecretStr, ValidationError
-from sqlalchemy import CheckConstraint, Engine, ForeignKeyConstraint
+from sqlalchemy import CheckConstraint, Engine, ForeignKeyConstraint, text
 from sqlalchemy.pool import NullPool
 
 from primary_signal.db import Base, DatabaseSettings
@@ -228,6 +229,33 @@ def test_database_role_assertion_accepts_only_expected_role() -> None:
 
     with pytest.raises(engine_module.UnexpectedDatabaseRoleError, match="does not match"):
         engine_module.assert_database_role(connection, "scheduler_test")
+
+
+@pytest.mark.postgres
+def test_verified_engine_leaves_checkout_ready_for_transaction() -> None:
+    database_url = os.environ.get("PRIMARY_SIGNAL_TEST_DATABASE_URL")
+    expected_role = os.environ.get("PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE")
+    if not database_url or not expected_role:
+        pytest.skip("set disposable PostgreSQL test database settings")
+
+    settings = DatabaseSettings(url=SecretStr(database_url), expected_role=expected_role)
+    engine = engine_module.create_database_engine(settings)
+    try:
+        with engine.begin() as connection:
+            assert connection.execute(text("SELECT current_user")).scalar_one() == expected_role
+    finally:
+        engine.dispose()
+
+    wrong_role = DatabaseSettings(url=SecretStr(database_url), expected_role="wrong_test_role")
+    wrong_engine = engine_module.create_database_engine(wrong_role)
+    try:
+        with (
+            pytest.raises(engine_module.UnexpectedDatabaseRoleError),
+            wrong_engine.begin() as connection,
+        ):
+            connection.execute(text("SELECT 1"))
+    finally:
+        wrong_engine.dispose()
 
 
 def test_engine_construction_and_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:

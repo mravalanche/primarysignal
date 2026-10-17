@@ -10,7 +10,11 @@ import pytest
 from sqlalchemy.exc import DBAPIError
 
 from primary_signal.config import ProcessorSettings
-from primary_signal.entrypoints.processor import ProcessorRuntime, retry_delay
+from primary_signal.entrypoints.processor import (
+    ProcessorRuntime,
+    loopback_retriever_origin,
+    retry_delay,
+)
 from primary_signal.jobs import (
     JobFailure,
     JobHandlerBinding,
@@ -150,6 +154,59 @@ def test_processor_settings_and_retry_bounds() -> None:
         ProcessorSettings(lease_seconds=5, heartbeat_interval_seconds=3)
     with pytest.raises(ValueError, match="retry initial"):
         ProcessorSettings(retry_initial_seconds=10, retry_max_seconds=5)
+
+
+def test_retrieval_queue_claims_only_retrieval_jobs() -> None:
+    queue = queue_with_job(None)
+    retrieval_handler = MagicMock()
+    bindings = JobHandlers(
+        build_default_catalogue(),
+        (JobHandlerBinding("articles.retrieve", 1, retrieval_handler),),
+    )
+    ProcessorRuntime(
+        cast(TransactionalJobQueue, queue),
+        bindings,
+        ProcessorSettings(),
+        threading.Event(),
+        queue_name="retrieval",
+    ).run(once=True)
+    assert queue.claim.call_args.kwargs["queue"] == "retrieval"
+    retrieval_handler.assert_not_called()
+    with pytest.raises(ValueError, match="unsupported processor queue"):
+        ProcessorRuntime(
+            cast(TransactionalJobQueue, queue),
+            bindings,
+            ProcessorSettings(),
+            threading.Event(),
+            queue_name="unknown",
+        )
+
+
+@pytest.mark.parametrize(
+    "origin",
+    (
+        "http://localhost:8765",
+        "http://retriever.example.test:8765",
+        "http://127.0.0.1:8765/path",
+        "http://127.0.0.1:8765/",
+        "http://127.0.0.1:8765?x=1",
+        "http://user@127.0.0.1:8765",
+        "http://0.0.0.0:8765",
+        "https://127.0.0.1:8765",
+        "http://127.0.0.1:99999",
+        "http://[bad:8765",
+    ),
+)
+def test_processor_origin_rejects_non_literal_or_non_loopback_targets(origin: str) -> None:
+    import argparse
+
+    with pytest.raises(argparse.ArgumentTypeError):
+        loopback_retriever_origin(origin)
+
+
+def test_processor_origin_accepts_literal_loopback_targets() -> None:
+    assert loopback_retriever_origin("http://127.0.0.1:8765") == "http://127.0.0.1:8765"
+    assert loopback_retriever_origin("http://[::1]:8765") == "http://[::1]:8765"
 
 
 class _DatabaseFault(Exception):
