@@ -65,6 +65,12 @@ The completed product is intended to run as Docker containers on a separate
 host. The production Compose stack and host egress policy remain separate
 delivery work; this preview file is not a production deployment definition.
 
+The disposable Compose foundation and its operator setup are described in
+`docs/disposable-publication.md`. Run `python3 scripts/check_publication_compose.py`
+to validate its placeholder-only configuration without creating credentials.
+The database-backed stack and browser smoke remain unverified until the
+operator provides the ignored local configuration.
+
 The next publication milestone has a repeatable synthetic draft seed. Run
 `primary-signal-sample-seed` only against a disposable database ending in
 `_test`, after its migrations and test roles are installed. It requires

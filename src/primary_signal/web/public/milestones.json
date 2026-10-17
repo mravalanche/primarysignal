@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-17",
-  "reviewed_against": "Docker sample-site smoke and disposable PostgreSQL seed gate on 2026-10-17",
+  "reviewed_against": "Disposable Compose placeholder configuration check on 2026-10-17; runtime stack remains unverified",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
@@ -19,7 +19,7 @@
     {
       "id": "M2",
       "title": "Containerised publication with test data",
-      "next": "Wire a disposable Compose publication stack, then smoke publish, read and suppress through the browser.",
+      "next": "Operator provides ignored local roles, credentials and TLS files; then run the disposable stack and browser smoke.",
       "checks": [
         {"title": "Database-backed publish and suppress flow works in tests", "done": true, "evidence": "tests/test_publication_browser_flow_postgres.py"},
         {"title": "Disposable Compose stack runs migration, public site and private admin", "done": false, "evidence": "Pending"},
