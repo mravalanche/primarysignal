@@ -2,7 +2,7 @@
 {% block title %}{% if tag %}{{ tag.label }} — Tags — Primary Signal{% else %}Latest reporting — Primary Signal{% endif %}{% endblock %}
 {% block masthead_context %}<nav aria-label="Primary"><a href="/"{% if not tag %} aria-current="page"{% endif %}>Latest reporting</a>{% if demo_mode %} · <a href="/progress">Project progress</a>{% endif %}</nav>{% endblock %}
 {% block content %}
-  <section class="ps-latest-page" aria-labelledby="latest-title">
+  <section class="ps-latest-page" aria-labelledby="latest-title"{% if static_tour %} data-static-tour-listing{% endif %}>
     {% if demo_mode %}<p class="ps-demo-notice" role="note">Synthetic demonstration · These stories and sources are fictional.</p>{% endif %}
     <header class="ps-latest-heading">
       {% if tag %}<p class="ps-story-kicker"><a href="/">Latest reporting</a> · Tag</p><h1 id="latest-title">{{ tag.label }}</h1><p>Stories tagged {{ tag.label }}.</p>{% else %}<h1 id="latest-title">Latest reporting</h1><p>New developments from curated security sources, grouped by story.</p>{% endif %}
@@ -33,7 +33,7 @@
           <section class="ps-latest-day" aria-labelledby="day-{{ loop.index }}">
             <header class="ps-latest-date"><h2 id="day-{{ loop.index }}"><time datetime="{{ group.day.isoformat() }}">{{ group.day.strftime('%A %-d %B') }}</time></h2><span>{{ group.stories | length }} {% if group.stories | length == 1 %}story{% else %}stories{% endif %}</span></header>
             {% for item in group.stories %}
-              <article class="ps-story-row ps-story-type-{{ item.story_type.value }}" id="story-{{ item.slug }}">
+              <article class="ps-story-row ps-story-type-{{ item.story_type.value }}" id="story-{{ item.slug }}"{% if static_tour %} data-tour-topic="{{ item.primary_topic.value }}" data-tour-type="{{ item.story_type.value }}" data-tour-uk="{{ 'true' if item.uk_relevant else 'false' }}"{% endif %}>
                 <div class="ps-story-main">
                   <p class="ps-story-kicker"><span>{{ story_types[item.story_type] }}</span> · {{ topics[item.primary_topic] }}</p>
                   <h3 class="ps-story-title"><a href="/stories/{{ item.slug }}">{{ item.headline }}</a></h3>
@@ -41,7 +41,7 @@
                   {% if item.tags %}<div class="ps-story-tags tag-list" aria-label="Story tags">{% for item_tag in item.tags %}<a class="badge badge-sm ps-tag ps-tag-{{ item_tag.kind.value }}" href="/tags/{{ item_tag.id }}"{% if tag and tag.id == item_tag.id %} aria-current="page"{% endif %}>{{ item_tag.label }}</a>{% endfor %}</div>{% endif %}
                   <div class="ps-story-actions">
                     {% if item.signals %}<div class="ps-signal-list" aria-label="Story signals">{% for signal in item.signals %}<details class="ps-signal-control ps-signal-{{ signal.kind.value }}"><summary class="ps-signal-chip">{{ signal_details[signal.kind][0] }}</summary><div class="ps-signal-tooltip">{{ signal_details[signal.kind][1] }} <a href="/stories/{{ item.slug }}#signal-{{ signal.kind.value }}">View evidence →</a></div></details>{% endfor %}</div>{% endif %}
-                    <div class="ps-source-control"><a class="ps-source-trigger ps-source-link" href="/stories/{{ item.slug }}#sources" data-source-preview="/stories/{{ item.slug }}/sources-preview">{{ item.source_count }} {% if item.source_count == 1 %}source{% else %}sources{% endif %} <span aria-hidden="true">↗</span></a><div class="ps-source-panel" id="source-preview-{{ item.slug }}" hidden role="region" aria-label="Sources for {{ item.headline }}"></div></div>
+                    <div class="ps-source-control"><a class="ps-source-trigger ps-source-link" href="/stories/{{ item.slug }}#sources"{% if not static_tour %} data-source-preview="/stories/{{ item.slug }}/sources-preview"{% endif %}>{{ item.source_count }} {% if item.source_count == 1 %}source{% else %}sources{% endif %} <span aria-hidden="true">↗</span></a>{% if not static_tour %}<div class="ps-source-panel" id="source-preview-{{ item.slug }}" hidden role="region" aria-label="Sources for {{ item.headline }}"></div>{% endif %}</div>
                   </div>
                 </div>
                 <div class="ps-story-meta row-meta">
@@ -54,6 +54,7 @@
         {% endfor %}
       </div>
       {% if next_url %}<nav class="ps-latest-pagination" aria-label="Pagination"><a href="{{ next_url }}">Older stories →</a></nav>{% endif %}
+      {% if static_tour %}<div class="ps-latest-empty" data-tour-empty role="status" style="display:none"><h2>No stories found</h2><p>Try another topic or remove a filter.</p><a href="{{ latest_url() }}">Clear filters</a></div>{% endif %}
     {% else %}
       <div class="ps-latest-empty" role="status"><h2>No stories found</h2><p>Try another topic or remove a filter.</p>{% if filters.topic or filters.story_type or filters.uk_relevant %}<a href="{{ latest_url() }}">Clear filters</a>{% endif %}</div>
     {% endif %}

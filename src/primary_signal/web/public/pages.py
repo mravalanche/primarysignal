@@ -211,6 +211,7 @@ def _listing_page(
         "uk_relevant": uk_relevant,
     }
     demo_mode = request.app.state.demo_mode
+    static_tour = request.app.state.static_tour
     try:
         page = reader.list_stories(
             StoryListQuery(
@@ -234,6 +235,7 @@ def _listing_page(
                 filters=filters,
                 error="This page link has expired or does not match the current filters.",
                 demo_mode=demo_mode,
+                static_tour=static_tour,
             ),
         )
     return templates.TemplateResponse(
@@ -256,6 +258,7 @@ def _listing_page(
             filters=filters,
             error=None,
             demo_mode=demo_mode,
+            static_tour=static_tour,
         ),
     )
 
@@ -283,6 +286,7 @@ def story_page(
             story=story,
             source_lookup={source.id: source for source in story.sources},
             demo_mode=request.app.state.demo_mode,
+            static_tour=request.app.state.static_tour,
         ),
     )
 
