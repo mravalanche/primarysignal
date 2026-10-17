@@ -3,16 +3,32 @@
 {% block styles %}
   <script>
     (() => {
-      // Keep the entrance to one play per browsing visit, including other tabs.
+      // A plain logo click requests one replay on the home page. Other arrivals
+      // get one entrance per browsing visit, including across tabs.
       try {
         if (!matchMedia("(prefers-reduced-motion: no-preference)").matches) return;
         const visitKey = "primary-signal-brand-last-seen";
+        const replayKey = "primary-signal-brand-replay";
         const now = Date.now();
         const lastSeen = Number(localStorage.getItem(visitKey));
         localStorage.setItem(visitKey, String(now));
-        if (!lastSeen || lastSeen > now || now - lastSeen > 30 * 60 * 1000) {
+        let replay;
+        try { replay = JSON.parse(sessionStorage.getItem(replayKey) || "null"); } catch (_) {}
+        sessionStorage.removeItem(replayKey);
+        const requestedReplay = replay?.path === location.pathname
+          && Number.isFinite(replay.time) && now >= replay.time && now - replay.time < 30 * 1000;
+        if (!lastSeen || lastSeen > now || now - lastSeen > 30 * 60 * 1000 || requestedReplay) {
           document.documentElement.classList.add("ps-brand-entrance");
         }
+        document.addEventListener("DOMContentLoaded", () => {
+          document.querySelector(".ps-brand")?.addEventListener("click", (event) => {
+            if (event.defaultPrevented || event.button !== 0
+                || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            try {
+              sessionStorage.setItem(replayKey, JSON.stringify({ path: event.currentTarget.pathname, time: Date.now() }));
+            } catch (_) {}
+          });
+        });
       } catch (_) {} // Unavailable storage leaves the complete, static mark.
     })();
   </script>
