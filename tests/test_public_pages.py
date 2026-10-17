@@ -1,6 +1,7 @@
 """Server-rendered publication pages use only the public story projection."""
 
 import asyncio
+import re
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
@@ -109,6 +110,22 @@ def get(app: FastAPI, path: str) -> Response:
 
 def app_for(reader: Reader) -> FastAPI:
     return create_public_app(Settings(environment=RuntimeEnvironment.TEST), story_reader=reader)
+
+
+def test_brand_and_source_loader_share_the_fixed_nine_pixel_grid() -> None:
+    response = get(app_for(Reader(PublicStoryPage((_summary(),)))), "/")
+
+    assert response.status_code == 200
+    assert '<a href="/" class="ps-brand">' in response.text
+    assert '<span class="ps-brand-name">Primary Signal</span>' in response.text
+    marks = re.findall(r'<svg class="ps-brand-mark[^>]*>.*?</svg>', response.text, re.S)
+    assert len(marks) == 2  # Header entrance and source-preview loading template.
+    assert all(mark.count("<rect ") == 9 for mark in marks)
+    assert all('viewBox="0 0 36 36"' in mark for mark in marks)
+    assert "ps-brand-mark--entrance" in marks[0]
+    assert "ps-brand-mark--loading" in marks[1]
+    assert '<span class="ps-source-loading" role="status">' in response.text
+    assert "Loading sources…" in response.text
 
 
 def test_latest_renders_provenance_and_neutral_exact_timestamps() -> None:
