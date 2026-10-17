@@ -9,23 +9,38 @@
       <p>Working sample site first. Live news ingestion next. Model evaluation follows real data.</p>
     </header>
     <div class="ps-progress-summary">
-      <p><strong>{{ progress.percent }}%</strong> of exit checks complete <span>({{ progress.completed }}/{{ progress.total }})</span></p>
-      <p>{{ progress.method }}</p>
-      <p>Reviewed against {{ progress.reviewed_against }}.</p>
+      <div class="ps-progress-total"><strong>{{ progress.percent }}%</strong><span>{{ progress.completed }}/{{ progress.total }} exit checks complete</span></div>
+      <progress class="ps-progress-bar" value="{{ progress.completed }}" max="{{ progress.total }}" aria-label="Overall project progress: {{ progress.completed }} of {{ progress.total }} exit checks complete">{{ progress.percent }}%</progress>
+      <p class="ps-progress-method">{{ progress.method }}</p>
+      <p class="ps-progress-reviewed">Reviewed against {{ progress.reviewed_against }}.</p>
     </div>
     <ol class="ps-progress-list">
       {% for milestone in progress.milestones %}
         <li class="ps-progress-item">
+          {% if milestone.completed == milestone.total %}
+            {% set status = "Complete" %}{% set status_icon = "✓" %}{% set status_class = "complete" %}
+          {% elif milestone.completed > 0 %}
+            {% set status = "In progress" %}{% set status_icon = "◐" %}{% set status_class = "in-progress" %}
+          {% else %}
+            {% set status = "Planned" %}{% set status_icon = "○" %}{% set status_class = "planned" %}
+          {% endif %}
           <div class="ps-progress-heading">
-            <div><p class="ps-story-kicker">{{ milestone.id }}</p><h2>{{ milestone.title }}</h2></div>
+            <div class="ps-progress-heading-main">
+              <p class="ps-story-kicker">{{ milestone.id }} <span class="ps-progress-status ps-progress-status--{{ status_class }}"><span aria-hidden="true">{{ status_icon }}</span>{{ status }}</span></p>
+              <h2>{{ milestone.title }}</h2>
+            </div>
             <p class="ps-progress-count"><strong>{{ milestone.percent }}%</strong><span>{{ milestone.completed }}/{{ milestone.total }} checks</span></p>
           </div>
-          <ul class="ps-progress-checks">
-            {% for check in milestone.checks %}
-              <li><span class="ps-progress-state">{% if check.done %}Complete{% else %}Open{% endif %}</span><span>{{ check.title }}<small>{{ check.evidence }}</small></span></li>
-            {% endfor %}
-          </ul>
+          <progress class="ps-progress-bar" value="{{ milestone.completed }}" max="{{ milestone.total }}" aria-label="{{ milestone.title }}: {{ milestone.completed }} of {{ milestone.total }} exit checks complete">{{ milestone.percent }}%</progress>
           <p class="ps-progress-next"><strong>Next</strong> {{ milestone.next }}</p>
+          <details class="ps-progress-evidence">
+            <summary>View {{ milestone.total }} exit checks and evidence</summary>
+            <ul class="ps-progress-checks">
+              {% for check in milestone.checks %}
+                <li><span class="ps-progress-state"><span aria-hidden="true">{% if check.done %}✓{% else %}○{% endif %}</span>{% if check.done %}Complete{% else %}Open{% endif %}</span><span>{{ check.title }}<small>{{ check.evidence }}</small></span></li>
+              {% endfor %}
+            </ul>
+          </details>
         </li>
       {% endfor %}
     </ol>
