@@ -46,6 +46,7 @@
   <link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('public-assets', path='/brand/favicon-48.png') }}">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('public-assets', path='/brand/favicon.svg') }}" data-light-icon="{{ url_for('public-assets', path='/brand/favicon-light.svg') }}" data-dark-icon="{{ url_for('public-assets', path='/brand/favicon-dark.svg') }}">
   <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('public-assets', path='/brand/apple-touch-icon.png') }}">
+  {% if request.app.state.static_tour %}<script src="{{ url_for('public-assets', path='/static-tour.js') }}" defer></script>{% endif %}
 {% endblock %}
 {% block body %}
   <header class="ps-masthead border-b ps-rule">
@@ -60,8 +61,8 @@
       </div>
     </div>
   </header>
-  <main id="main-content" class="ps-page py-10">{% block content %}{% endblock %}</main>
-  <template id="ps-brand-loading-template"><span class="ps-source-loading" role="status">{{ pixel_mark("loading") }}<span>Loading sources…</span></span></template>
+  <main id="main-content" class="ps-page py-10">{% if request.app.state.static_tour and request.url.path == '/progress' %}<p class="ps-demo-notice" role="note">Synthetic demonstration · These stories and sources are fictional. This progress ledger is a repository snapshot.</p>{% endif %}{% block content %}{% endblock %}</main>
+  {% if not request.app.state.static_tour %}<template id="ps-brand-loading-template"><span class="ps-source-loading" role="status">{{ pixel_mark("loading") }}<span>Loading sources…</span></span></template>{% endif %}
   <script>
     (() => {
       const button = document.querySelector("[data-theme-toggle]");
@@ -91,6 +92,7 @@
         });
       });
 
+      {% if not request.app.state.static_tour %}
       const sourceControls = [];
       document.querySelectorAll(".ps-source-control").forEach((control) => {
         const trigger = control.querySelector(".ps-source-trigger");
@@ -212,7 +214,9 @@
           control.open = false;
         });
       });
+      {% endif %}
 
+      {% if not request.app.state.static_tour %}
       const relativeTimes = document.querySelectorAll("time[data-relative-time]");
       if (relativeTimes.length) {
         const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -237,6 +241,7 @@
         refreshTimes();
         window.setInterval(refreshTimes, 60_000);
       }
+      {% endif %}
     })();
   </script>
 {% endblock %}
