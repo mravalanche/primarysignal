@@ -45,16 +45,18 @@ uv run primary-signal-web --surface public
 Open <http://127.0.0.1:8000/__dev/preview>. The preview uses invented content
 and reserved example domains. It is not registered in production.
 
-The same public preview can run from the packaged image:
+The Docker demonstration also fills the ordinary public reading pages with
+fictional stories. It runs without a database, live feeds, or a model:
 
 ```sh
 docker compose -f compose.preview.yaml up --build --wait
-# Open http://127.0.0.1:8000/__dev/preview
+# Open http://127.0.0.1:8000/ for Latest, story pages and tags
+# Open http://127.0.0.1:8000/progress for the delivery ledger
 docker compose -f compose.preview.yaml down
 ```
 
 Set `PRIMARY_SIGNAL_PREVIEW_PORT` to use a different loopback port. This
-Compose file runs only the synthetic public preview. It has no database login
+Compose file runs only the synthetic public demonstration. It has no database login
 or production data. `scripts/smoke_container_preview.sh` checks the image, page,
 and stylesheet in a disposable Compose project. On a VM with a root-owned Docker
 socket, run `sudo bash scripts/smoke_container_preview.sh`.
@@ -62,6 +64,11 @@ socket, run `sudo bash scripts/smoke_container_preview.sh`.
 The completed product is intended to run as Docker containers on a separate
 host. The production Compose stack and host egress policy remain separate
 delivery work; this preview file is not a production deployment definition.
+
+The ledger at `/progress` calculates each percentage from versioned exit checks
+in `src/primary_signal/web/public/milestones.json`. At every substantive commit,
+review the checks against evidence, update their state and next action, and run
+the progress and container smoke checks. Keep unverified checks open.
 
 The production public surface uses `PostgresStoryReader` and requires a
 dedicated PostgreSQL login that inherits only

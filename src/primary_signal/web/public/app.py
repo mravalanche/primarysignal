@@ -11,6 +11,7 @@ from primary_signal.web.common.ui import mount_ui_assets
 from primary_signal.web.public.catalogue import router as catalogue_router
 from primary_signal.web.public.pages import router as pages_router
 from primary_signal.web.public.preview import router as preview_router
+from primary_signal.web.public.progress import router as progress_router
 from primary_signal.web.public.stories import router as stories_router
 
 
@@ -18,16 +19,20 @@ def create_public_app(
     settings: Settings | None = None,
     *,
     story_reader: StoryReader | None = None,
+    demo_mode: bool = False,
 ) -> FastAPI:
     """Create the internet-facing application without administration routes."""
 
     resolved_settings = settings or Settings()
+    if demo_mode and resolved_settings.environment is RuntimeEnvironment.PRODUCTION:
+        raise RuntimeError("the synthetic demo is unavailable in production")
     if resolved_settings.environment is RuntimeEnvironment.PRODUCTION and (
         story_reader is None or isinstance(story_reader, EmptyStoryReader)
     ):
         raise RuntimeError("the production public application requires a story reader")
     app = create_base_app(settings=resolved_settings, surface=Surface.PUBLIC)
     app.state.story_reader = story_reader if story_reader is not None else EmptyStoryReader()
+    app.state.demo_mode = demo_mode
     mount_ui_assets(app, TemplateSurface.PUBLIC)
     app.include_router(health_router)
     app.include_router(stories_router)
@@ -35,4 +40,6 @@ def create_public_app(
     if resolved_settings.environment is not RuntimeEnvironment.PRODUCTION:
         app.include_router(catalogue_router)
         app.include_router(preview_router)
+        if demo_mode:
+            app.include_router(progress_router)
     return app

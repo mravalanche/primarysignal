@@ -1,8 +1,9 @@
 {% extends "layouts/public.html" %}
 {% block title %}{% if tag %}{{ tag.label }} — Tags — Primary Signal{% else %}Latest reporting — Primary Signal{% endif %}{% endblock %}
-{% block masthead_context %}<nav aria-label="Primary"><a href="/"{% if not tag %} aria-current="page"{% endif %}>Latest reporting</a></nav>{% endblock %}
+{% block masthead_context %}<nav aria-label="Primary"><a href="/"{% if not tag %} aria-current="page"{% endif %}>Latest reporting</a>{% if demo_mode %} · <a href="/progress">Project progress</a>{% endif %}</nav>{% endblock %}
 {% block content %}
   <section class="ps-latest-page" aria-labelledby="latest-title">
+    {% if demo_mode %}<p class="ps-demo-notice" role="note">Synthetic demonstration · These stories and sources are fictional.</p>{% endif %}
     <header class="ps-latest-heading">
       {% if tag %}<p class="ps-story-kicker"><a href="/">Latest reporting</a> · Tag</p><h1 id="latest-title">{{ tag.label }}</h1><p>Stories tagged {{ tag.label }}.</p>{% else %}<h1 id="latest-title">Latest reporting</h1><p>New developments from curated security sources, grouped by story.</p>{% endif %}
     </header>

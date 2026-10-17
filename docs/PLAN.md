@@ -1,7 +1,7 @@
 # Primary Signal — Product and Delivery Plan
 
-Status: product baseline; implementation in progress
-Date: 2026-10-01
+Status: product baseline; delivery sequence revised
+Date: 2026-10-17
 
 ## 1. Product definition
 
@@ -322,52 +322,61 @@ across public and administration pages. Colour never replaces a text label.
 
 ## 13. Delivery milestones
 
-### M0 — Product contract and reference corpus
+The delivery order favours a working site and real ingestion before model work.
+The checked exit criteria and calculated completion percentages live in
+`src/primary_signal/web/public/milestones.json`. Review that file at every
+substantive commit. The local Docker demonstration renders it at `/progress`.
+Keep a check open until its stated evidence has been verified.
 
-- Ratify audience, publication policy, taxonomy, terminology, and signal rules.
-- Assemble roughly 150 representative articles across 25–40 real stories.
-- Label expected clusters, primary sources, topics, signals, and relevance.
-- Record initial ADRs and threat model.
+### M1 — Working Docker site with test data
 
-Exit: expected behaviour is testable against a shared corpus.
+- Package the public site and assets in one image with a documented clean start.
+- Show clearly labelled fictional stories on ordinary Latest, story and tag pages.
+- Verify health, route isolation and the reading flow in the loopback container.
 
-### M1 — Platform and ingestion foundation
+Exit: a reader can browse a complete synthetic publication without a feed,
+database or model. This is a local demonstration, not a public deployment.
 
-- Package skeleton, configuration, migrations, structured logging, Compose.
-- Sources, feeds, scheduler, Postgres jobs, retries, and diagnostics.
-- Direct retrieval, extraction, content versioning, and SSRF controls.
+### M2 — Containerised publication with test data
 
-Exit: a restart-safe, searchable inventory exists without AI dependency.
+- Bring up a disposable PostgreSQL, migration, public and private admin stack.
+- Seed synthetic source material and exercise publish, read and suppress in a
+  browser-backed smoke flow.
+- Keep role separation and credentials local to the disposable stack.
 
-### M2 — Useful non-AI product slice
+Exit: publication state changes survive a restart and appear correctly on the
+public site. The existing isolated PostgreSQL tests are a starting point.
 
-- Publication states and editorial controls.
-- Public Latest and story pages, Postgres search, source trails.
-- Admin source/content/processing views.
+### M3 — Live source ingestion
 
-Exit: selected stories can be published and read end to end.
+- Connect source scheduling, RSS/Atom polling, isolated retrieval, article
+  extraction and durable inventory through production-safe runtime bindings.
+- Ingest at least three varied source classes, such as an authority, a vendor
+  advisory feed and an independent newsroom or research publisher.
+- Verify repeat polling, failures, retries, restarts, egress controls and text
+  retention before enabling unattended live fetching.
 
-### M3 — AI enrichment and ranking
+Exit: real source articles are searchable in the internal inventory with
+provenance, without a model. Feed tuning can follow measured results.
 
-- Model/prompt registry, strict schemas, summaries, classification, embeddings.
-- Versioned deterministic ranking and bounded reprocessing.
+### M4 — Model evaluation and editorial enrichment
 
-Exit: validated summaries and reproducible ordering operate on the corpus.
+- Finish independently labelled reference articles and story groups.
+- Compare candidate models on the actual corpus before choosing one.
+- Add validated synthesis, classification, clustering, ranking, named evidence
+  signals and dated briefings in versioned stages.
 
-### M4 — Stories, evidence, and briefings
+Exit: generated publication output meets the editorial and evidence gates on
+the reference corpus and retains source provenance.
 
-- Conservative clustering, manual corrections, signals/evidence.
-- Immutable dated Daily Briefings and archive.
+### M5 — Release readiness
 
-Exit: the product delivers a trustworthy daily reading experience.
+- Verify public/admin isolation, deployment egress, runtime roles and container
+  limits on the target deployment.
+- Review responsive and accessible core flows, failure states and load bounds.
+- Restore an encrypted backup into a clean database and complete the runbook.
 
-### M5 — Release hardening
-
-- Public/admin isolation, database roles, network controls, container hardening.
-- Accessibility/manual focus review, responsive testing, load/timeout limits.
-- Backup, clean restore exercise, operational documentation.
-
-Exit: all release gates pass and deployment is recoverable.
+Exit: release gates pass and the deployment is recoverable.
 
 ## 14. Cross-cutting acceptance criteria
 
@@ -422,21 +431,20 @@ Exit: all release gates pass and deployment is recoverable.
 
 ## 17. Immediate next step
 
-The non-AI publication path now includes a restricted public reader, Latest and
-story pages, an authenticated Reading desk, and database-backed publish and
-suppress decisions. Verify the complete path with a disposable PostgreSQL
-database and synthetic stories: make a decision in the browser, check what the
-public reader can see, then suppress the story and check its audit history.
+Verify the normal synthetic reading pages in the Docker demonstration and run
+the container smoke test. Then build the disposable PostgreSQL publication
+stack in M2, including a repeatable synthetic seed and browser flow. The
+restricted public reader, Latest and story pages, authenticated Reading desk,
+and database-backed publish/suppress decisions already have isolated tests.
 
-Build the versioned M0 reference corpus and labelling rules in parallel. The
-corpus must contain real, public article references and independent story
-labels before clustering or automated publication can be evaluated. Keep full
-article text and private processing history out of the repository.
+Build the reference corpus before model evaluation in M4. It must contain real,
+public article references and independent story labels. Keep full article text
+and private processing history out of the repository.
 
-Production retrieval remains unbound. Before live polling, verify deployment
+Production retrieval remains unbound. Before M3 live polling, verify deployment
 egress controls, service readiness, source-disable serialization, and an
-extracted-text retention policy. Do not treat the local retriever's test opt-in
-as a production deployment configuration.
+extracted-text retention policy. The local retriever's test opt-in is not a
+production deployment configuration.
 
 ## 18. V1 security baseline
 

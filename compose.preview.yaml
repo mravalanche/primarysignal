@@ -10,7 +10,7 @@ services:
       PRIMARY_SIGNAL_ENVIRONMENT: development
       PRIMARY_SIGNAL_DEBUG: "false"
       PRIMARY_SIGNAL_API_DOCS_ENABLED: "false"
-    command: ["primary-signal-web", "--surface", "public", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["primary-signal-web", "--surface", "public", "--demo", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "127.0.0.1:${PRIMARY_SIGNAL_PREVIEW_PORT:-8000}:8000"
     read_only: true

@@ -1,0 +1,33 @@
+{% extends "layouts/public.html" %}
+{% block title %}Project progress — Primary Signal{% endblock %}
+{% block masthead_context %}<nav aria-label="Primary"><a href="/">Latest reporting</a> · <a href="/progress" aria-current="page">Project progress</a></nav>{% endblock %}
+{% block content %}
+  <section class="ps-progress" aria-labelledby="progress-title">
+    <header class="ps-latest-heading">
+      <p class="ps-story-kicker">Delivery ledger · reviewed <time datetime="{{ progress.reviewed_on }}">{{ progress.reviewed_on }}</time></p>
+      <h1 id="progress-title">Project progress</h1>
+      <p>Working sample site first. Live news ingestion next. Model evaluation follows real data.</p>
+    </header>
+    <div class="ps-progress-summary">
+      <p><strong>{{ progress.percent }}%</strong> of exit checks complete <span>({{ progress.completed }}/{{ progress.total }})</span></p>
+      <p>{{ progress.method }}</p>
+      <p>Reviewed against {{ progress.reviewed_against }}.</p>
+    </div>
+    <ol class="ps-progress-list">
+      {% for milestone in progress.milestones %}
+        <li class="ps-progress-item">
+          <div class="ps-progress-heading">
+            <div><p class="ps-story-kicker">{{ milestone.id }}</p><h2>{{ milestone.title }}</h2></div>
+            <p class="ps-progress-count"><strong>{{ milestone.percent }}%</strong><span>{{ milestone.completed }}/{{ milestone.total }} checks</span></p>
+          </div>
+          <ul class="ps-progress-checks">
+            {% for check in milestone.checks %}
+              <li><span class="ps-progress-state">{% if check.done %}Complete{% else %}Open{% endif %}</span><span>{{ check.title }}<small>{{ check.evidence }}</small></span></li>
+            {% endfor %}
+          </ul>
+          <p class="ps-progress-next"><strong>Next</strong> {{ milestone.next }}</p>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+{% endblock %}

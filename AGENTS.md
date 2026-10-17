@@ -51,6 +51,16 @@ Write like a careful human editor:
 Documentation can be detailed where the detail is useful, but should still be
 edited down before it is committed.
 
+## Delivery milestone review
+
+Before every substantive commit, review the exit checks in
+`src/primary_signal/web/public/milestones.json` against the work and its test
+evidence. Update check states, evidence, the next action, and review metadata
+as needed. Keep unverified checks open. The local `/progress` page calculates
+its percentages from this file; do not enter percentages by hand. Review the
+file even when a commit changes no check state, and record the reviewed change
+so the ledger stays current.
+
 ## Product and visual character
 
 Primary Signal is an editorial cyber-security publication, not an AI product
