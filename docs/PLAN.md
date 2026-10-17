@@ -431,20 +431,23 @@ Exit: release gates pass and the deployment is recoverable.
 
 ## 17. Immediate next step
 
-Verify the normal synthetic reading pages in the Docker demonstration and run
-the container smoke test. Then build the disposable PostgreSQL publication
-stack in M2, including a repeatable synthetic seed and browser flow. The
-restricted public reader, Latest and story pages, authenticated Reading desk,
-and database-backed publish/suppress decisions already have isolated tests.
+The synthetic reading pages and local Docker smoke have passed. Package and
+publish a versioned development image, then run the disposable PostgreSQL
+publication stack in M2 with operator-owned local configuration. Verify its
+publish, read and suppress flow in a browser and across a restart before
+marking the stack complete. The restricted public reader, Latest and story
+pages, authenticated Reading desk, and database-backed publish/suppress
+decisions already have isolated tests.
 
 Build the reference corpus before model evaluation in M4. It must contain real,
 public article references and independent story labels. Keep full article text
 and private processing history out of the repository.
 
-Production retrieval remains unbound. Before M3 live polling, verify deployment
-egress controls, service readiness, source-disable serialization, and an
-extracted-text retention policy. The local retriever's test opt-in is not a
-production deployment configuration.
+Synthetic ingestion already reaches durable inventory. Next, bind and test
+the M3 worker runtimes, then ingest three varied public sources. Before
+unattended live polling, verify deployment egress controls, service readiness,
+source-disable serialization, and extracted-text retention. The local
+retriever's test opt-in is not a production deployment configuration.
 
 ## 18. V1 security baseline
 

@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-17",
-  "reviewed_against": "Docker sample-site and seed gates; synthetic RSS, Atom and RDF inventory flow; CI checks on 2026-10-17",
+  "reviewed_against": "Docker sample-site, seed and synthetic ingestion gates; development image packaging reviewed on 2026-10-17; registry publication and M2 stack unverified",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
