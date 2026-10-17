@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><title>Primary Signal</title><path d="M5 55V48l4-6 4 6 4-12 4 11 2-6v14zM49 55V44l3-8 3 10 3-6 1 7v8z" fill="#EAF1F2"/><path d="M5 57h54" stroke="#EAF1F2" stroke-width="3"/><defs><mask id="p-counter" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><path d="M0 0h64v64H0z" fill="white"/><path d="M32 30h4c3 0 5 2 5 5s-2 5-5 5h-4z" fill="black"/></mask><mask id="floor-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><path d="M0 0h64v64H0z" fill="white"/><path d="M40 56 43 49 47 56z" fill="black"/></mask></defs><path d="M25 55V23h11c8 0 12 5 12 12s-4 12-12 12h-4v8z" fill="#78CDE0" mask="url(#p-counter)"/><path d="M33 55v-3l3-2 3 3 3-6 3 5 4-1v4z" fill="#EAF1F2" mask="url(#floor-cut)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <title>Primary Signal</title>
+  <path fill="#EAF1F2" d="M2 4h2v2H2zM5 4h2v2H5zM8 4h2v2H8zM11 4h2v2h-2zM2 7h2v2H2zM11 7h2v2h-2zM2 10h2v2H2zM5 10h2v2H5zM8 10h2v2H8zM11 10h2v2h-2zM2 13h2v2H2z"/>
+  <path fill="#78CDE0" d="M8 0h2v2H8z"/>
+</svg>
