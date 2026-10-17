@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-17",
-  "reviewed_against": "origin/develop 7d468fa and the Docker sample-site change",
+  "reviewed_against": "Docker sample-site commit 37cc56c and the milestone-review policy",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
