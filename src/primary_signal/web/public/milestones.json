@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-17",
-  "reviewed_against": "Disposable Compose network separation and bootstrap-role configuration check on 2026-10-17; runtime stack remains unverified",
+  "reviewed_against": "Docker, seed and synthetic ingestion gates; Compose network separation and bootstrap-role static check on 2026-10-17; runtime stack unverified",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
@@ -30,12 +30,12 @@
     {
       "id": "M3",
       "title": "Live source ingestion",
-      "next": "Choose varied public feeds and define retention and deployment egress controls.",
+      "next": "Bind the production processor and retriever runtimes, then validate restart behavior and selected public feeds.",
       "checks": [
         {"title": "RSS/Atom parsing, retrieval and durable jobs have synthetic tests", "done": true, "evidence": "Feed, article and job test suites"},
         {"title": "Production-safe processor and retriever runtime bindings are ready", "done": false, "evidence": "Pending"},
-        {"title": "Three varied source classes ingest into the article inventory", "done": false, "evidence": "Pending"},
-        {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Pending"},
+        {"title": "Three varied source classes ingest into the article inventory", "done": false, "evidence": "Synthetic advisory RSS, research Atom and journal RDF pass end to end; three real public sources remain unverified"},
+        {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Synthetic re-poll dedupe and timeout retry pass; process restart remains unverified"},
         {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Pending"}
       ]
     },
