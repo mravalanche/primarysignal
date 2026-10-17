@@ -8,7 +8,7 @@ pages hold the detail behind the project overview.
 | Product and delivery | [Product contract](product-contract.md) · [Delivery plan](PLAN.md) |
 | Development | [Local setup and tests](development.md) · [Development image](development-image.md) |
 | Data pipeline | [Feed and article runtime](ingestion-runtime.md) · [Database roles](database-roles.md) |
-| Interface | [Design system](design-system.md) · [Admin reading desk](admin-reading-desk.md) |
+| Interface | [Design dossier](../DESIGN.md) · [Design system](design-system.md) · [Admin reading desk](admin-reading-desk.md) |
 | Operations and security | [Admin authentication](admin-auth.md) · [Security policy](../SECURITY.md) |
 | Decisions | [Architecture decision records](adr/README.md) |
 
