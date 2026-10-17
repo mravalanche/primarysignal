@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-17",
-  "reviewed_against": "Disposable Compose placeholder configuration check on 2026-10-17; runtime stack remains unverified",
+  "reviewed_against": "Disposable Compose network separation and bootstrap-role configuration check on 2026-10-17; runtime stack remains unverified",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {

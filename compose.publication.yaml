@@ -33,7 +33,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks: [data]
+    networks: [public_db, admin_db]
 
   migrate:
     <<: *runtime
@@ -47,7 +47,7 @@ services:
     depends_on:
       database:
         condition: service_healthy
-    networks: [data]
+    networks: [admin_db]
     restart: "no"
 
   seed:
@@ -57,7 +57,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    networks: [data]
+    networks: [admin_db]
     restart: "no"
 
   public:
@@ -74,7 +74,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-    networks: [data, browser]
+    networks: [public_db]
 
   admin:
     <<: *runtime
@@ -85,7 +85,7 @@ services:
     depends_on:
       seed:
         condition: service_completed_successfully
-    networks: [data]
+    networks: [admin_db]
 
   admin_tls:
     image: nginx:1.29-alpine
@@ -108,9 +108,9 @@ services:
       - admin
 
 networks:
-  data:
+  public_db:
     internal: true
-  browser:
+  admin_db:
     internal: true
 
 volumes:

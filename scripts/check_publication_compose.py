@@ -79,9 +79,29 @@ def main() -> None:
         all(network["internal"] for network in config["networks"].values()),
         "networks must be internal",
     )
+    public_networks = set(services["public"]["networks"])
+    admin_networks = set(services["admin"]["networks"])
+    database_networks = set(services["database"]["networks"])
+    require(not public_networks & admin_networks, "web services must not share a network")
+    require(public_networks | admin_networks == database_networks, "database network links changed")
+    require(public_networks == {"public_db"}, "public database network changed")
+    require(admin_networks == {"admin_db"}, "admin database network changed")
+    for name in ("migrate", "seed"):
+        require(set(services[name]["networks"]) == admin_networks, f"{name} network changed")
+    migration_example = (root / ".env.publication.migrate.example").read_text(encoding="utf-8")
+    seed_example = (root / ".env.publication.seed.example").read_text(encoding="utf-8")
+    require(
+        "bootstrap_owner_test" not in migration_example + seed_example,
+        "bootstrap owner reached an app example",
+    )
     for name in ("public", "admin"):
         example = (root / f".env.publication.{name}.example").read_text(encoding="utf-8")
-        for forbidden in ("migration_test", "publication_writer_test", "PRIMARY_SIGNAL_TEST_"):
+        for forbidden in (
+            "bootstrap_owner_test",
+            "migration_test",
+            "publication_writer_test",
+            "PRIMARY_SIGNAL_TEST_",
+        ):
             require(forbidden not in example, f"{name} example includes {forbidden}")
     print("Disposable Compose model and network boundaries are valid (placeholder config only).")
 

@@ -3,20 +3,27 @@
 `compose.publication.yaml` is a local exercise for M2. It uses a separate
 PostgreSQL volume and a database whose name must end in `_test`. The public
 HTTP and admin HTTPS ports bind to host loopback only. The database has no
-published port. Migration checks the connected database name before changing
-its schema. This file is not a production deployment definition.
+published port. Public and admin use separate internal database networks, with
+PostgreSQL attached to both. Migration checks the connected database name
+before changing its schema. This file is not a production deployment definition.
 
 ## Operator setup
 
 Copy each `.env.publication.*.example` file to the corresponding ignored file
 without `.example`. Replace every `REPLACE_ME` with operator-owned local
 values. Set `POSTGRES_DB` to a disposable name ending in `_test` and keep that
-name identical in every database URL. Set `POSTGRES_USER` to the migration
-login and place its PostgreSQL password in the ignored file
-`.secrets/publication/database_password`. Do not commit these files.
+name identical in every database URL. In the official PostgreSQL image,
+`POSTGRES_USER` becomes the bootstrap superuser. Set it to a distinct bootstrap
+owner such as `bootstrap_owner_test` and place that password in the ignored
+file `.secrets/publication/database_password`. The bootstrap login must not
+appear in migration, seed or web environment files. Production needs a
+separate bootstrap owner as well. Do not commit these files.
 
 Provide `.secrets/publication/local_logins.sql` before first database start.
-It must create five distinct restricted logins and grant each exactly one
+It must create a separate `migration_test` login with the database CREATE and
+role membership needed to run the repository migrations and transfer the
+public projection to `primary_signal_public_owner`. It must also create five
+distinct restricted runtime logins and grant each exactly one
 capability: `public_reader_test` → `primary_signal_cap_public_read`,
 `publication_writer_test` → `primary_signal_cap_publication_write`,
 `admin_session_test` → `primary_signal_cap_admin_session`,
@@ -25,9 +32,10 @@ capability: `public_reader_test` → `primary_signal_cap_public_read`,
 Give them `LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
 NOBYPASSRLS` and remove `CREATE` on the default `public` schema. The
 PostgreSQL image runs the repository's non-login capability scripts first,
-then this operator-owned login script. The migration login owns the schema;
-no migration or publication-writer credential is present in either web
-service. Never use the fixed login values from the test-role helper here.
+then this operator-owned login script. The migration login owns the private
+schema; the bootstrap superuser is kept out of all app services. No migration
+or publication-writer credential is present in either web service. Never use
+the fixed login values from the test-role helper here.
 
 Provide an operator-owned Argon2id PHC password hash and a hex session key
 of at least 32 bytes through `.env.publication.admin`. Keep the exact admin
