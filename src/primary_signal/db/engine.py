@@ -56,7 +56,10 @@ def create_database_engine(
 
     @event.listens_for(engine, "engine_connect")
     def assert_expected_role(connection: Connection) -> None:
-        assert_database_role(connection, settings.expected_role)
+        # Verification executes a query. End that transaction before callers
+        # use engine.begin(), so checkout does not leave an implicit one open.
+        with connection.begin():
+            assert_database_role(connection, settings.expected_role)
 
     return engine
 

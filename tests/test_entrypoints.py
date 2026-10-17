@@ -54,17 +54,93 @@ def test_retriever_entrypoint_is_loopback_only(monkeypatch: pytest.MonkeyPatch) 
         retriever.main(["--allow-local-fetch"])
 
 
-def test_processor_entrypoint_rejects_unbound_ingestion_queue(
-    capsys: pytest.CaptureFixture[str],
+def test_processor_entrypoint_requires_local_opt_in_and_rejects_production(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    arguments = ["--once", "--queue", "ingestion", "--retriever-origin", "http://127.0.0.1:8765"]
     with pytest.raises(SystemExit) as raised:
-        processor.main(["--once"])
-
+        processor.main(arguments)
+    assert raised.value.code == 2
+    monkeypatch.delenv("PRIMARY_SIGNAL_ENVIRONMENT", raising=False)
+    with pytest.raises(SystemExit) as raised:
+        processor.main([*arguments, "--allow-local-fetch"])
     assert raised.value.code == 1
-    error_output = capsys.readouterr().err
-    assert '"event":"processor.failed"' in error_output
-    assert '"error_type":"UnknownJobHandler"' in error_output
-    assert "feeds.poll" not in error_output
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "production")
+    with pytest.raises(SystemExit) as raised:
+        processor.main([*arguments, "--allow-local-fetch"])
+    assert raised.value.code == 1
+    assert '"event":"processor.failed"' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("queue_name", ["ingestion", "retrieval"])
+def test_processor_entrypoint_binds_selected_queue(
+    monkeypatch: pytest.MonkeyPatch, queue_name: str
+) -> None:
+    from unittest.mock import MagicMock
+
+    engine = MagicMock(spec=Engine)
+    retriever_client = MagicMock()
+    retriever_client.__enter__.return_value = retriever_client
+    handlers = object()
+    captured: dict[str, object] = {}
+
+    def fake_client(origin: str) -> MagicMock:
+        captured["origin"] = origin
+        return retriever_client
+
+    def fake_handlers(actual_engine: Engine, client: object) -> object:
+        assert actual_engine is engine
+        assert client is retriever_client
+        captured["binding"] = queue_name
+        return handlers
+
+    def fake_run(
+        actual_engine: Engine,
+        _settings: object,
+        _stop_event: object,
+        actual_handlers: object,
+        *,
+        once: bool,
+        queue_name: str,
+    ) -> None:
+        assert actual_engine is engine
+        assert actual_handlers is handlers
+        captured["run"] = (once, queue_name)
+
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "test")
+    monkeypatch.setattr(processor, "processor_database_settings", lambda: object())
+
+    def fake_create_engine(_settings: object) -> Engine:
+        return engine
+
+    monkeypatch.setattr(processor, "create_database_engine", fake_create_engine)
+    monkeypatch.setattr(processor, "RetrieverClient", fake_client)
+    monkeypatch.setattr(processor, "run_with_engine", fake_run)
+    monkeypatch.setattr(
+        processor,
+        "build_feed_poll_handlers"
+        if queue_name == "ingestion"
+        else "build_article_retrieval_handlers",
+        fake_handlers,
+    )
+
+    processor.main(
+        [
+            "--once",
+            "--queue",
+            queue_name,
+            "--retriever-origin",
+            "http://127.0.0.1:8765",
+            "--allow-local-fetch",
+        ]
+    )
+
+    assert captured == {
+        "origin": "http://127.0.0.1:8765",
+        "binding": queue_name,
+        "run": (True, queue_name),
+    }
+    engine.dispose.assert_called_once()
 
 
 def test_web_entrypoint_runs_selected_surface(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -441,10 +441,14 @@ Build the reference corpus before model evaluation in M4. It must contain real,
 public article references and independent story labels. Keep full article text
 and private processing history out of the repository.
 
-Production retrieval remains unbound. Before M3 live polling, verify deployment
-egress controls, service readiness, source-disable serialization, and an
-extracted-text retention policy. The local retriever's test opt-in is not a
-production deployment configuration.
+The local processor now binds feed and article jobs to the loopback retriever
+with explicit development or test opt-in. Its disposable PostgreSQL test runs
+the processor in separate OS processes, recovers an expired lease and rejects
+stale lease completion. A killed worker and container restart still need an
+end-to-end check. Production retrieval remains unbound. Before M3 live polling,
+verify deployment egress controls, service readiness, source-disable
+serialization, and an extracted-text retention policy. The local retriever's
+test opt-in is not a production deployment configuration.
 
 ## 18. V1 security baseline
 
