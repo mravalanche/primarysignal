@@ -1,6 +1,7 @@
 """Check the disposable Compose model using placeholder-only example files."""
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -12,9 +13,12 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit(message)
 
 
-def main() -> None:
-    root = Path(__file__).resolve().parents[1]
-    model = (root / "compose.publication.yaml").read_text(encoding="utf-8")
+IMAGE_DIGEST = "ghcr.io/mravalanche/primarysignal@sha256:" + "0" * 64
+RUNTIME_SERVICES = ("migrate", "seed", "public", "admin")
+
+
+def render_model(root: Path, filename: str) -> dict:
+    model = (root / filename).read_text(encoding="utf-8")
     for name in ("database", "migrate", "seed", "public", "admin"):
         source = f"env_file: .env.publication.{name}\n"
         require(source in model, f"missing {name} service configuration")
@@ -26,6 +30,8 @@ def main() -> None:
         docker = shutil.which("docker")
         if docker is None:
             raise SystemExit("docker compose is required")
+        environment = os.environ.copy()
+        environment["PRIMARY_SIGNAL_PUBLICATION_IMAGE"] = IMAGE_DIGEST
         result = subprocess.run(  # noqa: S603 - fixed argv; model is this repository's file.
             [
                 docker,
@@ -41,9 +47,13 @@ def main() -> None:
             ],
             check=True,
             capture_output=True,
+            env=environment,
             text=True,
         )
-    config = json.loads(result.stdout)
+    return json.loads(result.stdout)
+
+
+def check_boundaries(config: dict, root: Path) -> None:
     services = config["services"]
     for name in ("database", "migrate", "seed", "admin_tls"):
         require(not services[name].get("ports"), f"{name} must have no published port")
@@ -103,7 +113,34 @@ def main() -> None:
             "PRIMARY_SIGNAL_TEST_",
         ):
             require(forbidden not in example, f"{name} example includes {forbidden}")
-    print("Disposable Compose model and network boundaries are valid (placeholder config only).")
+
+
+def main() -> None:
+    root = Path(__file__).resolve().parents[1]
+    local = render_model(root, "compose.publication.yaml")
+    published = render_model(root, "compose.publication.image.yaml")
+    for config in (local, published):
+        check_boundaries(config, root)
+
+    for name in RUNTIME_SERVICES:
+        local_service = dict(local["services"][name])
+        published_service = dict(published["services"][name])
+        require(
+            local_service.pop("build", None)
+            == {"context": str(root), "dockerfile": "Dockerfile", "target": "runtime"},
+            f"{name} must use the local runtime build",
+        )
+        require("image" not in local_service, f"{name} local service must not pull an image")
+        require(published_service.pop("image", None) == IMAGE_DIGEST, f"{name} image digest changed")
+        require(published_service.pop("pull_policy", None) == "always", f"{name} pull policy changed")
+        require("build" not in published_service, f"{name} published service must not build")
+        require(local_service == published_service, f"{name} runtime controls differ between models")
+    for name in ("database", "admin_tls"):
+        require(
+            local["services"][name] == published["services"][name],
+            f"{name} controls differ between models",
+        )
+    print("Local and published-image Compose models keep the same security boundaries (placeholder config only).")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 # Disposable publication stack
 
-`compose.publication.yaml` is a local exercise for M2. It uses a separate
+`compose.publication.yaml` builds locally. `compose.publication.image.yaml`
+pulls one published development image for migration, seed, public and admin.
+Both are disposable M2 exercises. They use a separate
 PostgreSQL volume and a database whose name must end in `_test`. The public
 HTTP and admin HTTPS ports bind to host loopback only. The database has no
 published port. Public and admin use separate internal database networks, with
@@ -48,7 +50,8 @@ not send forwarding headers to the app.
 
 ## Run and review
 
-After the operator files exist, validate the model with
+After the operator files exist on the development VM, validate the local-build
+model with
 `docker compose -f compose.publication.yaml config --quiet`, then start with
 `docker compose -f compose.publication.yaml up --build --wait`. The migration
 and seed services run once; the seed creates a fictional draft with source,
@@ -60,3 +63,45 @@ automated clean-start browser smoke is still pending.
 Stop with `docker compose -f compose.publication.yaml down`. The named volume
 persists for restart checks. `down --volumes` destroys the disposable database
 and should only be used when its contents are no longer needed.
+
+## Run from a published development image on another Docker host
+
+On the Docker host, check that `docker info --format '{{.Architecture}}'`
+reports `x86_64` or `amd64`. The current development image is built for Linux
+amd64. Check out the exact `develop` commit whose Publish development image
+job succeeded. The bundle needs `compose.publication.image.yaml`, the five
+`.env.publication.*.example` templates, `deploy/postgres/initdb/`, and
+`deploy/publication/admin-nginx.conf`; a repository checkout supplies all of
+them. The image contains application code, assets and migrations, so no build
+context is needed on this host.
+
+Create the ignored `.env.publication.*` and `.secrets/publication/*` files on
+that Docker host as described above. Keep the admin origin at
+`https://localhost:8443` and use a certificate valid for `localhost`. The
+repository owner controls GHCR package visibility. If the image is private,
+authenticate Docker to GHCR with operator-owned credentials on that host.
+Do not put registry credentials in Compose or the repository.
+
+The successful Publish development image job's GitHub Actions run summary
+contains a full `ghcr.io/mravalanche/primarysignal@sha256:...` reference.
+Set that reference in the shell, then validate, pull and start the stack:
+
+```sh
+export PRIMARY_SIGNAL_PUBLICATION_IMAGE='ghcr.io/mravalanche/primarysignal@sha256:REPLACE_WITH_PUBLISHED_DIGEST'
+docker compose -f compose.publication.image.yaml config --quiet
+docker compose -f compose.publication.image.yaml pull
+docker compose -f compose.publication.image.yaml up --wait
+```
+
+The public and admin ports bind only to the Docker host's loopback. From a
+different computer, use an SSH tunnel to the Docker host before browsing:
+
+```sh
+ssh -N -L 8002:127.0.0.1:8002 -L 8443:127.0.0.1:8443 DOCKER_HOST
+```
+
+Browse `http://localhost:8002` and `https://localhost:8443` through the
+tunnel. Run the same publish, read, suppress and restart checks described
+above. Stop with `docker compose -f compose.publication.image.yaml down`.
+The named volume persists. Do not expose these ports through a public
+reverse proxy; this is a disposable development stack, not a release.
