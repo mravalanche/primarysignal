@@ -65,6 +65,17 @@ The completed product is intended to run as Docker containers on a separate
 host. The production Compose stack and host egress policy remain separate
 delivery work; this preview file is not a production deployment definition.
 
+The next publication milestone has a repeatable synthetic draft seed. Run
+`primary-signal-sample-seed` only against a disposable database ending in
+`_test`, after its migrations and test roles are installed. It requires
+`PRIMARY_SIGNAL_TEST_DATABASE_URL` and `PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE`
+for provenance records, plus `PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_URL` and
+`PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_EXPECTED_ROLE` for the restricted
+writer. Both logins must reach the same database and must be distinct. The
+command creates one fictional source, article, fetch, content version and draft;
+rerunning it verifies the existing lineage without duplicating the draft. The
+full disposable gate in `scripts/dev_test_env.sh` exercises this path.
+
 The ledger at `/progress` calculates each percentage from versioned exit checks
 in `src/primary_signal/web/public/milestones.json`. At every substantive commit,
 review the checks against evidence, update their state and next action, and run

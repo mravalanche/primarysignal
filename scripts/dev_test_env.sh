@@ -166,6 +166,7 @@ export PRIMARY_SIGNAL_TEST_PROCESSOR_DATABASE_URL="${database_base}processor_tes
 export PRIMARY_SIGNAL_TEST_INVENTORY_DATABASE_URL="${database_base}inventory_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL="${database_base}public_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_URL="${database_base}publication_test@${database_host}"
+export PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_EXPECTED_ROLE=publication_test
 export PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL="${database_base}health_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL="${database_base}editorial_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_ADMIN_SESSION_DATABASE_URL="${database_base}admin_session_test@${database_host}"
