@@ -1,0 +1,13 @@
+{% macro pixel_mark(mode="") -%}
+<svg class="ps-brand-mark{% if mode %} ps-brand-mark--{{ mode }}{% endif %}" viewBox="0 0 36 36" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <rect class="ps-pixel ps-pixel--r1c1" x="0" y="0" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r1c2 ps-pixel--ink" x="13" y="0" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r1c3 ps-pixel--accent" x="26" y="0" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r2c1" x="0" y="13" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r2c2 ps-pixel--ink" x="13" y="13" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r2c3 ps-pixel--accent" x="26" y="13" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r3c1" x="0" y="26" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r3c2 ps-pixel--ink" x="13" y="26" width="10" height="10"/>
+  <rect class="ps-pixel ps-pixel--r3c3" x="26" y="26" width="10" height="10"/>
+</svg>
+{%- endmacro %}

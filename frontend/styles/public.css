@@ -35,6 +35,60 @@
   flex: none;
 }
 
+.ps-brand-mark .ps-pixel { fill: var(--ps-neutral-rule); }
+.ps-brand-mark .ps-pixel--ink { --pixel-final: var(--ps-logo-ink); fill: var(--ps-logo-ink); }
+.ps-brand-mark .ps-pixel--accent { --pixel-final: var(--ps-logo-accent); fill: var(--ps-logo-accent); }
+
+/* The grid and its colours switch only between complete pixel states. */
+@media (prefers-reduced-motion: no-preference) {
+  .ps-brand-mark--entrance .ps-pixel {
+    animation: ps-pixel-appear 0.001s steps(1, end) both var(--grid-delay, 0s),
+      ps-pixel-paint 0.001s steps(1, end) both var(--paint-delay, 0s);
+  }
+  .ps-brand-mark--entrance .ps-pixel--r3c1,
+  .ps-brand-mark--entrance .ps-pixel--r3c2,
+  .ps-brand-mark--entrance .ps-pixel--r3c3 { --grid-delay: 0s; }
+  .ps-brand-mark--entrance .ps-pixel--r2c1,
+  .ps-brand-mark--entrance .ps-pixel--r2c2,
+  .ps-brand-mark--entrance .ps-pixel--r2c3 { --grid-delay: 0.14s; }
+  .ps-brand-mark--entrance .ps-pixel--r1c1,
+  .ps-brand-mark--entrance .ps-pixel--r1c2,
+  .ps-brand-mark--entrance .ps-pixel--r1c3 { --grid-delay: 0.28s; }
+  .ps-brand-mark--entrance .ps-pixel--r3c2 { --paint-delay: 0.48s; }
+  .ps-brand-mark--entrance .ps-pixel--r2c2 { --paint-delay: 0.59s; }
+  .ps-brand-mark--entrance .ps-pixel--r1c2 { --paint-delay: 0.70s; }
+  .ps-brand-mark--entrance .ps-pixel--r2c3 { --paint-delay: 0.81s; }
+  .ps-brand-mark--entrance .ps-pixel--r1c3 { --paint-delay: 0.92s; }
+  @keyframes ps-pixel-appear {
+    from { visibility: hidden; }
+    to { visibility: visible; }
+  }
+  @keyframes ps-pixel-paint {
+    from { fill: var(--ps-neutral-rule); }
+    to { fill: var(--pixel-final, var(--ps-neutral-rule)); }
+  }
+}
+
+/* The loader keeps all nine grid cells fixed; one bowl cell is blue at a time. */
+.ps-brand-mark--loading .ps-pixel--ink,
+.ps-brand-mark--loading .ps-pixel--accent { fill: var(--ps-logo-ink); }
+.ps-brand-mark--loading .ps-pixel--r1c2 { fill: var(--ps-logo-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .ps-brand-mark--loading .ps-pixel--r1c2,
+  .ps-brand-mark--loading .ps-pixel--r1c3,
+  .ps-brand-mark--loading .ps-pixel--r2c3,
+  .ps-brand-mark--loading .ps-pixel--r2c2 {
+    animation: ps-pixel-chase 1.2s steps(1, end) infinite;
+  }
+  .ps-brand-mark--loading .ps-pixel--r1c3 { animation-delay: -0.9s; }
+  .ps-brand-mark--loading .ps-pixel--r2c3 { animation-delay: -0.6s; }
+  .ps-brand-mark--loading .ps-pixel--r2c2 { animation-delay: -0.3s; }
+  @keyframes ps-pixel-chase {
+    0%, 24.999% { fill: var(--ps-logo-accent); }
+    25%, 100% { fill: var(--ps-logo-ink); }
+  }
+}
+
 .ps-brand-name {
   font-family: var(--ps-font-editorial);
   font-size: 1.3rem;
@@ -640,6 +694,8 @@
   color: var(--ps-neutral-ink);
 }
 .ps-source-panel[hidden] { display: none; }
+.ps-source-loading { display: flex; align-items: center; gap: 0.65rem; padding: 0.8rem; font-size: var(--ps-text-ui); }
+.ps-source-loading .ps-brand-mark { width: 1.5rem; height: 1.5rem; }
 .ps-source-panel.align-end { inset-inline: auto 0; }
 .ps-source-panel.align-above { inset-block: auto 100%; }
 .ps-source-panel-content { padding: 0.6rem; }
