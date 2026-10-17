@@ -1,12 +1,12 @@
 {
   "reviewed_on": "2026-10-17",
-  "reviewed_against": "Docker, seed and synthetic ingestion gates; local processor lease recovery test; development image packaging reviewed on 2026-10-17; registry publication and M2 stack unverified",
+  "reviewed_against": "Synthetic Docker, seed and ingestion gates; local processor lease recovery test; GHCR development image published and digest verified; M2 Compose remains a draft pending operator configuration, browser and restart evidence",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
       "id": "M1",
       "title": "Working Docker site with test data",
-      "next": "Use the local demo to review the reading flow, then build the disposable database publication stack.",
+      "next": "Use the working synthetic site to review the reading flow; complete the disposable database publication proof in M2.",
       "checks": [
         {"title": "Packaged image builds the public assets", "done": true, "evidence": "Dockerfile and existing image smoke script"},
         {"title": "Loopback Compose starts without a database, feed or model", "done": true, "evidence": "compose.preview.yaml"},
@@ -19,10 +19,10 @@
     {
       "id": "M2",
       "title": "Containerised publication with test data",
-      "next": "Wire a disposable Compose publication stack, then smoke publish, read and suppress through the browser.",
+      "next": "Configure the draft disposable Compose stack locally, then prove browser publish, read and suppress across a restart.",
       "checks": [
         {"title": "Database-backed publish and suppress flow works in tests", "done": true, "evidence": "tests/test_publication_browser_flow_postgres.py"},
-        {"title": "Disposable Compose stack runs migration, public site and private admin", "done": false, "evidence": "Pending"},
+        {"title": "Disposable Compose stack runs migration, public site and private admin", "done": false, "evidence": "Draft Compose and GHCR development image are prepared; operator-owned local configuration and running-stack evidence remain open"},
         {"title": "Synthetic seed creates stories and source trails in PostgreSQL", "done": true, "evidence": "sample_seed CLI and idempotent PostgreSQL integration test; full offline gate passed 2026-10-17"},
         {"title": "Clean-start browser smoke proves publish, read and suppress", "done": false, "evidence": "Pending"}
       ]
@@ -30,13 +30,13 @@
     {
       "id": "M3",
       "title": "Live source ingestion",
-      "next": "Prove killed-worker and container restart, then verify network boundaries, bind restricted services and test selected public feeds.",
+      "next": "Prove killed-worker and container restart behavior, egress controls and text retention before testing three varied public sources.",
       "checks": [
         {"title": "RSS/Atom parsing, retrieval and durable jobs have synthetic tests", "done": true, "evidence": "Feed, article and job test suites"},
         {"title": "Production-safe processor and retriever runtime bindings are ready", "done": false, "evidence": "Pending"},
         {"title": "Three varied source classes ingest into the article inventory", "done": false, "evidence": "Synthetic advisory RSS, research Atom and journal RDF pass end to end; three real public sources remain unverified"},
         {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Synthetic re-poll dedupe and timeout retry pass; separate local processor subprocesses recover a manually expired lease and fence its old owner; killing a worker mid-job and container restart remain unverified"},
-        {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Pending"}
+        {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Deployment egress probes and extracted-text retention policy remain open"}
       ]
     },
     {
