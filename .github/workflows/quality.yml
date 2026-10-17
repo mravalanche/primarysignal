@@ -179,3 +179,47 @@ jobs:
 
       - name: Audit frontend build dependencies
         run: npm audit --package-lock-only --audit-level=high --include=dev
+
+  publish-dev-image:
+    name: Publish development image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && github.repository == 'mravalanche/primarysignal'
+    needs: [quality, secret-scan, dependency-audit]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and check runtime image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:dev-${GITHUB_SHA}"
+          docker build --target runtime --tag "$image" .
+          docker run --rm --entrypoint python "$image" -c '
+          from pathlib import Path
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          config = Path("/app/alembic.ini")
+          assert config.is_file()
+          assert ScriptDirectory.from_config(Config(str(config))).get_current_head()
+          '
+
+      - name: Publish image and record immutable reference
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:dev-${GITHUB_SHA}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          push_output="$(docker push "$image")"
+          printf '%s\n' "$push_output"
+          digest="$(printf '%s\n' "$push_output" | sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' | tail -n 1)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'Development image: `%s@%s`\n' "${image%:*}" "$digest" >> "$GITHUB_STEP_SUMMARY"

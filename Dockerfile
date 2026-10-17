@@ -27,6 +27,8 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY --from=package /app/.venv /app/.venv
+COPY --from=package /app/alembic.ini /app/alembic.ini
+COPY --from=package /app/migrations /app/migrations
 USER 10001:10001
 EXPOSE 8000
 CMD ["primary-signal-web", "--surface", "public", "--host", "0.0.0.0", "--port", "8000"]
