@@ -362,6 +362,37 @@
 }
 
 /* Published reading pages use the approved Latest editorial rhythm. */
+.ps-demo-notice {
+  border-inline-start: 3px solid var(--ps-brand-blue-strong);
+  margin-block-end: 1.5rem;
+  padding: 0.65rem 0.9rem;
+  background: var(--ps-neutral-panel);
+  font-family: var(--ps-font-ui);
+  font-size: var(--ps-text-ui);
+}
+
+.ps-progress { width: min(100%, 76rem); margin-inline: auto; }
+.ps-progress-summary { border-block-end: 1px solid var(--ps-rule); padding-block: 1.4rem; }
+.ps-progress-summary p + p { margin-block-start: 0.5rem; color: var(--ps-neutral-muted); }
+.ps-progress-summary strong { font-family: var(--ps-font-editorial); font-size: 2.5rem; color: var(--ps-neutral-ink); }
+.ps-progress-list { list-style: none; margin: 0; padding: 0; }
+.ps-progress-item { border-block-end: 1px solid var(--ps-rule); padding-block: 1.8rem; }
+.ps-progress-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.ps-progress-heading h2 { font-family: var(--ps-font-editorial); font-size: var(--ps-text-section); line-height: var(--ps-leading-section); }
+.ps-progress-count { flex: none; text-align: end; font-family: var(--ps-font-ui); }
+.ps-progress-count strong { display: block; font-size: 1.5rem; }
+.ps-progress-count span { color: var(--ps-neutral-muted); font-size: var(--ps-text-meta); }
+.ps-progress-checks { list-style: none; margin-block-start: 1rem; padding: 0; }
+.ps-progress-checks li { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.8rem; padding-block: 0.4rem; }
+.ps-progress-state { font-family: var(--ps-font-ui); font-size: var(--ps-text-meta); font-weight: 700; }
+.ps-progress-checks small { display: block; margin-block-start: 0.1rem; color: var(--ps-neutral-muted); font-family: var(--ps-font-ui); font-size: var(--ps-text-meta); }
+.ps-progress-next { margin-block-start: 1rem; }
+.ps-progress-next strong { margin-inline-end: 0.4rem; font-family: var(--ps-font-ui); }
+@media (max-width: 40rem) {
+  .ps-progress-heading { display: block; }
+  .ps-progress-count { margin-block-start: 0.5rem; text-align: start; }
+}
+
 .ps-latest-page,
 .ps-story-detail {
   width: min(100%, 76rem);

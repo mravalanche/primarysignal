@@ -34,6 +34,7 @@ from primary_signal.web.admin.settings import (
     AdminEditorialDatabaseSettings,
 )
 from primary_signal.web.public import create_public_app
+from primary_signal.web.public.demo import DemoStoryReader
 
 LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +103,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--surface", choices=("public", "admin"), required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8000, type=int)
+    parser.add_argument(
+        "--demo", action="store_true", help="serve fictional stories in local development"
+    )
     return parser
 
 
@@ -162,6 +166,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         settings = Settings()
         configure_logging(level=settings.log_level.value)
+        if args.demo and (
+            args.surface != "public" or settings.environment is RuntimeEnvironment.PRODUCTION
+        ):
+            raise RuntimeError(
+                "the synthetic demo is only available on the non-production public surface"
+            )
         if args.surface == "public":
             if settings.environment is RuntimeEnvironment.PRODUCTION:
                 engine = create_database_engine(
@@ -172,7 +182,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                     assert_public_database_role(connection)
                 app = create_public_app(settings, story_reader=PostgresStoryReader(engine))
             else:
-                app = create_public_app(settings)
+                app = create_public_app(
+                    settings,
+                    story_reader=DemoStoryReader() if args.demo else None,
+                    demo_mode=args.demo,
+                )
         else:
             if settings.environment is RuntimeEnvironment.PRODUCTION:
                 if args.host not in {"127.0.0.1", "::1"}:

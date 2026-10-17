@@ -1,0 +1,66 @@
+{
+  "reviewed_on": "2026-10-17",
+  "reviewed_against": "origin/develop 7d468fa and the Docker sample-site change",
+  "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "Working Docker site with test data",
+      "next": "Use the local demo to review the reading flow, then build the disposable database publication stack.",
+      "checks": [
+        {"title": "Packaged image builds the public assets", "done": true, "evidence": "Dockerfile and existing image smoke script"},
+        {"title": "Loopback Compose starts without a database, feed or model", "done": true, "evidence": "compose.preview.yaml"},
+        {"title": "Normal Latest, story and tag routes show fictional sample content", "done": true, "evidence": "DemoStoryReader and public route tests"},
+        {"title": "Sample status stays visible on reading pages", "done": true, "evidence": "Latest and story templates"},
+        {"title": "Container smoke covers health, reading pages and stylesheet", "done": true, "evidence": "scripts/smoke_container_preview.sh passed on 2026-10-17"},
+        {"title": "Clean-start and teardown steps are documented", "done": true, "evidence": "README.md"}
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "Containerised publication with test data",
+      "next": "Add a disposable database seed and a browser-to-publication Compose smoke flow.",
+      "checks": [
+        {"title": "Database-backed publish and suppress flow works in tests", "done": true, "evidence": "tests/test_publication_browser_flow_postgres.py"},
+        {"title": "Disposable Compose stack runs migration, public site and private admin", "done": false, "evidence": "Pending"},
+        {"title": "Synthetic seed creates stories and source trails in PostgreSQL", "done": false, "evidence": "Pending"},
+        {"title": "Clean-start browser smoke proves publish, read and suppress", "done": false, "evidence": "Pending"}
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Live source ingestion",
+      "next": "Choose varied public feeds and define retention and deployment egress controls.",
+      "checks": [
+        {"title": "RSS/Atom parsing, retrieval and durable jobs have synthetic tests", "done": true, "evidence": "Feed, article and job test suites"},
+        {"title": "Production-safe processor and retriever runtime bindings are ready", "done": false, "evidence": "Pending"},
+        {"title": "Three varied source classes ingest into the article inventory", "done": false, "evidence": "Pending"},
+        {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Pending"},
+        {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Pending"}
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "Model evaluation and editorial enrichment",
+      "next": "Wait for ingested data, then label a reference corpus and compare models.",
+      "checks": [
+        {"title": "Representative reference corpus has independent labels", "done": false, "evidence": "Pending"},
+        {"title": "Candidate models are measured on the corpus", "done": false, "evidence": "Pending"},
+        {"title": "Validated synthesis, classification and clustering are versioned", "done": false, "evidence": "Pending"},
+        {"title": "Ranking, evidence signals and briefings pass editorial gates", "done": false, "evidence": "Pending"}
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "Release readiness",
+      "next": "Complete public deployment controls after the data and publication paths work.",
+      "checks": [
+        {"title": "Admin authentication and public route separation have tests", "done": true, "evidence": "Admin authentication and route-manifest tests"},
+        {"title": "Public deployment network and container boundaries pass probes", "done": false, "evidence": "Pending"},
+        {"title": "Core flows pass responsive and accessibility review", "done": false, "evidence": "Pending"},
+        {"title": "Encrypted backup restores into a clean database", "done": false, "evidence": "Pending"},
+        {"title": "Operational runbook and release gates are complete", "done": false, "evidence": "Pending"}
+      ]
+    }
+  ]
+}

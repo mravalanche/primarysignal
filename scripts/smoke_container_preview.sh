@@ -23,7 +23,19 @@ curl --fail --silent --show-error "http://127.0.0.1:$port/__dev/preview" \
   -o "$response_dir/page.html"
 grep -q 'Latest reporting' "$response_dir/page.html"
 grep -q 'Identity service fix follows targeted exploitation reports' "$response_dir/page.html"
+curl --fail --silent --show-error "http://127.0.0.1:$port/" -o "$response_dir/latest.html"
+grep -q 'Synthetic demonstration' "$response_dir/latest.html"
+grep -q 'Identity service fix follows targeted exploitation reports' "$response_dir/latest.html"
+curl --fail --silent --show-error "http://127.0.0.1:$port/stories/identity-service-fix" -o "$response_dir/story.html"
+grep -q 'Sample identity service advisory' "$response_dir/story.html"
+curl --fail --silent --show-error "http://127.0.0.1:$port/progress" -o "$response_dir/progress.html"
+grep -q 'Project progress' "$response_dir/progress.html"
+grep -q 'exit checks complete' "$response_dir/progress.html"
+curl --fail --silent --show-error "http://127.0.0.1:$port/health/live" -o /dev/null
+for hidden_path in /admin/login /docs /openapi.json; do
+  test "$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$port$hidden_path")" = 404
+done
 curl --fail --silent --show-error "http://127.0.0.1:$port/assets/public/public.css" \
   -o "$response_dir/public.css"
 grep -q -- '--ps-brand-blue' "$response_dir/public.css"
-printf 'Container preview, packaged migration, synthetic page, and CSS passed on loopback port %s.\n' "$port"
+printf 'Container preview, packaged migration, reading pages, progress, health, and CSS passed on loopback port %s.\n' "$port"

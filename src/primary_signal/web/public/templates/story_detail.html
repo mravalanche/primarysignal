@@ -1,8 +1,9 @@
 {% extends "layouts/public.html" %}
 {% block title %}{{ story.headline }} — Primary Signal{% endblock %}
-{% block masthead_context %}<nav aria-label="Primary"><a href="/">Latest reporting</a></nav>{% endblock %}
+{% block masthead_context %}<nav aria-label="Primary"><a href="/">Latest reporting</a>{% if demo_mode %} · <a href="/progress">Project progress</a>{% endif %}</nav>{% endblock %}
 {% block content %}
   <article class="ps-story-detail ps-story-type-{{ story.story_type.value }}">
+    {% if demo_mode %}<p class="ps-demo-notice" role="note">Synthetic demonstration · This story and its source are fictional.</p>{% endif %}
     <p><a class="ps-story-back" href="/">← Latest reporting</a></p>
     <header class="ps-story-detail-header">
       <p class="ps-story-kicker">{{ story_types[story.story_type] }} · {{ topics[story.primary_topic] }}{% if story.uk_relevant %} · UK impact{% endif %}</p>
