@@ -131,16 +131,24 @@ def main() -> None:
             f"{name} must use the local runtime build",
         )
         require("image" not in local_service, f"{name} local service must not pull an image")
-        require(published_service.pop("image", None) == IMAGE_DIGEST, f"{name} image digest changed")
-        require(published_service.pop("pull_policy", None) == "always", f"{name} pull policy changed")
+        require(
+            published_service.pop("image", None) == IMAGE_DIGEST, f"{name} image digest changed"
+        )
+        require(
+            published_service.pop("pull_policy", None) == "always", f"{name} pull policy changed"
+        )
         require("build" not in published_service, f"{name} published service must not build")
-        require(local_service == published_service, f"{name} runtime controls differ between models")
+        require(
+            local_service == published_service, f"{name} runtime controls differ between models"
+        )
     for name in ("database", "admin_tls"):
         require(
             local["services"][name] == published["services"][name],
             f"{name} controls differ between models",
         )
-    print("Local and published-image Compose models keep the same security boundaries (placeholder config only).")
+    print(
+        "Local and published-image Compose models keep the same security boundaries (placeholder config only)."
+    )
 
 
 if __name__ == "__main__":
