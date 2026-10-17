@@ -27,3 +27,4 @@ for (const [input, output] of builds) {
 const commonStatic = resolve(root, "src/primary_signal/web/common/static");
 await mkdir(commonStatic, { recursive: true });
 await cp(htmx, resolve(commonStatic, "htmx.min.js"));
+await import("./build-icons.mjs");

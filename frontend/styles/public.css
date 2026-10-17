@@ -30,9 +30,10 @@
 }
 
 .ps-brand-mark {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 36px;
+  height: 36px;
   flex: none;
+  shape-rendering: crispEdges;
 }
 
 .ps-brand-mark .ps-pixel { fill: var(--ps-neutral-rule); }
@@ -41,24 +42,24 @@
 
 /* The grid and its colours switch only between complete pixel states. */
 @media (prefers-reduced-motion: no-preference) {
-  .ps-brand-mark--entrance .ps-pixel {
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel {
     animation: ps-pixel-appear 0.001s steps(1, end) both var(--grid-delay, 0s),
       ps-pixel-paint 0.001s steps(1, end) both var(--paint-delay, 0s);
   }
-  .ps-brand-mark--entrance .ps-pixel--r3c1,
-  .ps-brand-mark--entrance .ps-pixel--r3c2,
-  .ps-brand-mark--entrance .ps-pixel--r3c3 { --grid-delay: 0s; }
-  .ps-brand-mark--entrance .ps-pixel--r2c1,
-  .ps-brand-mark--entrance .ps-pixel--r2c2,
-  .ps-brand-mark--entrance .ps-pixel--r2c3 { --grid-delay: 0.14s; }
-  .ps-brand-mark--entrance .ps-pixel--r1c1,
-  .ps-brand-mark--entrance .ps-pixel--r1c2,
-  .ps-brand-mark--entrance .ps-pixel--r1c3 { --grid-delay: 0.28s; }
-  .ps-brand-mark--entrance .ps-pixel--r3c2 { --paint-delay: 0.48s; }
-  .ps-brand-mark--entrance .ps-pixel--r2c2 { --paint-delay: 0.59s; }
-  .ps-brand-mark--entrance .ps-pixel--r1c2 { --paint-delay: 0.70s; }
-  .ps-brand-mark--entrance .ps-pixel--r2c3 { --paint-delay: 0.81s; }
-  .ps-brand-mark--entrance .ps-pixel--r1c3 { --paint-delay: 0.92s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c1,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c2,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c3 { --grid-delay: 0s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c1,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c2,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c3 { --grid-delay: 0.14s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c1,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c2,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c3 { --grid-delay: 0.28s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c2 { --paint-delay: 0.48s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c2 { --paint-delay: 0.59s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c2 { --paint-delay: 0.70s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c3 { --paint-delay: 0.81s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c3 { --paint-delay: 0.92s; }
   @keyframes ps-pixel-appear {
     from { visibility: hidden; }
     to { visibility: visible; }
@@ -695,7 +696,7 @@
 }
 .ps-source-panel[hidden] { display: none; }
 .ps-source-loading { display: flex; align-items: center; gap: 0.65rem; padding: 0.8rem; font-size: var(--ps-text-ui); }
-.ps-source-loading .ps-brand-mark { width: 1.5rem; height: 1.5rem; }
+.ps-source-loading .ps-brand-mark { width: 36px; height: 36px; }
 .ps-source-panel.align-end { inset-inline: auto 0; }
 .ps-source-panel.align-above { inset-block: auto 100%; }
 .ps-source-panel-content { padding: 0.6rem; }

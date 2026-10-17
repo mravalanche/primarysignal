@@ -4,6 +4,10 @@ const generated = [
   "src/primary_signal/web/public/static/public.css",
   "src/primary_signal/web/admin/static/admin.css",
   "src/primary_signal/web/common/static/htmx.min.js",
+  "src/primary_signal/web/public/static/brand/favicon-16.png",
+  "src/primary_signal/web/public/static/brand/favicon-32.png",
+  "src/primary_signal/web/public/static/brand/favicon-48.png",
+  "src/primary_signal/web/public/static/brand/apple-touch-icon.png",
 ];
 const before = await Promise.all(generated.map((path) => readFile(path)));
 
