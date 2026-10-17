@@ -9,8 +9,11 @@ const brand = await readFile("src/primary_signal/web/public/templates/components
 const styles = await readFile("frontend/styles/public.css", "utf8");
 const entranceScript = layout.match(/<script>\s*([\s\S]*?primary-signal-brand-last-seen[\s\S]*?)<\/script>/)?.[1];
 
-function visit(storage, now, { reducedMotion = false, storageFails = false } = {}) {
+function visit(storage, now, options = {}) {
+  const { reducedMotion = false, storageFails = false, sessionFails = false, session = new Map(), path = "/" } = options;
   const classes = new Set();
+  let clickListener;
+  let readyListener;
   const localStorage = {
     getItem(key) {
       if (storageFails) throw new Error("storage unavailable");
@@ -21,27 +24,78 @@ function visit(storage, now, { reducedMotion = false, storageFails = false } = {
       storage.set(key, value);
     },
   };
+  const sessionStorage = {
+    getItem(key) {
+      if (sessionFails) throw new Error("session storage unavailable");
+      return session.get(key) ?? null;
+    },
+    setItem(key, value) {
+      if (sessionFails) throw new Error("session storage unavailable");
+      session.set(key, value);
+    },
+    removeItem(key) {
+      if (sessionFails) throw new Error("session storage unavailable");
+      session.delete(key);
+    },
+  };
   runInNewContext(entranceScript, {
     Date: { now: () => now },
-    document: { documentElement: { classList: { add: (name) => classes.add(name) } } },
+    document: {
+      documentElement: { classList: { add: (name) => classes.add(name) } },
+      addEventListener: (name, callback) => { if (name === "DOMContentLoaded") readyListener = callback; },
+      querySelector: (name) => name === ".ps-brand"
+        ? { addEventListener: (event, callback) => { if (event === "click") clickListener = callback; } }
+        : null,
+    },
     localStorage,
+    sessionStorage,
+    location: { pathname: path },
     matchMedia: () => ({ matches: !reducedMotion }),
   });
-  return classes.has("ps-brand-entrance");
+  readyListener?.();
+  return {
+    animated: classes.has("ps-brand-entrance"),
+    click: (event = {}) => clickListener?.({ button: 0, currentTarget: { pathname: "/" }, ...event }),
+  };
 }
 
 test("the mark enters once per 30-minute browsing visit across tabs", () => {
   assert.ok(entranceScript);
   const storage = new Map();
-  assert.equal(visit(storage, 1_000_000), true);
-  assert.equal(visit(storage, 1_010_000), false);
-  assert.equal(visit(storage, 1_010_000 + 29 * 60_000), false);
-  assert.equal(visit(storage, 1_010_000 + 60 * 60_000), true);
+  assert.equal(visit(storage, 1_000_000).animated, true);
+  assert.equal(visit(storage, 1_010_000).animated, false);
+  assert.equal(visit(storage, 1_010_000 + 29 * 60_000).animated, false);
+  assert.equal(visit(storage, 1_010_000 + 60 * 60_000).animated, true);
+});
+
+test("a plain masthead logo click replays once on home arrival", () => {
+  const storage = new Map();
+  const session = new Map();
+  visit(storage, 1_000_000, { session });
+  const current = visit(storage, 1_010_000, { session });
+  assert.equal(current.animated, false);
+  current.click();
+  assert.equal(visit(storage, 1_010_100, { session }).animated, true);
+  assert.equal(visit(storage, 1_010_200, { session }).animated, false);
+
+  const modified = visit(storage, 1_020_000, { session });
+  modified.click({ ctrlKey: true });
+  assert.equal(visit(storage, 1_020_100, { session }).animated, false);
+
+  current.click();
+  assert.equal(visit(storage, 1_020_200, { session, path: "/progress" }).animated, false);
+  assert.equal(visit(storage, 1_020_300, { session }).animated, false);
+
+  const prefixed = visit(storage, 1_030_000, { session, path: "/primarysignal/latest" });
+  prefixed.click({ currentTarget: { pathname: "/primarysignal/" } });
+  assert.equal(visit(storage, 1_030_100, { session, path: "/primarysignal/" }).animated, true);
+  assert.equal(visit(storage, 1_030_200, { session, path: "/primarysignal/" }).animated, false);
 });
 
 test("the complete mark stays static when motion or storage is unavailable", () => {
-  assert.equal(visit(new Map(), 1_000_000, { reducedMotion: true }), false);
-  assert.equal(visit(new Map(), 1_000_000, { storageFails: true }), false);
+  assert.equal(visit(new Map(), 1_000_000, { reducedMotion: true }).animated, false);
+  assert.equal(visit(new Map(), 1_000_000, { storageFails: true }).animated, false);
+  assert.equal(visit(new Map(), 1_000_000, { sessionFails: true }).animated, false);
   assert.match(styles, /\.ps-brand-entrance \.ps-brand-mark--entrance \.ps-pixel/);
 });
 
