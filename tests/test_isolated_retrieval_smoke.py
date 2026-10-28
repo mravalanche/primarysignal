@@ -31,6 +31,8 @@ def fixture(tmp_path: Path) -> IsolatedRetrievalFixture:
             transit_example=False,
             live_three_sources=False,
             network_names=smoke.NETWORKS,
+            database_name="synthetic_boundary_test",
+            migration_role="synthetic_migration_test",
         ),
     )
 
@@ -892,7 +894,7 @@ def private_live_function(name: str) -> Any:
     import ast
 
     tree = ast.parse(smoke.LIVE_DATABASE_PROBE)
-    node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
+    node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
     namespace: dict[str, Any] = {}
     exec(  # noqa: S102 - execute only one function parsed from our trusted fixture program.
         compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])), name, "exec"),
@@ -1113,8 +1115,12 @@ def test_live_cli_emits_only_aggregate_counts_on_every_outcome(
         "source_classes_passed",
         "fulltext_search_checks",
         "cleanup_passes",
+        *{"failure_" + category for category in smoke.FAILURE_CATEGORIES},
     }
     assert all(type(count) is int for count in summary.values())
+    assert sum(summary["failure_" + category] for category in smoke.FAILURE_CATEGORIES) == (
+        0 if failure is None else 1
+    )
     assert summary["cleanup_passes"] == (0 if failure in ("cleanup", "cleanup_unexpected") else 1)
 
 
@@ -1150,3 +1156,115 @@ def test_live_temp_directory_exit_failure_cannot_report_success(
     output = capsys.readouterr()
     assert canary not in output.out + output.err
     assert json.loads(output.out)["cleanup_passes"] == 0
+
+
+@pytest.mark.parametrize("category", smoke.FAILURE_CATEGORIES)
+def test_private_category_response_is_strict_and_stops(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, category: str
+) -> None:
+    import subprocess
+
+    def run(*_args: Any, **kwargs: Any) -> Any:
+        assert kwargs["check"] is False
+        return subprocess.CompletedProcess(
+            [], 1, json.dumps({"failure": category}), "PRIVATE diagnostics are never forwarded"
+        )
+
+    monkeypatch.setattr(smoke, "_run", run)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_probe(transit_fixture(tmp_path), "verify_article", [], [])
+    assert failure.value.category == category
+    assert "PRIVATE" not in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "returncode,payload",
+    [
+        (0, {"failure": "fetch"}),
+        (1, {"failure": "other"}),
+        (1, {"failure": "search", "body": "PRIVATE"}),
+        (1, {"failure": True}),
+        (1, {"unexpected": "PRIVATE"}),
+    ],
+)
+def test_unknown_or_success_marked_failure_is_unexpected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, returncode: int, payload: dict[str, Any]
+) -> None:
+    import subprocess
+
+    def run(*_args: Any, **_kwargs: Any) -> Any:
+        return subprocess.CompletedProcess([], returncode, json.dumps(payload), "PRIVATE")
+
+    monkeypatch.setattr(smoke, "_run", run)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_probe(transit_fixture(tmp_path), "verify_article", [], [])
+    assert failure.value.category == "unexpected"
+    assert "PRIVATE" not in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "payload", ["not JSON", '{"failure":"fetch"}\n{"failure":"search"}', '["PRIVATE"]']
+)
+def test_private_failure_parser_never_exposes_invalid_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, payload: str
+) -> None:
+    import subprocess
+
+    def run(*_args: Any, **_kwargs: Any) -> Any:
+        return subprocess.CompletedProcess([], 1, payload, "PRIVATE")
+
+    monkeypatch.setattr(smoke, "_run", run)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_probe(transit_fixture(tmp_path), "verify_article", [], [])
+    assert failure.value.category == "unexpected"
+
+
+def test_only_first_failure_category_is_recorded() -> None:
+    counts: dict[str, int] = {}
+    smoke._record_live_failure(counts, "search")
+    smoke._record_live_failure(counts, "unexpected")
+    assert counts == {
+        "failure_" + category: int(category == "search") for category in smoke.FAILURE_CATEGORIES
+    }
+
+
+@pytest.mark.parametrize("value", [True, -1, 2, "1"])
+def test_failure_counts_reject_boolean_and_unbounded_values(value: Any) -> None:
+    with pytest.raises(smoke.SmokeFailure, match="aggregate failure counter"):
+        smoke._record_live_failure({"failure_fetch": value}, "search")
+
+
+def test_controlled_failure_survives_final_count_collection_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    f, counts, _events = mock_live_run(monkeypatch, tmp_path)
+    original = smoke._live_probe
+
+    def probe(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        if args[1] == "verify_article":
+            raise smoke.LiveProofFailure("search")
+        if args[1] == "counts":
+            raise smoke.LiveProofFailure("unexpected")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(smoke, "_live_probe", probe)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_sources(f, counts)
+    assert failure.value.category == "search"
+    assert counts["failure_search"] == 1 and counts["failure_unexpected"] == 0
+
+
+def test_bad_private_mode_emits_only_unexpected_json(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(  # noqa: S603 - execute our fixed private program, never a shell.
+        [sys.executable, "-c", smoke.LIVE_DATABASE_PROBE],
+        input=json.dumps({"mode": "PRIVATE canary"}),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert result.stdout.strip() == json.dumps({"failure": "unexpected"})
+    assert result.stderr == ""

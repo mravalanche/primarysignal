@@ -57,6 +57,13 @@ three source classes and cleanup pass. Production runtime readiness, unattended
 fetching, target deployment controls and retention/backup operation remain
 separate work. See [the isolation and transit proof](isolated-retrieval.md).
 
+The result also contains fixed integer failure counters for fetch, content,
+provenance, search, selection and unexpected errors. The private probe returns
+only a known category on failure; raw errors and real article values never
+become public output. These counters identify the stage of a new bounded
+measurement, not the cause of a prior run whose private history was removed.
+They do not authorize retries or source substitutions.
+
 ## Verification checkpoint
 
 On 2026-10-28, one quiet bounded invocation returned failure after three feed
@@ -74,3 +81,19 @@ The implementation passed 1,415 automated tests with no skips, including four
 PostgreSQL preflight cases using synthetic data and the actual private proof
 program. Those tests verify the tool's bounds and database logic; they do not
 substitute for the missing real-source result.
+
+## Categorized diagnostic checkpoint
+
+After adding fixed failure counters and six synthetic PostgreSQL category
+preflights, one separately reviewed fresh invocation used the same fixed plan.
+On 2026-10-28 it returned failure after three feed attempts and three article
+attempts, with two source classes and full-text checks passing. It reported one
+fetch-category failure, zero content/provenance/search/selection/unexpected
+failures, and successful cleanup. No substitution, fallback or automatic retry
+loop was used; no further live invocation followed this measurement.
+
+This identifies the new result's failed stage, not an HTTP status or provider
+cause. It does not recover the first run's discarded history. The three-source
+exit check remains open. The updated offline gate passed 1,438 tests with no
+skips, including six PostgreSQL category preflights; dependencies are unchanged
+from the prior clean advisory and package checks.

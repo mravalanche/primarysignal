@@ -19,10 +19,12 @@ from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.engine import make_url
 
 from primary_signal.ingestion.article_handler import ArticleRetrievalHandler
-from primary_signal.ingestion.feed_handler import PollFeedHandler
+from primary_signal.ingestion.feed_handler import FeedFetchError, PollFeedHandler
 from primary_signal.ingestion.feed_polls import FeedFetchResult, FeedPollTarget
 from primary_signal.ingestion.models import Article, ContentVersion, FetchAttempt
 from primary_signal.jobs.catalogue import build_default_catalogue
+from primary_signal.jobs.contracts import JobFailure
+from primary_signal.jobs.handlers import JobProcessingError
 from primary_signal.jobs.models import Job, JobAttempt
 from primary_signal.jobs.transactions import TransactionalJobQueue
 from primary_signal.retrieval.article import ArticleFetchResult
@@ -42,7 +44,7 @@ class SyntheticProbe:
     selected: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
 
     def run(
-        self, mode: str, *, class_key: str | None = None, rejected: bool = False
+        self, mode: str, *, class_key: str | None = None, failure: str | None = None
     ) -> dict[str, Any]:
         params: dict[str, object] = {
             "mode": mode,
@@ -63,10 +65,20 @@ class SyntheticProbe:
             timeout=30,
             check=False,
         )
-        if rejected:
-            assert result.returncode != 0, "synthetic invalid evidence was accepted"
-            assert not result.stdout, "failed proof must not emit success evidence"
-            return {}
+        if failure is not None:
+            assert failure in {
+                "fetch",
+                "content",
+                "provenance",
+                "search",
+                "selection",
+                "unexpected",
+            }
+            assert result.returncode == 1, "synthetic invalid evidence was accepted"
+            assert len(result.stdout.splitlines()) == 1
+            assert json.loads(result.stdout) == {"failure": failure}
+            assert result.stderr == "", "private proof failure emitted diagnostics"
+            return {"failure": failure}
         assert result.returncode == 0, "synthetic database proof failed"
         return json.loads(result.stdout)
 
@@ -255,7 +267,7 @@ def test_live_probe_proves_three_synthetic_classes_body_search_and_deferred_jobs
             "article_passed": 1,
             "search_passed": 1,
         }
-        probe.run("activate_article", class_key=key, rejected=True)
+        probe.run("activate_article", class_key=key, failure="selection")
     assert probe.run("complete") == {
         "feed_attempts": 3,
         "article_attempts": 3,
@@ -287,17 +299,71 @@ def test_live_probe_proves_three_synthetic_classes_body_search_and_deferred_jobs
 
 @pytest.mark.postgres
 @pytest.mark.parametrize(
-    ("title", "body"),
+    ("title", "body", "failure"),
     [
-        ("Access denied", "Synthetic quartz challenge response."),
-        ("Synthetic report", "Please enable JavaScript and cookies before proceeding."),
-        ("Synthetic identical title", "Synthetic identical title"),
+        ("Access denied", "Synthetic quartz challenge response.", "content"),
+        ("Synthetic report", "Please enable JavaScript and cookies before proceeding.", "content"),
+        ("Synthetic identical title", "Synthetic identical title", "search"),
     ],
 )
 def test_live_probe_rejects_challenges_and_title_only_search(
-    probe: SyntheticProbe, title: str, body: str
+    probe: SyntheticProbe, title: str, body: str, failure: str
 ) -> None:
     queue = _poll_sources(probe)
     _retrieve(probe, queue, "authority", title, body)
-    probe.run("verify_article", class_key="authority", rejected=True)
+    probe.run("verify_article", class_key="authority", failure=failure)
+    assert probe.run("counts") == {"feed_attempts": 3, "article_attempts": 1}
+
+
+class SyntheticFetchFailure:
+    def fetch_article(self, url: str) -> ArticleFetchResult:
+        assert url.endswith("/selected")
+        raise FeedFetchError("fetch_timeout")
+
+
+@pytest.mark.postgres
+def test_live_probe_classifies_real_persisted_fetch_failure_without_details(
+    probe: SyntheticProbe,
+) -> None:
+    queue = _poll_sources(probe)
+    assert probe.run("activate_article", class_key="authority") == {"activated": 1}
+    lease = queue.claim(queue="retrieval", worker_id=f"synthetic:{uuid.uuid4()}")
+    assert lease is not None
+    handler = ArticleRetrievalHandler(probe.engine, SyntheticFetchFailure())
+    with pytest.raises(JobProcessingError) as raised:
+        handler(lease)
+    assert raised.value.failure == JobFailure(code="fetch_timeout")
+    queue.fail(lease, raised.value.failure, on_failure=raised.value.on_failure)
+    probe.run("verify_article", class_key="authority", failure="fetch")
+    assert probe.run("counts") == {"feed_attempts": 3, "article_attempts": 1}
+    with probe.engine.connect() as connection:
+        assert (
+            connection.execute(select(func.count()).select_from(ContentVersion)).scalar_one() == 0
+        )
+        assert connection.execute(select(func.count()).select_from(FetchAttempt)).scalar_one() == 1
+
+
+@pytest.mark.postgres
+def test_live_probe_classifies_wrong_source_provenance_without_identifiers(
+    probe: SyntheticProbe,
+) -> None:
+    probe.run("unsupported-synthetic-mode", failure="unexpected")
+    queue = _poll_sources(probe)
+    _retrieve(
+        probe,
+        queue,
+        "authority",
+        "Synthetic report",
+        "Quartz cobalt proves synthetic source attribution.",
+    )
+    selected = next(item for item in probe.selected if item["class_key"] == "authority")
+    selected["class_key"] = "vendor"
+    try:
+        probe.run("verify_article", class_key="vendor", failure="provenance")
+    finally:
+        selected["class_key"] = "authority"
+    assert probe.run("verify_article", class_key="authority") == {
+        "article_passed": 1,
+        "search_passed": 1,
+    }
     assert probe.run("counts") == {"feed_attempts": 3, "article_attempts": 1}

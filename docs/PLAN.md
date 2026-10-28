@@ -484,8 +484,10 @@ actual egress routes and HTTPS with normal TLS/pinning, after the synthetic
 checks. The bounded three-source verifier is now implemented with synthetic database
 preflight coverage. Its first real run passed only two source/search checks
 within the fixed three-feed/three-article attempt budget and cleaned up. The
-three-source exit check remains open; resolve that incomplete proof without
-retaining article processing history or silently retrying/substituting sources.
+three-source exit check remains open. A fresh categorized diagnostic also
+passed only two source/search checks and reported one fetch-stage failure,
+with cleanup successful. Investigate that stage without retaining article
+history, bypassing controls or silently retrying/substituting providers.
 Production readiness remains open. Before
 unattended live polling, verify deployment egress controls and service readiness
 on the target deployment. Source-disable serialization and fixed-policy
