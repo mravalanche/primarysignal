@@ -13,10 +13,11 @@ from scripts.ingestion_recovery_fixture import IngestionRecoveryFixture
 IDENTIFIER = "1" * 64
 
 
-def fixture(tmp_path: Path) -> IngestionRecoveryFixture:
+def fixture(tmp_path: Path, *, mode: str = "article") -> IngestionRecoveryFixture:
     return cast(
         IngestionRecoveryFixture,
         SimpleNamespace(
+            mode=mode,
             root=tmp_path,
             directory=tmp_path,
             project="synthetic-project",
@@ -337,3 +338,158 @@ def test_release_rejects_invalid_acknowledgement_without_more_requests(
     with pytest.raises(smoke.SmokeFailure, match="synthetic fetch control"):
         smoke._control(fixture(tmp_path), "release")  # pyright: ignore[reportPrivateUsage]
     assert operations == ["release"]
+
+
+def feed_result(**changes: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "status": "succeeded",
+        "attempt_count": 2,
+        "attempts": ["lease_expired", "succeeded"],
+        "fetches": [],
+        "version_count": 0,
+        "current": None,
+        "search_count": 0,
+        "polls": ["succeeded"],
+        "entry_count": 1,
+        "entry_matches": True,
+        "article_count": 1,
+        "canonical_url_count": 1,
+        "canonical_matches": True,
+        "successor_count": 1,
+        "successor_matches": True,
+        "successor_attempt_count": 0,
+        "total_jobs": 2,
+    }
+    result.update(changes)
+    return result
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"polls": ["running"]},
+        {"entry_count": 1},
+        {"article_count": 1},
+        {"canonical_url_count": 1},
+        {"successor_count": 1},
+        {"total_jobs": 2},
+    ],
+)
+def test_feed_partial_guard_counts_every_atomic_descendant(change: dict[str, Any]) -> None:
+    snapshot: dict[str, Any] = {
+        "fetches": [],
+        "version_count": 0,
+        "current": None,
+        "search_count": 0,
+        "polls": [],
+        "entry_count": 0,
+        "article_count": 0,
+        "canonical_url_count": 0,
+        "successor_count": 0,
+        "total_jobs": 1,
+    }
+    snapshot.update(change)
+    with pytest.raises(smoke.SmokeFailure, match="partial feed observations"):
+        smoke._no_observations(snapshot, "feed")  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"polls": ["succeeded", "succeeded"]},
+        {"entry_count": 2},
+        {"entry_matches": False},
+        {"article_count": 2},
+        {"canonical_url_count": 2},
+        {"canonical_matches": False},
+        {"successor_count": 0},
+        {"successor_count": 2},
+        {"successor_matches": False},
+        {"successor_attempt_count": 1},
+        {"total_jobs": 3},
+        {"attempts": ["lease_expired", "succeeded", "succeeded"]},
+    ],
+)
+def test_feed_completion_requires_one_linked_untouched_successor(change: dict[str, Any]) -> None:
+    snapshot = feed_result(**change)
+    with pytest.raises(smoke.SmokeFailure, match="recovered feed result"):
+        smoke._complete(snapshot, "feed")  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"fetches": ["fetched"]},
+        {"version_count": 1},
+        {"current": "synthetic-version"},
+        {"search_count": 1},
+    ],
+)
+def test_feed_mode_cannot_claim_article_processing_or_search(change: dict[str, Any]) -> None:
+    with pytest.raises(smoke.SmokeFailure, match="partial article observations"):
+        smoke._complete(feed_result(**change), "feed")  # pyright: ignore[reportPrivateUsage]
+
+
+def test_feed_completion_accepts_discovery_without_article_fetch() -> None:
+    smoke._complete(feed_result(), "feed")  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ([], ["article"]),
+        (["--mode", "feed"], ["feed"]),
+        (["--mode", "all"], ["article", "feed"]),
+    ],
+)
+def test_cli_keeps_article_default_and_explicit_modes(
+    monkeypatch: pytest.MonkeyPatch, arguments: list[str], expected: list[str]
+) -> None:
+    modes: list[str] = []
+
+    def run_case(_root: Path, mode: str) -> int:
+        modes.append(mode)
+        return 0
+
+    monkeypatch.setattr(smoke, "_case", run_case)
+    assert smoke.main(arguments) == 0
+    assert modes == expected
+
+
+def test_all_modes_use_separate_projects_images_and_private_directories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    created: list[tuple[str, Path, str, str]] = []
+
+    def create(
+        root: Path, directory: Path, project: str, *, image: str, mode: str
+    ) -> IngestionRecoveryFixture:
+        assert directory.is_dir() and directory.stat().st_mode & 0o777 == 0o700
+        created.append((project, directory, image, mode))
+        return fixture(tmp_path, mode=mode)
+
+    def no_op(*args: Any) -> None:
+        pass
+
+    monkeypatch.setattr(smoke, "create_fixture", create)
+    for name in ("validate_fixture_models", "_fresh", "_exercise", "_cleanup"):
+        monkeypatch.setattr(smoke, name, no_op)
+    assert smoke.main(["--mode", "all"]) == 0
+    assert [item[3] for item in created] == ["article", "feed"]
+    for index in range(3):
+        assert created[0][index] != created[1][index]
+    assert not any(item[1].exists() for item in created)
+
+
+def test_feed_fence_probe_receives_feed_identity_privately(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def compose(_fixture: IngestionRecoveryFixture, *args: str, **kwargs: Any) -> str:
+        parameters = json.loads(kwargs["input_text"])
+        assert parameters["scenario"] == "feed"
+        assert parameters["feed_id"] == str(smoke.FEED_ID)
+        assert args[:5] == ("run", "--rm", "--no-deps", "-T", "worker")
+        return '{"fenced":true}'
+
+    monkeypatch.setattr(smoke, "_compose", compose)
+    assert smoke._probe(fixture(tmp_path, mode="feed"), "fence", lease={}) == {"fenced": True}  # pyright: ignore[reportPrivateUsage]

@@ -14,16 +14,22 @@ import pytest
 from scripts import ingestion_recovery_fixture as recovery
 from scripts.publication_smoke_fixture import FixtureBoundaryError
 
+from primary_signal.ingestion.feed_parser import parse_feed
+from primary_signal.ingestion.feed_polls import FeedPollTarget
 from primary_signal.retrieval.client import RetrieverClient
-from primary_signal.retrieval.protocol import ARTICLE_FETCH_CAPABILITY
+from primary_signal.retrieval.protocol import ARTICLE_FETCH_CAPABILITY, FEED_FETCH_CAPABILITY
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture
-def fixture(tmp_path: Path) -> recovery.IngestionRecoveryFixture:
+@pytest.fixture(params=["article", "feed"])
+def fixture(tmp_path: Path, request: pytest.FixtureRequest) -> recovery.IngestionRecoveryFixture:
     return recovery.create_fixture(
-        ROOT, tmp_path / "fixture", "synthetic-ingestion", image="synthetic-ingestion:local"
+        ROOT,
+        tmp_path / "fixture",
+        "synthetic-ingestion",
+        image="synthetic-ingestion:local",
+        mode=request.param,
     )
 
 
@@ -82,11 +88,21 @@ def test_synthetic_models_keep_server_credential_free_and_worker_restricted(
     ):
         assert private not in server
     login = (fixture.directory / "bootstrap-logins.sql").read_text()
-    assert (
-        f"GRANT primary_signal_cap_queue_consume,primary_signal_cap_article_persist TO {recovery.PROCESSOR_ROLE}"
-        in login
+    if fixture.mode == "article":
+        capabilities = "primary_signal_cap_queue_consume,primary_signal_cap_article_persist"
+        assert "primary_signal_cap_queue_submit" not in login
+        assert "primary_signal_cap_feed_poll" not in login
+    else:
+        capabilities = (
+            "primary_signal_cap_queue_consume,primary_signal_cap_queue_submit,"
+            "primary_signal_cap_feed_poll"
+        )
+        assert "primary_signal_cap_article_persist" not in login
+        assert "primary_signal_cap_feed_schedule" not in login
+    assert f"GRANT {capabilities} TO {recovery.PROCESSOR_ROLE}" in login
+    assert fixture.expected_compose["services"]["worker"]["command"][2] == (
+        "ingestion" if fixture.mode == "feed" else "retrieval"
     )
-    assert "primary_signal_cap_queue_submit" not in login
     assert fixture.directory.stat().st_mode & 0o777 == 0o700
     assert (fixture.directory / "server.py").stat().st_mode & 0o777 == 0o444
 
@@ -207,9 +223,16 @@ def test_changed_fixture_content_or_symlink_cannot_reach_containers(
 
 
 @pytest.fixture
-def server() -> Iterator[Any]:
+def server(request: pytest.FixtureRequest) -> Iterator[Any]:
     namespace: dict[str, Any] = {"__name__": "synthetic_server_test"}
-    exec(compile(recovery.server_source(), "synthetic_server.py", "exec"), namespace)  # noqa: S102 - generated, fixed local fixture code only.
+    exec(  # noqa: S102 - generated, fixed local fixture code only.
+        compile(
+            recovery.server_source(getattr(request, "param", "article")),
+            "synthetic_server.py",
+            "exec",
+        ),
+        namespace,
+    )
     instance = namespace["FixtureServer"](0)
     thread = threading.Thread(target=instance.serve_forever, daemon=True)
     thread.start()
@@ -269,6 +292,7 @@ def test_server_holds_only_first_fixed_article_request_and_returns_valid_extract
         requester.join(timeout=2)
 
 
+@pytest.mark.parametrize("server", ["article", "feed"], indirect=True)
 @pytest.mark.parametrize(
     "body",
     [
@@ -281,7 +305,9 @@ def test_server_holds_only_first_fixed_article_request_and_returns_valid_extract
 def test_server_rejects_nonfixture_or_unbounded_payload_without_starting_hold(
     server: Any, body: bytes, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _request(server, "POST", "/v1/articles/fetch", body) == (
+    feed = _request(server, "GET", "/v1/ready")[1]["capabilities"] == [FEED_FETCH_CAPABILITY]
+    endpoint = "/v1/feeds/fetch" if feed else "/v1/articles/fetch"
+    assert _request(server, "POST", endpoint, body) == (
         400,
         {"error": "invalid_request"},
     )
@@ -291,3 +317,71 @@ def test_server_rejects_nonfixture_or_unbounded_payload_without_starting_hold(
     )
     assert _request(server, "GET", "/unknown")[0] == 404
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("server", ["feed"], indirect=True)
+def test_feed_server_holds_first_request_then_returns_real_parseable_feed(server: Any) -> None:
+    origin = f"http://127.0.0.1:{server.server_port}"
+    with RetrieverClient(origin) as client:
+        client.require_ready(FEED_FETCH_CAPABILITY)
+    assert _request(server, "GET", "/v1/ready")[1]["capabilities"] == [FEED_FETCH_CAPABILITY]
+    body = json.dumps({"url": recovery.FEED_URL, "etag": None, "last_modified": None}).encode()
+    results: list[tuple[int, dict[str, Any]]] = []
+    requester = threading.Thread(
+        target=lambda: results.append(_request(server, "POST", "/v1/feeds/fetch", body))
+    )
+    requester.start()
+    try:
+        assert server.first_started.wait(timeout=2)
+        assert requester.is_alive()
+        assert _request(server, "GET", "/control/state")[1] == {
+            "first_started": True,
+            "request_count": 1,
+            "released": False,
+        }
+        assert _request(server, "POST", "/control/release", b"") == (200, {"released": True})
+        requester.join(timeout=2)
+        assert not requester.is_alive()
+        assert results[0][0] == 200
+        with RetrieverClient(origin) as client:
+            result = client.fetch(FeedPollTarget(recovery.FEED_ID, recovery.FEED_URL, None, None))
+        assert result.status == 200
+        assert result.final_url == recovery.FEED_URL
+        assert result.body == recovery.FEED_BODY
+        entries = parse_feed(result.body)
+        assert len(entries) == 1
+        assert entries[0].reported_url == recovery.ARTICLE_URL
+        assert entries[0].reported_title == recovery.FEED_ENTRY_TITLE
+        assert _request(server, "GET", "/control/state")[1]["request_count"] == 2
+    finally:
+        server.released.set()
+        requester.join(timeout=2)
+
+
+@pytest.mark.parametrize("server", ["article", "feed"], indirect=True)
+def test_server_rejects_other_scenario_endpoint_and_url_before_hold(server: Any) -> None:
+    feed = _request(server, "GET", "/v1/ready")[1]["capabilities"] == [FEED_FETCH_CAPABILITY]
+    wrong_endpoint = "/v1/articles/fetch" if feed else "/v1/feeds/fetch"
+    endpoint = "/v1/feeds/fetch" if feed else "/v1/articles/fetch"
+    wrong_url = recovery.ARTICLE_URL if feed else recovery.FEED_URL
+    body = json.dumps({"url": wrong_url, "etag": None, "last_modified": None}).encode()
+    assert _request(server, "POST", wrong_endpoint, body)[0] == 404
+    assert _request(server, "POST", endpoint, body)[0] == 400
+    assert _request(server, "GET", "/control/state")[1] == {
+        "first_started": False,
+        "request_count": 0,
+        "released": False,
+    }
+
+
+def test_unknown_mode_rejected_before_creating_fixture_files(tmp_path: Path) -> None:
+    directory = tmp_path / "not-created"
+    with pytest.raises(FixtureBoundaryError, match="invalid recovery mode"):
+        recovery.create_fixture(
+            ROOT,
+            directory,
+            "synthetic-ingestion",
+            image="synthetic:local",
+            mode="unknown",  # type: ignore[arg-type]
+        )
+    assert not directory.exists()
