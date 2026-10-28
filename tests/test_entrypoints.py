@@ -8,6 +8,8 @@ from sqlalchemy import Engine
 
 from primary_signal.db import DatabaseSettings
 from primary_signal.entrypoints import migrate, processor, retriever, scheduler, web
+from primary_signal.ingestion.feed_handler import FeedFetchError
+from primary_signal.retrieval.protocol import ARTICLE_FETCH_CAPABILITY, FEED_FETCH_CAPABILITY
 
 
 def test_retriever_entrypoint_is_loopback_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,6 +93,9 @@ def test_processor_entrypoint_binds_selected_queue(
     def fake_handlers(actual_engine: Engine, client: object) -> object:
         assert actual_engine is engine
         assert client is retriever_client
+        retriever_client.require_ready.assert_called_once_with(
+            FEED_FETCH_CAPABILITY if queue_name == "ingestion" else ARTICLE_FETCH_CAPABILITY
+        )
         captured["binding"] = queue_name
         return handlers
 
@@ -140,6 +145,55 @@ def test_processor_entrypoint_binds_selected_queue(
         "binding": queue_name,
         "run": (True, queue_name),
     }
+    engine.dispose.assert_called_once()
+
+
+@pytest.mark.parametrize("queue_name", ["ingestion", "retrieval"])
+def test_processor_readiness_failure_prevents_handler_binding_and_queue_runtime(
+    monkeypatch: pytest.MonkeyPatch, queue_name: str
+) -> None:
+    from unittest.mock import MagicMock
+
+    engine = MagicMock(spec=Engine)
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.require_ready.side_effect = FeedFetchError("dependency_unavailable")
+    runtime = MagicMock()
+    feed_handlers, article_handlers = MagicMock(), MagicMock()
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "test")
+    monkeypatch.setattr(processor, "processor_database_settings", lambda: object())
+
+    def create_engine(_settings: object) -> Engine:
+        return engine
+
+    def create_client(_origin: str) -> MagicMock:
+        return client
+
+    monkeypatch.setattr(processor, "create_database_engine", create_engine)
+    monkeypatch.setattr(processor, "RetrieverClient", create_client)
+    monkeypatch.setattr(processor, "run_with_engine", runtime)
+    monkeypatch.setattr(processor, "build_feed_poll_handlers", feed_handlers)
+    monkeypatch.setattr(processor, "build_article_retrieval_handlers", article_handlers)
+
+    with pytest.raises(SystemExit) as raised:
+        processor.main(
+            [
+                "--once",
+                "--queue",
+                queue_name,
+                "--retriever-origin",
+                "http://127.0.0.1:8765",
+                "--allow-local-fetch",
+            ]
+        )
+    assert raised.value.code == 1
+    client.require_ready.assert_called_once_with(
+        FEED_FETCH_CAPABILITY if queue_name == "ingestion" else ARTICLE_FETCH_CAPABILITY
+    )
+    feed_handlers.assert_not_called()
+    article_handlers.assert_not_called()
+    runtime.assert_not_called()
+    client.__exit__.assert_called_once()
     engine.dispose.assert_called_once()
 
 
