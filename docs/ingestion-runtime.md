@@ -144,3 +144,34 @@ The gate creates and removes its own database. The crash test requires
 settings. It uses no live feeds or production services. This verifies process
 termination during feed and article fetches; container restart and production
 network isolation remain separate checks.
+
+## Queue and job health
+
+Use a dedicated database login with only `primary_signal_cap_job_health` and
+configure `PRIMARY_SIGNAL_DATABASE_URL` and
+`PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE` for the local command:
+
+```sh
+uv run primary-signal-job-health --queue ingestion --status running --limit 100
+```
+
+The report contains per-queue counts and recent job metadata. Queues are sorted
+by name; jobs are sorted by creation time and ID, newest first. The default
+limit is 100, with a maximum of 500 queues and 500 jobs. Separate truncation
+flags show when additional rows exist. Omit the filters to report all queues
+and job states. Valid queue names that have no jobs return an empty report.
+
+Queue counts include every status even when `--status` filters the job rows.
+`due` means queued work whose scheduled time has arrived; `delayed` means
+queued work scheduled later. `queued_retries` counts queued jobs with a prior
+attempt. `expired` means running jobs whose lease has expired. These conditions
+use one database timestamp recorded as `as_of`. Counts and rows are sampled
+operational state; they can change between queries. A heartbeat timestamp does
+not prove a worker is alive.
+
+The reader never selects payloads, deduplication keys, worker identities,
+lease tokens, error text or attempt history. It cannot submit, claim, retry or
+cancel jobs. The output limit bounds returned rows, not the history scanned by
+aggregate counts; the normal database statement timeout still applies.
+Deployment logins and membership remain operator-owned. The disposable test
+gate provisions only synthetic test roles.

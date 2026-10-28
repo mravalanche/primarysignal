@@ -87,6 +87,7 @@ jobs:
           PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_URL: postgresql+psycopg://publication_test:primary_signal_publication_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_EXPECTED_ROLE: publication_test
           PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL: postgresql+psycopg://health_test:primary_signal_health_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
+          PRIMARY_SIGNAL_TEST_JOB_HEALTH_DATABASE_URL: postgresql+psycopg://job_health_test:primary_signal_job_health_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL: postgresql+psycopg://editorial_test:primary_signal_editorial_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_ADMIN_SESSION_DATABASE_URL: postgresql+psycopg://admin_session_test:primary_signal_admin_session_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_PUBLICATION_DECISION_DATABASE_URL: postgresql+psycopg://publication_decision_test:primary_signal_publication_decision_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
