@@ -468,6 +468,10 @@ unattended live polling, verify deployment egress controls, service readiness,
 source-disable serialization, and an extracted-text retention policy. The local
 retriever's test opt-in is not a production deployment configuration.
 
+The local metadata-only job-health command reports queue counts, retries,
+expired leases and dead jobs through a separate read-only capability. It aids
+diagnosis without exposing job payloads or changing queue state.
+
 ## 18. V1 security baseline
 
 The following are release requirements rather than later hardening.

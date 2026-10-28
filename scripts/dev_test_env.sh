@@ -168,6 +168,7 @@ export PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL="${database_base}public_test@${da
 export PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_URL="${database_base}publication_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_EXPECTED_ROLE=publication_test
 export PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL="${database_base}health_test@${database_host}"
+export PRIMARY_SIGNAL_TEST_JOB_HEALTH_DATABASE_URL="${database_base}job_health_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL="${database_base}editorial_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_ADMIN_SESSION_DATABASE_URL="${database_base}admin_session_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PUBLICATION_DECISION_DATABASE_URL="${database_base}publication_decision_test@${database_host}"
