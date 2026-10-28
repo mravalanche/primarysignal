@@ -154,18 +154,28 @@ With Docker and the development environment installed, run:
 uv run --locked --offline poe ingestion-recovery-smoke
 ```
 
-This optional smoke builds the packaged runtime from tracked inputs and creates
-its own disposable PostgreSQL volume. A credential-free synthetic retriever
-holds an article response while the runner kills the exact worker container.
-The worker uses only the queue-consume and article-persist capabilities. A
+This optional task runs separate feed and article cases, each with a fresh
+project and PostgreSQL volume. It builds the packaged runtime from tracked
+inputs. A credential-free synthetic retriever holds a response while the runner
+kills the exact worker container. The article worker has queue-consume and
+article-persist capabilities. The feed worker has queue-submit, queue-consume
+and feed-poll capabilities so discovery can atomically enqueue retrieval. A
 separate fixture setup login seeds the synthetic job and advances only its
 expired lease and retry time.
+
+To run one case directly, use
+`uv run --locked --offline python -m scripts.smoke_ingestion_recovery --mode feed`
+or select `--mode article`. The module defaults to the article case; the Poe
+task selects both.
 
 The runner checks that the interrupted fetch committed no observation, content
 version, current-version pointer or searchable result. It restarts the same
 database and worker containers, checks the database and volume identities,
 rejects the abandoned lease through the restricted queue API, and requires one
-searchable content version after recovery.
+searchable content version after article recovery. The feed case instead
+requires one poll result, entry, discovered article and canonical URL, plus
+exactly one queued article-retrieval job. Feed discovery must not create a
+content version or searchable result before that job runs.
 
 The retriever fixture owns the worker's network namespace and exposes only a
 literal loopback endpoint. The disposable network is internal and has no host
@@ -181,7 +191,21 @@ It observed SIGKILL exit 137, no partial state, recovery history
 completion, and verified exactly one searchable content version. The same
 database container, volume and database system identity survived restart; the
 retriever namespace owner remained running. All owned resources were removed.
-Feed-container recovery and deployment egress verification remain open.
+The combined feed/article task also passed on 2026-10-28. The feed case
+verified zero partial poll, entry, article, URL or successor state before
+recovery, then exactly one successful poll and linked source lineage with one
+untouched queued retrieval job. Its abandoned lease was rejected before and
+after completion. Both cases retained database/container identities and
+removed their independent resources.
+
+The combined run's article image was
+`sha256:a35b781502826a3110265626b7c73e3f4215b46ecc0a611e7a3e20bee05e666e`;
+its feed image was
+`sha256:1762d76adbb262e5d27047235d1d03bb04580818e8188fbe3c1607b6a6781c13`.
+Together with the controlled re-poll/dedupe and timeout/retry checks in
+`tests/test_ingestion_end_to_end_postgres.py`, these runs complete M3's
+re-poll/failure/retry/restart exit check. Live-source ingestion, production
+bindings and deployment egress verification remain open.
 
 ## Queue and job health
 

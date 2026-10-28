@@ -6,7 +6,7 @@ import subprocess
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from primary_signal.retrieval.extract import (
     EXTRACTOR_NAME,
@@ -14,7 +14,12 @@ from primary_signal.retrieval.extract import (
     NORMALIZATION_VERSION,
     extract_article_html,
 )
-from primary_signal.retrieval.protocol import ARTICLE_FETCH_CAPABILITY, PROTOCOL_VERSION, READY_PATH
+from primary_signal.retrieval.protocol import (
+    ARTICLE_FETCH_CAPABILITY,
+    FEED_FETCH_CAPABILITY,
+    PROTOCOL_VERSION,
+    READY_PATH,
+)
 from scripts.publication_smoke_fixture import (
     INIT_FILES,
     FixtureBoundaryError,
@@ -31,11 +36,26 @@ MIGRATION_PASSWORD = "public_recovery_migration_fixture_only"  # noqa: S105  # p
 PROCESSOR_PASSWORD = "public_recovery_processor_fixture_only"  # noqa: S105  # pragma: allowlist secret
 NAMESPACE = uuid.UUID("d4a5fcc4-1033-44c6-aab8-630ec44d7f46")
 SOURCE_ID = uuid.uuid5(NAMESPACE, "source")
+FEED_ID = uuid.uuid5(NAMESPACE, "feed")
 ARTICLE_ID = uuid.uuid5(NAMESPACE, "article")
 URL_ID = uuid.uuid5(NAMESPACE, "url")
 JOB_ID = uuid.uuid5(NAMESPACE, "job")
 SOURCE_KEY = "synthetic-container-recovery"
 ARTICLE_URL = "https://public.example/synthetic-container-recovery"
+FEED_URL = "https://public.example/synthetic-container-recovery.xml"
+FEED_ENTRY_TITLE = "Synthetic feed recovery notice"
+FEED_BODY = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<rss version="2.0"><channel><title>Synthetic recovery feed</title>'
+    "<link>https://public.example/</link><description>Disposable synthetic feed</description>"
+    f"<item><title>{FEED_ENTRY_TITLE}</title><link>{ARTICLE_URL}</link>"
+    '<guid isPermaLink="false">synthetic-container-recovery-entry</guid>'
+    "<pubDate>Wed, 28 Oct 2026 12:00:00 GMT</pubDate>"
+    "<description>Synthetic cobalt feed recovery notice.</description>"
+    "</item></channel></rss>"
+).encode()
+RecoveryMode = Literal["article", "feed"]
+
 ARTICLE_BODY = (
     b"<html><title>Synthetic recovery notice</title>"
     b"<article>Synthetic cobalt bulletin for isolated ingestion recovery.</article></html>"
@@ -70,9 +90,19 @@ SETUP_COMMAND = [
 ]
 
 
-def server_source() -> str:
+def _worker_command(mode: RecoveryMode) -> list[str]:
+    command = WORKER_COMMAND.copy()
+    if mode == "feed":
+        command[2] = "ingestion"
+    return command
+
+
+def server_source(mode: RecoveryMode = "article") -> str:
     """Return standalone server code with public payload data and no DB settings."""
+    import base64
     import hashlib
+
+    require(mode in {"article", "feed"}, "invalid recovery mode")
 
     payload: dict[str, object] = {
         "status": 200,
@@ -91,19 +121,28 @@ def server_source() -> str:
         "etag": None,
         "last_modified": None,
     }
+    if mode == "feed":
+        payload = {
+            "status": 200,
+            "final_url": FEED_URL,
+            "body_base64": base64.b64encode(FEED_BODY).decode("ascii"),
+            "etag": None,
+            "last_modified": None,
+        }
     ready = {
         "ready": True,
         "protocol_version": PROTOCOL_VERSION,
-        "capabilities": [ARTICLE_FETCH_CAPABILITY],
+        "capabilities": [FEED_FETCH_CAPABILITY if mode == "feed" else ARTICLE_FETCH_CAPABILITY],
     }
-    source = '''"""A closed synthetic article fixture, never an internet retriever."""
+    source = '''"""A closed synthetic retrieval fixture, never an internet retriever."""
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PAYLOAD = json.loads(__PAYLOAD__)
 READY = json.loads(__READY__)
-ARTICLE_URL = __ARTICLE_URL__
+TARGET_URL = __TARGET_URL__
+FETCH_PATH = __FETCH_PATH__
 READY_PATH = __READY_PATH__
 
 class FixtureServer(ThreadingHTTPServer):
@@ -183,7 +222,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.released.set()
                 self.send_json(200, {"released": True})
                 return
-            if self.path != "/v1/articles/fetch":
+            if self.path != FETCH_PATH:
                 self.send_json(404, {"error": "not_found"})
                 return
             if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
@@ -196,7 +235,7 @@ class Handler(BaseHTTPRequestHandler):
                     result[key] = value
                 return result
             value = json.loads(body, object_pairs_hook=unique)
-            if value != {"url": ARTICLE_URL, "etag": None, "last_modified": None}:
+            if value != {"url": TARGET_URL, "etag": None, "last_modified": None}:
                 raise ValueError()
         except (ValueError, UnicodeError, OSError, RecursionError):
             self.send_json(400, {"error": "invalid_request"})
@@ -218,7 +257,10 @@ if __name__ == "__main__":
     return (
         source.replace("__PAYLOAD__", repr(json.dumps(payload)))
         .replace("__READY__", repr(json.dumps(ready)))
-        .replace("__ARTICLE_URL__", repr(ARTICLE_URL))
+        .replace("__TARGET_URL__", repr(FEED_URL if mode == "feed" else ARTICLE_URL))
+        .replace(
+            "__FETCH_PATH__", repr("/v1/feeds/fetch" if mode == "feed" else "/v1/articles/fetch")
+        )
         .replace("__READY_PATH__", repr(READY_PATH))
     )
 
@@ -233,7 +275,12 @@ def _url(role: str, password: str) -> str:
     return f"postgresql+psycopg://{role}:{password}@database:5432/{DATABASE}"
 
 
-def _login_sql() -> str:
+def _login_sql(mode: RecoveryMode = "article") -> str:
+    capabilities = (
+        "primary_signal_cap_queue_consume,primary_signal_cap_queue_submit,primary_signal_cap_feed_poll"
+        if mode == "feed"
+        else "primary_signal_cap_queue_consume,primary_signal_cap_article_persist"
+    )
     return (
         "-- PUBLIC SYNTHETIC FIXTURES FOR A DISPOSABLE CONTAINER TEST ONLY.\n"
         f"CREATE ROLE {MIGRATION_ROLE} LOGIN PASSWORD '{MIGRATION_PASSWORD}' "
@@ -242,7 +289,7 @@ def _login_sql() -> str:
         "NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS;\n"
         f"GRANT CREATE ON DATABASE {DATABASE} TO {MIGRATION_ROLE},primary_signal_public_owner;\n"
         f"GRANT primary_signal_public_owner TO {MIGRATION_ROLE};\n"
-        f"GRANT primary_signal_cap_queue_consume,primary_signal_cap_article_persist TO {PROCESSOR_ROLE};\n"
+        f"GRANT {capabilities} TO {PROCESSOR_ROLE};\n"
         "REVOKE CREATE ON SCHEMA public FROM PUBLIC;\n"
     )
 
@@ -258,6 +305,7 @@ class IngestionRecoveryFixture:
     env: dict[str, str] = field(repr=False)
     expected_environments: dict[str, dict[str, str]] = field(repr=False)
     expected_compose: dict[str, Any] = field(repr=False)
+    mode: RecoveryMode = "article"
     database_name: str = DATABASE
     bootstrap_role: str = BOOTSTRAP_ROLE
     migration_role: str = MIGRATION_ROLE
@@ -265,8 +313,9 @@ class IngestionRecoveryFixture:
 
 
 def create_fixture(
-    root: Path, directory: Path, project: str, *, image: str
+    root: Path, directory: Path, project: str, *, image: str, mode: RecoveryMode = "article"
 ) -> IngestionRecoveryFixture:
+    require(mode in {"article", "feed"}, "invalid recovery mode")
     root, directory = root.resolve(), directory.resolve()
     require(
         directory.is_relative_to(Path("/tmp")) and not directory.is_relative_to(root),  # noqa: S108 - caller securely creates a random private directory under this boundary.
@@ -299,8 +348,8 @@ def create_fixture(
             "".join(f"{key}='{value}'\n" for key, value in values.items()),
         )
     _write(directory / "database_password", BOOTSTRAP_PASSWORD + "\n", mode=0o444)
-    _write(directory / "bootstrap-logins.sql", _login_sql(), mode=0o444)
-    _write(directory / "server.py", server_source(), mode=0o444)
+    _write(directory / "bootstrap-logins.sql", _login_sql(mode), mode=0o444)
+    _write(directory / "server.py", server_source(mode), mode=0o444)
     runtime = {
         "image": image,
         "pull_policy": "never",
@@ -368,7 +417,7 @@ def create_fixture(
             "worker": {
                 **runtime,
                 "env_file": [str(directory / "worker.env")],
-                "command": WORKER_COMMAND,
+                "command": _worker_command(mode),
                 "network_mode": "service:retriever",
             },
         },
@@ -398,6 +447,7 @@ def create_fixture(
         environment,
         expected,
         model,
+        mode=mode,
     )
 
 
@@ -436,8 +486,8 @@ def validate_unresolved_model(
     )
     bootstrap = _approved_bootstrap(fixture.root)
     expected_files = {
-        "server.py": server_source(),
-        "bootstrap-logins.sql": _login_sql(),
+        "server.py": server_source(fixture.mode),
+        "bootstrap-logins.sql": _login_sql(fixture.mode),
         "database_password": BOOTSTRAP_PASSWORD + "\n",
         **{
             f"{name}.env": "".join(f"{key}='{value}'\n" for key, value in values.items())
@@ -622,7 +672,7 @@ def validate_resolved_model(fixture: IngestionRecoveryFixture, model: dict[str, 
             require(
                 service.get("network_mode") == "service:retriever"
                 and not service.get("networks")
-                and service.get("command") == WORKER_COMMAND,
+                and service.get("command") == _worker_command(fixture.mode),
                 "worker namespace or command changed",
             )
             require(

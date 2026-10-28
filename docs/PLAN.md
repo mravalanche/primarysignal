@@ -468,8 +468,11 @@ ingest three varied public sources after deployment controls are ready. An
 actual processor killed during a synthetic feed or article fetch now has an
 end-to-end recovery test. The article-worker container now also passes a real
 mid-fetch SIGKILL and same-container/database-volume recovery smoke with stale
-fencing and exactly one searchable version. Feed-container recovery remains
-open.
+fencing and exactly one searchable version. The feed-container case also
+passes SIGKILL and same-container/database recovery, committing one poll and
+article lineage with exactly one untouched retrieval job. Combined with the
+controlled re-poll/dedupe and timeout/retry tests, this completes M3's recovery
+exit check. Live-source ingestion and deployment controls remain open.
 The local processor now checks retriever protocol and queue capability before
 recovering leases or claiming jobs. Production retrieval remains unbound. Before
 unattended live polling, verify deployment egress controls and service readiness
