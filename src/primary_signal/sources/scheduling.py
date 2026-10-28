@@ -64,6 +64,7 @@ class FeedScheduleRepository:
             self._connection.execute(
                 select(
                     _feeds.c.id,
+                    _feeds.c.source_id,
                     _feeds.c.poll_interval_seconds,
                 )
                 .join(_sources, _sources.c.id == _feeds.c.source_id)
@@ -89,6 +90,13 @@ class FeedScheduleRepository:
         selected = 0
         enqueued = 0
         for row in due_feeds:
+            # The join above is only an advisory snapshot. Recheck while
+            # sharing the source row lock through enqueue and advancement.
+            source_enabled = self._connection.execute(
+                select(func.primary_signal.lock_source_enabled(row["source_id"]))
+            ).scalar_one()
+            if not source_enabled:
+                continue
             feed_id = cast(uuid.UUID, row["id"])
             poll_interval = cast(int, row["poll_interval_seconds"])
             result = queue.enqueue(

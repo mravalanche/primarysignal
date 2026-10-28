@@ -20,7 +20,7 @@ from primary_signal.publication.storage import (
     StoryRevision,
     Tag,
 )
-from primary_signal.sources.models import Feed, Source
+from primary_signal.sources.models import Feed, Source, SourceStateEvent
 from primary_signal.web.admin.models import AdminLoginAttempt, AdminSession
 
 __all__ = [
@@ -42,6 +42,7 @@ __all__ = [
     "RevisionTag",
     "SignalEvidence",
     "Source",
+    "SourceStateEvent",
     "Story",
     "StoryRevision",
     "Tag",

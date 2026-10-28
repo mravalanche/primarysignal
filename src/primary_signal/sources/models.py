@@ -77,3 +77,29 @@ class Feed(UUIDPrimaryKeyMixin, UpdatedAtMixin, Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     source: Mapped[Source] = relationship(back_populates="feeds")
+
+
+class SourceStateEvent(UUIDPrimaryKeyMixin, Base):
+    """An immutable, database-attributed source pause or resume decision."""
+
+    __tablename__ = "source_state_events"
+    __table_args__ = (
+        CheckConstraint("old_enabled <> new_enabled", name="changed_state"),
+        CheckConstraint(
+            r"char_length(reason) BETWEEN 1 AND 500 AND btrim(reason, U&'\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000') = reason AND reason !~ U&'[\0001-\001F\007F-\009F]'",
+            name="valid_reason",
+        ),
+        CheckConstraint("char_length(actor) > 0", name="valid_actor"),
+        Index("ix_source_state_events_source_time", "source_id", "occurred_at", "id"),
+    )
+
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("primary_signal.sources.id", ondelete="RESTRICT"), nullable=False
+    )
+    old_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    new_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    actor: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )

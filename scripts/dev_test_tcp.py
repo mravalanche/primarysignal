@@ -40,6 +40,10 @@ ROLE_LOGINS = {
         bootstrap.JOB_HEALTH_LOGIN_ROLE,
         bootstrap.JOB_HEALTH_PASSWORD,
     ),
+    "PRIMARY_SIGNAL_TEST_SOURCE_CONTROL_DATABASE_URL": (
+        bootstrap.SOURCE_CONTROL_LOGIN_ROLE,
+        bootstrap.SOURCE_CONTROL_PASSWORD,
+    ),
     "PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL": (
         bootstrap.EDITORIAL_ROLE,
         bootstrap.EDITORIAL_PASSWORD,

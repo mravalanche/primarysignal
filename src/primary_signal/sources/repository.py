@@ -57,7 +57,7 @@ class FeedRecord:
     updated_at: datetime
 
 
-def _validated_source_key(value: object) -> str:
+def validate_source_key(value: object) -> str:
     if (
         not isinstance(value, str)
         or not 1 <= len(value) <= MAX_SOURCE_KEY_LENGTH
@@ -152,7 +152,7 @@ class SourceFeedRepository:
         homepage_url: str,
         enabled: bool = True,
     ) -> SourceRecord:
-        key = _validated_source_key(source_key)
+        key = validate_source_key(source_key)
         validated_name = _validated_name(name)
         _, homepage = _validated_url(homepage_url)
         validated_enabled = _validated_enabled(enabled)

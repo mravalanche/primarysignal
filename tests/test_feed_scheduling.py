@@ -81,12 +81,21 @@ def test_schedule_due_enqueues_ids_and_advances_created_or_active_feeds() -> Non
     clock_result.scalar_one.return_value = database_now
     due_result = MagicMock()
     due_result.mappings.return_value.all.return_value = [
-        {"id": first_feed, "poll_interval_seconds": 60},
-        {"id": second_feed, "poll_interval_seconds": 900},
+        {"id": first_feed, "source_id": uuid.uuid4(), "poll_interval_seconds": 60},
+        {"id": second_feed, "source_id": uuid.uuid4(), "poll_interval_seconds": 900},
     ]
     first_update = MagicMock(rowcount=1)
     second_update = MagicMock(rowcount=1)
-    connection.execute.side_effect = [clock_result, due_result, first_update, second_update]
+    enabled_result = MagicMock()
+    enabled_result.scalar_one.return_value = True
+    connection.execute.side_effect = [
+        clock_result,
+        due_result,
+        enabled_result,
+        first_update,
+        enabled_result,
+        second_update,
+    ]
     queue = MagicMock(spec=JobRepository)
     queue.enqueue.side_effect = [
         EnqueueResult(job_id=uuid.uuid4(), created=True),
@@ -121,7 +130,7 @@ def test_schedule_due_enqueues_ids_and_advances_created_or_active_feeds() -> Non
     assert queue.enqueue.call_args_list[1].kwargs["payload"].feed_id == second_feed
     update_parameters = [
         invocation.args[0].compile(dialect=postgresql.dialect()).params
-        for invocation in connection.execute.call_args_list[2:]
+        for invocation in connection.execute.call_args_list[3::2]
     ]
     assert update_parameters[0]["next_poll_at"] == datetime(2026, 10, 1, 9, 31, tzinfo=UTC)
     assert update_parameters[0]["updated_at"] == database_now
@@ -137,10 +146,12 @@ def test_schedule_due_rejects_a_missing_locked_feed_update() -> None:
     clock_result.scalar_one.return_value = database_now
     due_result = MagicMock()
     due_result.mappings.return_value.all.return_value = [
-        {"id": feed_id, "poll_interval_seconds": 60}
+        {"id": feed_id, "source_id": uuid.uuid4(), "poll_interval_seconds": 60}
     ]
     update_result = MagicMock(rowcount=0)
-    connection.execute.side_effect = [clock_result, due_result, update_result]
+    enabled_result = MagicMock()
+    enabled_result.scalar_one.return_value = True
+    connection.execute.side_effect = [clock_result, due_result, enabled_result, update_result]
     queue = MagicMock(spec=JobRepository)
     queue.enqueue.return_value = EnqueueResult(job_id=uuid.uuid4(), created=True)
 
@@ -186,3 +197,25 @@ def test_transactional_scheduler_owns_commit_and_rollback_boundaries() -> None:
     exit_args = transaction.__exit__.call_args.args
     assert exit_args[:2] == (RuntimeError, error)
     assert exit_args[2] is not None
+
+
+def test_schedule_due_rechecks_source_before_enqueuing_or_advancing() -> None:
+    scheduler, connection = _repository()
+    clock_result = MagicMock()
+    clock_result.scalar_one.return_value = datetime(2026, 10, 1, tzinfo=UTC)
+    feed_id, source_id = uuid.uuid4(), uuid.uuid4()
+    due_result = MagicMock()
+    due_result.mappings.return_value.all.return_value = [
+        {"id": feed_id, "source_id": source_id, "poll_interval_seconds": 60}
+    ]
+    disabled_result = MagicMock()
+    disabled_result.scalar_one.return_value = False
+    connection.execute.side_effect = [clock_result, due_result, disabled_result]
+    queue = MagicMock(spec=JobRepository)
+    with patch("primary_signal.sources.scheduling.JobRepository", return_value=queue):
+        assert scheduler.schedule_due() == ScheduleSummary(0, 0, 0)
+    queue.enqueue.assert_not_called()
+    assert connection.execute.call_count == 3
+    source_check = connection.execute.call_args_list[2].args[0]
+    assert "primary_signal.lock_source_enabled" in str(source_check)
+    assert source_id in source_check.compile().params.values()
