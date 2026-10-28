@@ -175,3 +175,43 @@ cancel jobs. The output limit bounds returned rows, not the history scanned by
 aggregate counts; the normal database statement timeout still applies.
 Deployment logins and membership remain operator-owned. The disposable test
 gate provisions only synthetic test roles.
+
+## Pause and resume a source
+
+The local source-control command changes one configured source by its exact
+key, as shown by the source-health report. Use a separate database login with
+only `primary_signal_cap_source_control` and the ordinary
+`PRIMARY_SIGNAL_DATABASE_URL` and `PRIMARY_SIGNAL_DATABASE_EXPECTED_ROLE`
+settings:
+
+```sh
+uv run primary-signal-source-control pause example-advisories --reason "Pause collection for review"
+uv run primary-signal-source-control resume example-advisories --reason "Collection review complete"
+```
+
+Each actual transition records its previous and new state, database time,
+reason and authenticated database actor in private, append-only audit history.
+The reason is required, trimmed and limited to 500 characters; control
+characters and blank reasons are rejected. JSON output contains only the
+source key, enabled state, change flag, update time and audit-event ID. Repeating
+the current state succeeds without another event or a changed update time.
+Unknown source keys fail without a transition.
+
+Pausing serializes with source eligibility checks. A scheduler already inside
+its eligible transaction may finish before pause returns. After the pause
+commits, scheduling skips the source and leaves its next-poll times intact.
+Jobs that loaded their target before pause may still start or finish retrieval
+externally. Their observations are discarded when persistence finds the source
+still paused. Jobs loaded while paused perform no retrieval. Other sources can
+continue processing.
+
+Resuming restores ordinary scheduling at the existing due times. Individual
+feed flags, cadence and conditional-request validators retain their settings.
+Discarded results and terminal jobs stay in their current state; subsequent
+polling supplies eligible new work. Existing public stories retain their
+publication state, while future publication decisions still check source
+eligibility.
+
+The capability executes one fixed state-transition function. It has no direct
+source, feed, job, content or audit-table access. Login configuration and
+capability membership remain deployment-owned.

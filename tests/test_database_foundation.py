@@ -36,6 +36,7 @@ EXPECTED_TABLES = {
     "revision_tags",
     "signal_evidence",
     "sources",
+    "source_state_events",
     "stories",
     "story_revisions",
     "tags",
