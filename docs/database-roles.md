@@ -2,8 +2,8 @@
 
 Fresh Compose database volumes create the fixed, non-login capability roles in
 the numbered SQL files under `deploy/postgres/initdb`. These include a dedicated
-extracted-text cleanup capability. Login roles, passwords and role membership
-remain deployment-owned. PostgreSQL only runs these files while creating a new
+extracted-text cleanup capability and a metadata-only job-health capability.
+Login roles, passwords and role membership remain deployment-owned. PostgreSQL only runs these files while creating a new
 data directory.
 
 For an existing development volume, apply the role bootstrap from inside the
@@ -23,10 +23,11 @@ docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POST
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/100_admin_session_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/120_retention_cleanup_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/130_job_health_capability_role.sql'
 ```
 
-Run all twelve commands before applying migrations. The migrations grant access to
-the exact queue and feed columns each capability needs; they do not create login
+Run all thirteen commands before applying migrations. The migrations grant
+access to the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any
 memberships. Apply them before granting capabilities to local runtime logins or
@@ -41,3 +42,10 @@ deployment, authenticated service code must bind each publication decision to
 the operator session and enforce its eligibility and audit rules. Automatic
 publication also requires the product contract's evidence, safety, membership,
 and hold gates.
+
+The local job-health command uses a separate login with only
+`primary_signal_cap_job_health`. Its capability reads selected lifecycle
+columns from `jobs`; payloads, errors, worker identities, lease tokens and
+attempt history remain inaccessible. It grants no queue mutations or access to
+article and publication records. Provision its login and membership outside the
+repository. Public and administration web processes do not need this capability.

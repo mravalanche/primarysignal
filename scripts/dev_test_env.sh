@@ -149,12 +149,14 @@ fi
 for gate_variable_name in ${!PG@} ${!PRIMARY_SIGNAL_@}; do
   unset "$gate_variable_name"
 done
-export PGPASSFILE=/dev/null
 
 # Keep the Unix socket path short enough for PostgreSQL on every supported VM.
 cluster_dir="$(mktemp -d /tmp/primarysignal-pg.XXXXXXXX)"
 chmod 700 "$cluster_dir"
 mkdir -m 700 "$cluster_dir/socket"
+# An empty, private regular file disables personal passfile lookup quietly.
+install -m 600 /dev/null "$cluster_dir/empty-passfile"
+export PGPASSFILE="$cluster_dir/empty-passfile"
 cluster_started=false
 cleanup() {
   local result=$?
@@ -208,6 +210,7 @@ export PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL="${database_base}public_test@${da
 export PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_URL="${database_base}publication_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_EXPECTED_ROLE=publication_test
 export PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL="${database_base}health_test@${database_host}"
+export PRIMARY_SIGNAL_TEST_JOB_HEALTH_DATABASE_URL="${database_base}job_health_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL="${database_base}editorial_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_ADMIN_SESSION_DATABASE_URL="${database_base}admin_session_test@${database_host}"
 export PRIMARY_SIGNAL_TEST_PUBLICATION_DECISION_DATABASE_URL="${database_base}publication_decision_test@${database_host}"

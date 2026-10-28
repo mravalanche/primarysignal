@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from primary_signal.config import RuntimeEnvironment, Settings
+from primary_signal.retrieval.api import create_retriever_app
+from primary_signal.retrieval.protocol import READY_PATH
 from primary_signal.web.admin import create_admin_app
 from primary_signal.web.public import create_public_app
 
@@ -46,3 +48,10 @@ def test_public_route_manifest_contains_no_admin_routes() -> None:
     assert admin_only_routes, "the test must observe at least one admin route"
     assert public_routes.isdisjoint(admin_only_routes)
     assert all(not route.path.startswith("/admin") for route in public_routes)
+
+
+def test_retriever_readiness_is_absent_from_both_web_surfaces() -> None:
+    settings = Settings(environment=RuntimeEnvironment.TEST)
+    for app in (create_public_app(settings), create_admin_app(settings)):
+        assert READY_PATH not in {route.path for route in route_manifest(app)}
+    assert READY_PATH in {route.path for route in route_manifest(create_retriever_app())}
