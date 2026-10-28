@@ -17,7 +17,7 @@ from primary_signal.config import ProcessorSettings, Settings
 from primary_signal.db import DatabaseSettings, create_database_engine
 from primary_signal.entrypoints.scheduler import is_transient_database_error, stopping_on_signals
 from primary_signal.ingestion.article_handler import ArticleRetrievalHandler
-from primary_signal.ingestion.feed_handler import FeedFetcher, PollFeedHandler
+from primary_signal.ingestion.feed_handler import FeedFetcher, FeedFetchError, PollFeedHandler
 from primary_signal.jobs import (
     JobFailure,
     JobHandlerBinding,
@@ -30,6 +30,7 @@ from primary_signal.jobs import (
 )
 from primary_signal.observability import configure_logging, log_event, log_exception
 from primary_signal.retrieval.client import RetrieverClient
+from primary_signal.retrieval.protocol import ARTICLE_FETCH_CAPABILITY, FEED_FETCH_CAPABILITY
 
 LOGGER = logging.getLogger(__name__)
 
@@ -271,6 +272,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         engine = create_database_engine(processor_database_settings())
         stop_event = threading.Event()
         with RetrieverClient(args.retriever_origin) as retriever:
+            try:
+                retriever.require_ready(
+                    FEED_FETCH_CAPABILITY if args.queue == "ingestion" else ARTICLE_FETCH_CAPABILITY
+                )
+            except FeedFetchError as error:
+                log_event(
+                    LOGGER,
+                    logging.ERROR,
+                    "processor.retriever.unready",
+                    error_code=error.code,
+                )
+                raise
             handlers = (
                 build_feed_poll_handlers(engine, retriever)
                 if args.queue == "ingestion"
