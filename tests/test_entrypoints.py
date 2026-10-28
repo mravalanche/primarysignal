@@ -75,8 +75,16 @@ def test_processor_entrypoint_requires_local_opt_in_and_rejects_production(
 
 
 @pytest.mark.parametrize("queue_name", ["ingestion", "retrieval"])
+@pytest.mark.parametrize(
+    ("origin", "opt_in"),
+    [
+        ("http://127.0.0.1:8765", "--allow-local-fetch"),
+        ("http://192.0.2.10:8765", "--allow-fixture-rpc"),
+    ],
+)
+@pytest.mark.parametrize("environment", ["development", "test"])
 def test_processor_entrypoint_binds_selected_queue(
-    monkeypatch: pytest.MonkeyPatch, queue_name: str
+    monkeypatch: pytest.MonkeyPatch, queue_name: str, origin: str, opt_in: str, environment: str
 ) -> None:
     from unittest.mock import MagicMock
 
@@ -86,8 +94,8 @@ def test_processor_entrypoint_binds_selected_queue(
     handlers = object()
     captured: dict[str, object] = {}
 
-    def fake_client(origin: str) -> MagicMock:
-        captured["origin"] = origin
+    def fake_client(actual_origin: str) -> MagicMock:
+        captured["origin"] = actual_origin
         return retriever_client
 
     def fake_handlers(actual_engine: Engine, client: object) -> object:
@@ -112,7 +120,7 @@ def test_processor_entrypoint_binds_selected_queue(
         assert actual_handlers is handlers
         captured["run"] = (once, queue_name)
 
-    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "test")
+    monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", environment)
     monkeypatch.setattr(processor, "processor_database_settings", lambda: object())
 
     def fake_create_engine(_settings: object) -> Engine:
@@ -135,13 +143,13 @@ def test_processor_entrypoint_binds_selected_queue(
             "--queue",
             queue_name,
             "--retriever-origin",
-            "http://127.0.0.1:8765",
-            "--allow-local-fetch",
+            origin,
+            opt_in,
         ]
     )
 
     assert captured == {
-        "origin": "http://127.0.0.1:8765",
+        "origin": origin,
         "binding": queue_name,
         "run": (True, queue_name),
     }
@@ -149,15 +157,27 @@ def test_processor_entrypoint_binds_selected_queue(
 
 
 @pytest.mark.parametrize("queue_name", ["ingestion", "retrieval"])
+@pytest.mark.parametrize(
+    ("origin", "opt_in"),
+    [
+        ("http://127.0.0.1:8765", "--allow-local-fetch"),
+        ("http://192.0.2.10:8765", "--allow-fixture-rpc"),
+    ],
+)
+@pytest.mark.parametrize("error_code", ["dependency_unavailable", "retriever_protocol"])
 def test_processor_readiness_failure_prevents_handler_binding_and_queue_runtime(
-    monkeypatch: pytest.MonkeyPatch, queue_name: str
+    monkeypatch: pytest.MonkeyPatch,
+    queue_name: str,
+    origin: str,
+    opt_in: str,
+    error_code: str,
 ) -> None:
     from unittest.mock import MagicMock
 
     engine = MagicMock(spec=Engine)
     client = MagicMock()
     client.__enter__.return_value = client
-    client.require_ready.side_effect = FeedFetchError("dependency_unavailable")
+    client.require_ready.side_effect = FeedFetchError(error_code)
     runtime = MagicMock()
     feed_handlers, article_handlers = MagicMock(), MagicMock()
     monkeypatch.setenv("PRIMARY_SIGNAL_ENVIRONMENT", "test")
@@ -182,8 +202,8 @@ def test_processor_readiness_failure_prevents_handler_binding_and_queue_runtime(
                 "--queue",
                 queue_name,
                 "--retriever-origin",
-                "http://127.0.0.1:8765",
-                "--allow-local-fetch",
+                origin,
+                opt_in,
             ]
         )
     assert raised.value.code == 1

@@ -62,6 +62,29 @@ disabled until deployment egress controls and service readiness are verified.
 Source-disable serialization and the fixed-policy extracted-text cleanup have
 isolated PostgreSQL tests; their target-deployment checks remain separate.
 
+## Fixed fixture RPC profile
+
+The separate `--allow-fixture-rpc` opt-in permits a development/test processor
+and retriever to run in different network namespaces. It is mutually exclusive
+with `--allow-local-fetch`. The fixture listener must be exactly
+`192.0.2.10:8765`, and the processor origin must be exactly
+`http://192.0.2.10:8765`. Other addresses, hostnames, ports and URL variants are
+rejected before listener or database startup. Both the explicit environment
+variable and parsed application settings must select development or test.
+
+This reserved address is for a disposable namespace with matching fixture
+IPAM; it is not an operator's LAN address. A future runner must fail closed on
+subnet overlap and run these fixed-address fixtures sequentially. No RPC port
+should be published on the host. The existing local profile remains loopback
+only, and production startup remains disabled.
+
+This profile supplies wiring, not network enforcement. It does not attest that
+an egress policy exists, change the retrieval-target address policy, or permit
+live polling before ADR 0007 controls are verified. In particular, accepting
+the fixed internal RPC origin does not make that address an allowed article
+or feed destination. Separate namespace enforcement and actual network probes
+remain required.
+
 ## Internal article inventory
 
 The article inventory reads only each article's current extracted version. It
