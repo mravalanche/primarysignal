@@ -7,11 +7,25 @@ cd "$repo_dir"
 
 mode="check"
 install_packages=true
+tcp_mode=false
 for argument in "$@"; do
   case "$argument" in
     --setup-only) mode="setup" ;;
     --offline) mode="offline" ;;
     --skip-apt) install_packages=false ;;
+    --tcp) tcp_mode=true ;;
+    --help|-h)
+      cat <<'USAGE'
+Usage: scripts/dev_test_env.sh [--offline] [--skip-apt] [--tcp] [--setup-only]
+
+Run the development gate with a fresh, disposable PostgreSQL 18 cluster.
+  --offline     Run deterministic checks without advisory audits or packaging.
+  --skip-apt    Require system prerequisites to be installed already.
+  --tcp         Test loopback TCP with SCRAM passwords instead of Unix sockets.
+  --setup-only  Install development tools without starting PostgreSQL or testing.
+USAGE
+      exit 0
+      ;;
     *) echo "Unknown option: $argument" >&2; exit 2 ;;
   esac
 done
@@ -130,16 +144,25 @@ if [[ "$mode" == setup ]]; then
   exit 0
 fi
 
+# This child process must not inherit connection redirection, passfiles or
+# operator application configuration. Only the fresh test endpoints below apply.
+for gate_variable_name in ${!PG@} ${!PRIMARY_SIGNAL_@}; do
+  unset "$gate_variable_name"
+done
+
 # Keep the Unix socket path short enough for PostgreSQL on every supported VM.
 cluster_dir="$(mktemp -d /tmp/primarysignal-pg.XXXXXXXX)"
 chmod 700 "$cluster_dir"
 mkdir -m 700 "$cluster_dir/socket"
+# An empty, private regular file disables personal passfile lookup quietly.
+install -m 600 /dev/null "$cluster_dir/empty-passfile"
+export PGPASSFILE="$cluster_dir/empty-passfile"
 cluster_started=false
 cleanup() {
   local result=$?
   trap - EXIT INT TERM
   if "$cluster_started"; then
-    "$pg_bin/pg_ctl" -D "$cluster_dir/data" -m immediate -w stop >/dev/null || true
+    "$pg_bin/pg_ctl" -D "$cluster_dir/data" -m immediate -t 15 -w stop >/dev/null || true
   fi
   rm -rf -- "$cluster_dir"
   exit "$result"
@@ -148,13 +171,32 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+if "$tcp_mode"; then
+  python -m scripts.dev_test_tcp password-file --cluster-dir "$cluster_dir"
+  "$pg_bin/initdb" -D "$cluster_dir/data" -U ps_dev_admin \
+    --auth-local=trust --auth-host=scram-sha-256 \
+    --pwfile="$cluster_dir/initdb-password" --no-instructions >/dev/null
+  rm -- "$cluster_dir/initdb-password"
+  tcp_port="$(python -m scripts.dev_test_tcp port)"
+  # A competing listener must cause startup or identity verification to fail.
+  # Mark the attempt first so cleanup also covers a startup wait timeout.
+  cluster_started=true
+  "$pg_bin/pg_ctl" -D "$cluster_dir/data" -l "$cluster_dir/server.log" \
+    -o "-c listen_addresses=127.0.0.1 -c port=$tcp_port -c unix_socket_directories=$cluster_dir/socket" \
+    -t 30 -w start >/dev/null
+  python -m scripts.dev_test_tcp run \
+    --cluster-dir "$cluster_dir" --port "$tcp_port" --mode "$mode"
+  echo "Development gate passed with disposable PostgreSQL 18 over SCRAM TCP."
+  exit 0
+fi
+
 "$pg_bin/initdb" -D "$cluster_dir/data" -U ps_dev_admin -A trust --no-instructions \
   >/dev/null
 # The socket directory is owner-only, and TCP is disabled for this cluster.
+cluster_started=true
 "$pg_bin/pg_ctl" -D "$cluster_dir/data" -l "$cluster_dir/server.log" \
   -o "-c listen_addresses='' -c unix_socket_directories=$cluster_dir/socket" \
-  -w start >/dev/null
-cluster_started=true
+  -t 30 -w start >/dev/null
 "$pg_bin/createdb" -h "$cluster_dir/socket" -U ps_dev_admin primary_signal_test
 
 database_base="postgresql+psycopg://"

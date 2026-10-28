@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-28",
-  "reviewed_against": "Integrated retriever readiness, feed/article crash recovery and metadata-only job health verified; combined disposable PostgreSQL gate passed (865 tests, no skips, clean audits and packaged migration smoke); deployment checks remain open",
+  "reviewed_against": "SCRAM TCP test-gate integration with readiness, crash recovery and job health verified; full TCP gate and default socket offline gate each passed 865 tests with no skips; clean audits and package smoke; production deployment checks remain open",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {

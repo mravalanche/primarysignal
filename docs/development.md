@@ -105,14 +105,28 @@ only for missing apt packages.
 bash scripts/dev_test_env.sh
 ```
 
-The gate starts a fresh PostgreSQL cluster in a temporary directory with TCP
-disabled and an owner-only Unix socket. It creates the synthetic capability
-roles, applies migrations, runs all tests including PostgreSQL privilege tests,
-then stops and removes that cluster even if a check fails. No existing database
-or Compose volume is touched. The cluster uses local socket trust authentication;
-only its owning VM user can reach the socket. Use `--offline` for the deterministic
-gate, `--setup-only` to install tools without running tests, or `--skip-apt` when
-the system packages are already installed.
+The gate starts a fresh PostgreSQL cluster in a temporary directory. By default,
+TCP is disabled and an owner-only Unix socket uses local trust authentication.
+It creates synthetic capability roles, applies migrations, runs all tests
+including PostgreSQL privilege tests, then stops and removes its cluster even
+if a check fails. No existing database or Compose volume is touched.
+
+Use `--tcp` to exercise SCRAM password authentication over an ephemeral loopback
+port, as CI does:
+
+```sh
+bash scripts/dev_test_env.sh --skip-apt --tcp
+```
+
+This mode uses fixed synthetic credentials and verifies that its TCP endpoint
+belongs to the newly created cluster before bootstrapping roles or applying
+migrations. It also checks that an incorrect password is rejected. The same
+capability and integration tests run through the authenticated connection.
+The temporary password file and cluster are removed after use.
+
+Use `--offline` for the deterministic gate, `--setup-only` to install tools
+without running tests, or `--skip-apt` when the system packages are already
+installed. The socket mode remains the default.
 
 The tests take their database endpoints from the `PRIMARY_SIGNAL_TEST_*_DATABASE_URL`
 settings exported by this script. That keeps a future Docker-backed test runner
