@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en" data-palette="harbour" data-theme-family="harbour" data-mode="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Component showcase · Primary Signal design studies</title>
+  <style>
+    /* Portable design specimen. The live product uses Jinja components and Tailwind/DaisyUI. */
+    :root { font-family: "DejaVu Sans", "Trebuchet MS", system-ui, sans-serif; }
+    [data-palette="harbour"][data-mode="light"] { --paper:#F7F8F6; --panel:#EDF2F2; --rule:#C8D3D4; --ink:#142B37; --muted:#52616A; --action:#126A85; --action-ink:#fff; --logo:#126A85; --blue-fill:#DFECF2; --blue:#345F9B; --amber-fill:#F4E7D4; --amber:#744914; --red-fill:#F1DDE0; --red:#873044; --green-fill:#E4EFE0; --green:#2F6535; }
+    [data-palette="harbour"][data-mode="dark"] { --paper:#091820; --panel:#102832; --rule:#38505A; --ink:#EAF1F2; --muted:#A3B4B9; --action:#78CDE0; --action-ink:#091820; --logo:#78CDE0; --blue-fill:#1F304B; --blue:#C0D4F1; --amber-fill:#393021; --amber:#F0D69A; --red-fill:#4A2A35; --red:#F3B3BE; --green-fill:#25402F; --green:#BCE0BA; }
+    [data-palette="ember"][data-mode="light"] { --paper:#F8F5EE; --panel:#EEE9DF; --rule:#CEC5BA; --ink:#292B2E; --muted:#625D59; --action:#87384B; --action-ink:#fff; --logo:#87384B; --blue-fill:#E2E9F0; --blue:#345F9B; --amber-fill:#F2E7D2; --amber:#795316; --red-fill:#F1DDE0; --red:#873044; --green-fill:#E4EFE0; --green:#2F6535; }
+    [data-palette="ember"][data-mode="dark"] { --paper:#1D1B1D; --panel:#292629; --rule:#50464A; --ink:#F2EBE0; --muted:#B7AAA4; --action:#F1A3B1; --action-ink:#1D1B1D; --logo:#F1A3B1; --blue-fill:#283544; --blue:#C0D4F1; --amber-fill:#393021; --amber:#F0D69A; --red-fill:#4A2A35; --red:#F3B3BE; --green-fill:#25402F; --green:#BCE0BA; }
+    [data-palette="field"][data-mode="light"] { --paper:#F3F4ED; --panel:#E8ECE3; --rule:#C2CEC2; --ink:#22302A; --muted:#526358; --action:#346B49; --action-ink:#fff; --logo:#346B49; --blue-fill:#E1E9F5; --blue:#345F9B; --amber-fill:#F4E7D4; --amber:#744914; --red-fill:#F1DDE0; --red:#873044; --green-fill:#E4EFE0; --green:#2F6535; }
+    [data-palette="field"][data-mode="dark"] { --paper:#121E1A; --panel:#1D2C24; --rule:#405447; --ink:#E7EEE4; --muted:#A9B9A9; --action:#A3D7B0; --action-ink:#121E1A; --logo:#A3D7B0; --blue-fill:#1F304B; --blue:#C0D4F1; --amber-fill:#393021; --amber:#F0D69A; --red-fill:#4A2A35; --red:#F3B3BE; --green-fill:#25402F; --green:#BCE0BA; }
+    *, *::before, *::after { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-size:14px; line-height:1.55; }
+    button, input, select { font:inherit; }
+    a { color:var(--action); text-underline-offset:3px; }
+    a:hover { text-decoration-thickness:2px; }
+    :focus-visible { outline:2px solid var(--action); outline-offset:3px; }
+    .container { max-width:1280px; margin:auto; padding-inline:clamp(18px,3vw,40px); }
+    .eyebrow { font-size:11px; text-transform:uppercase; letter-spacing:.12em; font-weight:700; }
+    .quiet { color:var(--muted); }
+    .serif { font-family:Charter,"Bitstream Charter","Sitka Text",Cambria,Georgia,serif; }
+    .top-rule { height:4px; background:var(--action); }
+    .utility { padding-block:13px; border-bottom:1px solid var(--rule); display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    .utility p { margin:0; color:var(--muted); font-size:12px; }
+    .controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+    .controls label { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; }
+    .controls select { min-height:35px; padding:5px 28px 5px 8px; background:var(--paper); color:var(--ink); border:1px solid var(--rule); border-radius:3px; }
+    .masthead { display:flex; align-items:center; justify-content:space-between; gap:30px; padding-block:27px 21px; border-bottom:1px solid var(--ink); }
+    .brand { display:flex; align-items:center; gap:15px; color:var(--ink); text-decoration:none; }
+    .brand-name { font:700 clamp(25px,3vw,37px)/1 Charter,"Bitstream Charter",Cambria,Georgia,serif; letter-spacing:-.025em; }
+    .brand-sub { display:block; margin-top:5px; color:var(--muted); font:700 10px/1.4 "DejaVu Sans",system-ui,sans-serif; text-transform:uppercase; letter-spacing:.11em; }
+    .logo { width:36px; height:36px; flex:none; display:grid; grid-template-columns:repeat(3,10px); grid-template-rows:repeat(3,10px); gap:3px; }
+    .logo span { background:var(--rule); }
+    .logo span:nth-child(3), .logo span:nth-child(6) { background:var(--logo); }
+    .logo span:nth-child(2), .logo span:nth-child(5), .logo span:nth-child(8) { background:var(--ink); }
+    .nav { display:flex; gap:24px; font-size:12px; font-weight:700; }
+    .nav a { color:var(--ink); text-decoration:none; }
+    .nav a.active { color:var(--action); text-decoration:underline; text-underline-offset:8px; }
+    main { padding-block:34px 80px; }
+    .intro { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(230px,.8fr); gap:35px; padding-bottom:35px; border-bottom:1px solid var(--rule); }
+    h1 { margin:9px 0 13px; font:700 clamp(36px,5vw,58px)/1.03 Charter,"Bitstream Charter",Cambria,Georgia,serif; letter-spacing:-.035em; }
+    .intro p { margin:0; max-width:60ch; color:var(--muted); font-size:15px; }
+    .study-note { align-self:end; border-left:2px solid var(--action); padding-left:17px; font-size:12px; }
+    .study-note strong { display:block; font-size:13px; margin-bottom:4px; }
+    .study-note p { font-size:12px; }
+    .section { padding-block:31px 35px; border-bottom:1px solid var(--rule); }
+    .section-title { display:flex; justify-content:space-between; align-items:baseline; gap:20px; margin-bottom:20px; }
+    h2 { font:700 29px/1.1 Charter,"Bitstream Charter",Cambria,Georgia,serif; letter-spacing:-.015em; margin:0; }
+    h3 { margin:0; }
+    .section-title p { margin:0; color:var(--muted); font-size:12px; }
+    .editorial-grid { display:grid; grid-template-columns:minmax(0,1fr) 285px; gap:45px; }
+    .story { display:grid; grid-template-columns:minmax(0,1fr) 180px; gap:24px; padding:19px 0; border-top:1px solid var(--rule); }
+    .story:first-child { border-top:2px solid var(--ink); }
+    .story-meta { display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:11px; }
+    .story-meta b { color:var(--action); text-transform:uppercase; letter-spacing:.08em; }
+    .story h3 { font:700 23px/1.18 Charter,"Bitstream Charter",Cambria,Georgia,serif; margin:9px 0 8px; }
+    .story h3 a { color:var(--ink); text-decoration:none; }
+    .story h3 a:hover { color:var(--action); text-decoration:underline; }
+    .story p { margin:0 0 12px; max-width:67ch; color:var(--muted); font-size:13px; }
+    .story-side { text-align:right; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; gap:15px; font-size:11px; color:var(--muted); }
+    .story-side a { color:var(--ink); }
+    .tags { display:flex; flex-wrap:wrap; gap:6px; }
+    .tag { display:inline-block; padding:3px 7px; border:1px solid var(--rule); color:var(--ink); background:var(--panel); border-radius:2px; font-size:11px; font-weight:700; text-decoration:none; }
+    .tag.cve { border-color:var(--red); background:var(--red-fill); color:var(--red); }
+    .signal { display:inline-block; padding:4px 7px; border-left:2px solid var(--blue); color:var(--blue); background:var(--blue-fill); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+    .signal.action { border-color:var(--amber); color:var(--amber); background:var(--amber-fill); }
+    .signal.urgent { border-color:var(--red); color:var(--red); background:var(--red-fill); }
+    .source-box { border-top:2px solid var(--ink); padding-top:14px; }
+    .source-box h3 { font:700 18px/1.2 Charter,"Bitstream Charter",Cambria,Georgia,serif; }
+    .source-box p { color:var(--muted); font-size:12px; }
+    .source-box ol { margin:13px 0 0; padding-left:20px; font-size:12px; }
+    .source-box li { padding:9px 0; border-top:1px solid var(--rule); }
+    .source-box li span { display:block; color:var(--muted); font-size:11px; }
+    .component-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
+    .component { min-width:0; padding:16px; border:1px solid var(--rule); background:var(--panel); }
+    .component h3 { margin:0 0 14px; font-size:11px; letter-spacing:.1em; text-transform:uppercase; }
+    .component p { margin:12px 0 0; font-size:12px; color:var(--muted); }
+    .stack { display:flex; align-items:center; flex-wrap:wrap; gap:9px; }
+    .btn { min-height:34px; padding:6px 12px; border:1px solid var(--ink); border-radius:3px; background:var(--paper); color:var(--ink); cursor:pointer; font-weight:700; font-size:12px; }
+    .btn.primary { background:var(--action); border-color:var(--action); color:var(--action-ink); }
+    .btn.quiet-btn { border-color:transparent; background:transparent; color:var(--action); }
+    .btn:disabled { opacity:.45; cursor:not-allowed; }
+    .field { display:block; margin-bottom:10px; font-size:12px; font-weight:700; }
+    .field input, .field select { display:block; width:100%; min-height:36px; margin-top:5px; border:1px solid var(--rule); border-radius:3px; background:var(--paper); color:var(--ink); padding:6px 9px; }
+    .notice { border:1px solid var(--blue); border-left:3px solid var(--blue); background:var(--blue-fill); color:var(--ink); padding:10px 12px; font-size:12px; }
+    .notice.error { border-color:var(--red); background:var(--red-fill); }
+    .notice strong { display:block; }
+    .notice + .notice { margin-top:9px; }
+    .status-line { display:flex; justify-content:space-between; gap:10px; font-size:11px; font-weight:700; }
+    progress { width:100%; height:8px; margin-block:8px 14px; accent-color:var(--action); }
+    .loading { display:flex; align-items:center; gap:10px; font-size:12px; }
+    .loading .logo { width:24px; height:24px; grid-template-columns:repeat(3,6px); grid-template-rows:repeat(3,6px); gap:3px; }
+    .loading .logo span:nth-child(2), .loading .logo span:nth-child(3), .loading .logo span:nth-child(5), .loading .logo span:nth-child(6), .loading .logo span:nth-child(8) { background:var(--ink); }
+    .loading .logo span:nth-child(2) { background:var(--logo); }
+    @media (prefers-reduced-motion:no-preference) {
+      .loading .logo span:nth-child(2), .loading .logo span:nth-child(3), .loading .logo span:nth-child(6), .loading .logo span:nth-child(5) { animation:chase 1.2s steps(1,end) infinite; }
+      .loading .logo span:nth-child(3) { animation-delay:-.9s; }
+      .loading .logo span:nth-child(6) { animation-delay:-.6s; }
+      .loading .logo span:nth-child(5) { animation-delay:-.3s; }
+      @keyframes chase { 0%,24.999% { background:var(--logo); } 25%,100% { background:var(--ink); } }
+    }
+    .tokens { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; }
+    .swatch { border:1px solid var(--rule); padding:7px; font-size:10px; background:var(--panel); }
+    .swatch::before { content:""; display:block; height:34px; margin-bottom:7px; background:var(--swatch); border:1px solid var(--rule); }
+    .swatch b { display:block; }
+    footer { padding-block:22px; color:var(--muted); font-size:11px; }
+    @media (max-width:900px) { .editorial-grid { grid-template-columns:1fr; } .component-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:650px) { .utility, .masthead { align-items:flex-start; flex-direction:column; } .utility { gap:10px; } .masthead { gap:19px; } .intro { grid-template-columns:1fr; gap:18px; } .story { grid-template-columns:1fr; gap:12px; } .story-side { text-align:left; align-items:flex-start; } .component-grid { grid-template-columns:1fr; } .tokens { grid-template-columns:repeat(3,minmax(0,1fr)); } .section-title { display:block; } .section-title p { margin-top:5px; } }
+    @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior:auto !important; animation:none !important; } }
+  </style>
+</head>
+<body>
+  <div class="top-rule"></div>
+  <div class="container">
+    <div class="utility">
+      <p><strong>Primary Signal · design specimen</strong> &nbsp; / &nbsp; Synthetic demonstration</p>
+      <div class="controls" aria-label="Study controls">
+        <label for="palette">Theme <select id="palette"><option value="harbour">Harbour Blue · live</option><option value="ember">Ember Ledger · study</option><option value="field">Field Notes · study</option></select></label>
+        <label for="mode">Mode <select id="mode"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      </div>
+    </div>
+    <header class="masthead">
+      <a class="brand" href="#top" aria-label="Primary Signal, back to top"><span class="logo" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span><span><span class="brand-name">Primary Signal</span><span class="brand-sub">Cyber security, in context</span></span></a>
+      <nav class="nav" aria-label="Specimen navigation"><a class="active" href="#stories">Stories</a><a href="#components">Components</a><a href="#tokens">Tokens</a></nav>
+    </header>
+    <main id="top">
+      <div class="intro">
+        <div><span class="eyebrow" style="color:var(--action)">Design study / 01</span><h1>One publication.<br>Three colour voices.</h1><p>Identical fictional stories and components across all six light and dark treatments. Compare reading rhythm, source visibility, and action contrast.</p><p style="margin-top:10px;font-size:12px">Only Theme and Mode change this static specimen. Other controls illustrate appearance.</p></div>
+        <aside class="study-note"><strong id="theme-heading">Harbour Blue is the live theme.</strong><p id="theme-description">Cool paper, ink, and blue action. The existing publication remains the baseline for these studies.</p></aside>
+      </div>
+      <section class="section" id="stories" aria-labelledby="stories-title">
+        <div class="section-title"><h2 id="stories-title">Story and evidence</h2><p>Editorial row · named signal · source trail</p></div>
+        <div class="editorial-grid">
+          <div>
+            <article class="story">
+              <div><div class="story-meta"><b>Vulnerabilities</b><span class="quiet">UK impact</span><span class="quiet">2 hours ago</span></div><h3><a href="#sources">Maintainers publish an update for a widely used gateway</a></h3><p>The fictional advisory describes a remotely reachable flaw. Operators can check affected versions before scheduling the update.</p><div class="tags" aria-label="Story tags"><span class="tag cve">CVE-YYYY-NNNN</span><span class="tag">Network edge</span><span class="tag">Advisory</span></div></div>
+              <div class="story-side"><span class="signal action">Actionable guidance</span><a href="#sources">3 sources · vendor, CERT, researcher</a></div>
+            </article>
+            <article class="story">
+              <div><div class="story-meta"><b>Research</b><span class="quiet">Yesterday</span></div><h3><a href="#sources">Researchers map a new route through legacy identity systems</a></h3><p>A fictional paper compares misconfigurations seen in several test environments and documents the conditions needed for exposure.</p><div class="tags" aria-label="Story tags"><span class="tag">Identity</span><span class="tag">Research</span></div></div>
+              <div class="story-side"><span class="signal">Primary research</span><a href="#sources">2 sources · paper, code sample</a></div>
+            </article>
+          </div>
+          <aside class="source-box" id="sources"><span class="eyebrow quiet">Provenance</span><h3>Follow the evidence</h3><p>Source links remain visible beside the editorial summary. The labels describe evidence, not a composite score.</p><ol><li><a href="#sources">Vendor advisory</a><span>Fictional vendor · original notice</span></li><li><a href="#sources">CERT bulletin</a><span>Example national CERT · corroboration</span></li><li><a href="#sources">Research note</a><span>Fictional researcher · technical detail</span></li></ol></aside>
+        </div>
+      </section>
+      <section class="section" id="components" aria-labelledby="components-title">
+        <div class="section-title"><h2 id="components-title">Component showcase</h2><p>Portable specimen based on the Jinja catalogue and shared tokens</p></div>
+        <div class="component-grid">
+          <div class="component"><h3>Actions</h3><div class="stack"><button class="btn primary" type="button">Read the brief</button><button class="btn" type="button">View sources</button><button class="btn quiet-btn" type="button">Clear filters</button><button class="btn" type="button" disabled>Unavailable</button></div><p>One clear primary action; secondary and quiet states keep their place in the reading flow.</p></div>
+          <div class="component"><h3>Tags and named signals</h3><div class="stack"><span class="tag cve">CVE-YYYY-NNNN</span><span class="tag">Identity</span><span class="signal">Primary research</span><span class="signal action">Actionable guidance</span><span class="signal urgent">Active exploitation</span></div><p>In this fictional example, a vendor advisory and CERT bulletin explicitly report exploitation. Red and amber retain their editorial meanings across themes.</p></div>
+          <div class="component"><h3>Filters and form</h3><label class="field" for="topic">Topic<select id="topic"><option>All topics</option><option>Vulnerabilities</option><option>Research</option></select></label><label class="field" for="search">Search<input id="search" type="search" placeholder="Search stories"></label><button class="btn primary" type="button">Apply filters</button></div>
+          <div class="component"><h3>Notices</h3><div class="notice" role="status"><strong>No stories match these filters.</strong>Try a broader topic or clear the UK impact filter.</div><div class="notice error" role="alert"><strong>Stories could not be loaded.</strong>Try again. Existing filters have been kept.</div></div>
+          <div class="component"><h3>Progress and loading</h3><div class="status-line"><span>Publication milestone</span><span>42%</span></div><progress value="42" max="100">42%</progress><div class="loading"><span class="logo" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span><span>Loading latest stories…</span></div><p>Progress is labelled; the selected 3 × 3 pixel mark retains nine equal squares.</p></div>
+          <div class="component"><h3>Source detail</h3><details><summary>What supports “Actionable guidance”?</summary><p>Guidance is present in the fictional vendor advisory and corroborated by the example CERT bulletin.</p><a href="#sources">Review the source trail</a></details><p>Use native disclosure so evidence remains reachable by keyboard.</p></div>
+        </div>
+      </section>
+      <section class="section" id="tokens" aria-labelledby="tokens-title"><div class="section-title"><h2 id="tokens-title">Colour roles</h2><p>Palette changes do not redefine severity</p></div><div class="tokens"><div class="swatch" style="--swatch:var(--paper)"><b>Paper</b>Reading ground</div><div class="swatch" style="--swatch:var(--ink)"><b>Ink</b>Text and masthead</div><div class="swatch" style="--swatch:var(--action)"><b>Action</b>Links and controls</div><div class="swatch" style="--swatch:var(--blue)"><b>Evidence</b>Research / information</div><div class="swatch" style="--swatch:var(--amber)"><b>Attention</b>Guidance / developing</div><div class="swatch" style="--swatch:var(--red)"><b>Urgent</b>Incident / error</div></div></section>
+    </main>
+    <footer>Primary Signal design study · fictional specimen content · Harbour Blue remains the shipped palette</footer>
+  </div>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const palette = document.getElementById('palette');
+      const mode = document.getElementById('mode');
+      const params = new URLSearchParams(location.search);
+      if (['harbour', 'ember', 'field'].includes(params.get('theme'))) palette.value = params.get('theme');
+      if (['light', 'dark'].includes(params.get('mode'))) mode.value = params.get('mode');
+      const descriptions = {
+        harbour: ['Harbour Blue is the live theme.', 'Cool paper, ink, and blue action. The existing publication remains the baseline for these studies.'],
+        ember: ['Ember Ledger is a study.', 'Warm paper and restrained wine give this edition a newspaper character. The action colour must remain distinct from urgent signals.'],
+        field: ['Field Notes is a study.', 'A research journal mood with green action. Semantic success and incident colours remain separate from the brand.']
+      };
+      function update(writeUrl = false) {
+        root.dataset.palette = palette.value;
+        root.dataset.themeFamily = palette.value;
+        root.dataset.mode = mode.value;
+        root.style.colorScheme = mode.value;
+        document.getElementById('theme-heading').textContent = descriptions[palette.value][0];
+        document.getElementById('theme-description').textContent = descriptions[palette.value][1];
+        if (writeUrl) {
+          const next = new URL(location.href);
+          next.searchParams.set('theme', palette.value);
+          next.searchParams.set('mode', mode.value);
+          history.replaceState(null, '', next);
+        }
+      }
+      palette.addEventListener('change', () => update(true));
+      mode.addEventListener('change', () => update(true));
+      update();
+    })();
+  </script>
+</body>
+</html>

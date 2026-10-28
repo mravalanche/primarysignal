@@ -20,12 +20,15 @@ def create_public_app(
     *,
     story_reader: StoryReader | None = None,
     demo_mode: bool = False,
+    static_tour: bool = False,
 ) -> FastAPI:
     """Create the internet-facing application without administration routes."""
 
     resolved_settings = settings or Settings()
     if demo_mode and resolved_settings.environment is RuntimeEnvironment.PRODUCTION:
         raise RuntimeError("the synthetic demo is unavailable in production")
+    if static_tour and not demo_mode:
+        raise RuntimeError("the static tour requires the synthetic demo")
     if resolved_settings.environment is RuntimeEnvironment.PRODUCTION and (
         story_reader is None or isinstance(story_reader, EmptyStoryReader)
     ):
@@ -33,6 +36,7 @@ def create_public_app(
     app = create_base_app(settings=resolved_settings, surface=Surface.PUBLIC)
     app.state.story_reader = story_reader if story_reader is not None else EmptyStoryReader()
     app.state.demo_mode = demo_mode
+    app.state.static_tour = static_tour
     mount_ui_assets(app, TemplateSurface.PUBLIC)
     app.include_router(health_router)
     app.include_router(stories_router)

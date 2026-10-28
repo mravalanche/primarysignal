@@ -310,15 +310,22 @@ observed time, producing rule/run, confidence, and override history.
 ## 12. Design system baseline
 
 The selected Harbour Blue direction is specified in
-[the design system](design-system.md). It fixes the original A4c1 Valley mark,
-Charter-style headlines, a larger reading serif, and a restrained blue-led
-palette in light and dark modes. A dedicated brand blue sits alongside a
+[the design system](design-system.md). The selected 3×3 Spectrogram P has
+replaced the original A4c1 Valley mark. The system uses Charter-style
+headlines, a larger reading serif, and a restrained blue-led palette in light
+and dark modes. A dedicated brand blue sits alongside a
 separate editorial blue, red, amber, teal, green, cyan, orange, violet and
 rose. Each ramp has strong and muted steps; available hues have no implied
 product meaning. Components use semantic aliases: for example,
 an incident rail uses strong red while a CVE tag uses muted red. Typography,
 spacing, source panels, buttons, tags, signals, and focus states share tokens
 across public and administration pages. Colour never replaces a text label.
+
+The [design dossier](design/README.md) records Harbour Blue as the live
+theme and Ember Ledger and Field Notes as exploratory palette studies. Its
+[component showcase](../design/component-showcase.html) uses the same fictional
+content across themes, with linked browser captures for review. Adopting an
+alternative in the application needs a separate decision.
 
 ## 13. Delivery milestones
 
@@ -378,6 +385,14 @@ the reference corpus and retains source provenance.
 
 Exit: release gates pass and the deployment is recoverable.
 
+### After v1 — Installable public site
+
+Consider a web app manifest, 192px and 512px icons including a maskable icon,
+and an HTTPS install and launch check for the public site. Keep administration
+out of the installable scope. Decide how current stories and corrections should
+behave offline before adding a service worker or offline cache. This is a
+backlog item, not a v1 milestone check.
+
 ## 14. Cross-cutting acceptance criteria
 
 - Re-polling an unchanged feed creates no duplicate articles or active jobs.
@@ -431,13 +446,13 @@ Exit: release gates pass and the deployment is recoverable.
 
 ## 17. Immediate next step
 
-The synthetic reading pages and local Docker smoke have passed. Verify the
-versioned development image publication, then run the disposable PostgreSQL
-publication stack in M2 with operator-owned local configuration. Verify its
-publish, read and suppress flow in a browser and across a restart before
-marking the stack complete. The restricted public reader, Latest and story
-pages, authenticated Reading desk, and database-backed publish/suppress
-decisions already have isolated tests.
+The synthetic reading pages and local Docker smoke have passed. The development
+image has been published to GHCR and its digest verified. The disposable
+PostgreSQL publication stack is prepared in a draft pull request. It still
+needs operator-owned local configuration, a browser publish/read/suppress
+smoke, and a restart check before its M2 exit checks can close. The restricted
+public reader, Latest and story pages, authenticated Reading desk, and
+database-backed publish/suppress decisions already have isolated tests.
 
 Build the reference corpus before model evaluation in M4. It must contain real,
 public article references and independent story labels. Keep full article text
@@ -447,11 +462,20 @@ Synthetic ingestion reaches durable inventory. The local processor binds feed
 and article jobs to the loopback retriever with explicit development or test
 opt-in. Its disposable PostgreSQL test runs the processor in separate OS
 processes, recovers an expired lease and rejects stale lease completion. Next,
-ingest three varied public sources. A killed worker and container restart still
-need an end-to-end check. Production retrieval remains unbound. Before
-unattended live polling, verify deployment egress controls, service readiness,
-source-disable serialization, and an extracted-text retention policy. The local
-retriever's test opt-in is not a production deployment configuration.
+ingest three varied public sources after deployment controls are ready. An
+actual processor killed during a synthetic feed or article fetch now has an
+end-to-end recovery test; container restart remains open.
+The local processor now checks retriever protocol and queue capability before
+recovering leases or claiming jobs. Production retrieval remains unbound. Before
+unattended live polling, verify deployment egress controls and service readiness
+on the target deployment. Source-disable serialization and fixed-policy
+extracted-text cleanup have isolated PostgreSQL tests; verify their operation
+and backup retention on the target deployment. The local retriever's test
+opt-in is not a production deployment configuration.
+
+The local metadata-only job-health command reports queue counts, retries,
+expired leases and dead jobs through a separate read-only capability. It aids
+diagnosis without exposing job payloads or changing queue state.
 
 ## 18. V1 security baseline
 

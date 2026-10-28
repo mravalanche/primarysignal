@@ -39,5 +39,5 @@ def progress_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="progress.html",
-        context={"progress": load_progress()},
+        context={"progress": load_progress(), "static_tour": request.app.state.static_tour},
     )

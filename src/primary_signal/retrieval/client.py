@@ -1,5 +1,6 @@
 """Bounded processor client for the isolated feed retriever API."""
 
+import asyncio
 import base64
 import binascii
 import json
@@ -26,8 +27,12 @@ from primary_signal.retrieval.extract import (
     NORMALIZATION_VERSION,
     ArticleExtraction,
 )
+from primary_signal.retrieval.protocol import CAPABILITIES, PROTOCOL_VERSION, READY_PATH
 
 MAX_API_RESPONSE_BYTES = 3 * 1024 * 1024
+MAX_READY_RESPONSE_BYTES = 1024
+READY_TOTAL_TIMEOUT_SECONDS = 5.0
+READY_IO_TIMEOUT_SECONDS = 2.0
 TOTAL_RESPONSE_TIMEOUT_SECONDS = 25.0
 READ_TIMEOUT_SECONDS = 23.0
 _FETCH_PATH = "/v1/feeds/fetch"
@@ -116,6 +121,7 @@ class RetrieverClient:
         base_url: str,
         *,
         transport: httpx.BaseTransport | None = None,
+        readiness_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         parsed = urlsplit(base_url)
         if (
@@ -129,8 +135,10 @@ class RetrieverClient:
             or base_url.rstrip("/") != f"{parsed.scheme}://{parsed.netloc}"
         ):
             raise ValueError("retriever base URL must be a fixed HTTP origin")
+        self._base_url = base_url.rstrip("/")
+        self._readiness_transport = readiness_transport
         self._client = httpx.Client(
-            base_url=base_url.rstrip("/"),
+            base_url=self._base_url,
             transport=transport,
             trust_env=False,
             follow_redirects=False,
@@ -146,6 +154,80 @@ class RetrieverClient:
 
     def __exit__(self, *_args: object) -> None:
         self.close()
+
+    def require_ready(self, required_capability: str) -> None:
+        """Run a synchronous startup check outside an existing event loop."""
+
+        if required_capability not in CAPABILITIES:
+            raise ValueError("unknown retriever capability")
+        payload = asyncio.run(self._read_ready())
+        if (
+            set(payload) != {"ready", "protocol_version", "capabilities"}
+            or type(payload["ready"]) is not bool
+            or type(payload["protocol_version"]) is not int
+            or payload["protocol_version"] != PROTOCOL_VERSION
+            or not isinstance(payload["capabilities"], list)
+        ):
+            raise FeedFetchError("retriever_protocol")
+        capabilities = cast(list[object], payload["capabilities"])
+        if (
+            any(not isinstance(value, str) or value not in CAPABILITIES for value in capabilities)
+            or len(set(cast(list[str], capabilities))) != len(capabilities)
+            or required_capability not in capabilities
+        ):
+            raise FeedFetchError("retriever_protocol")
+        if payload["ready"] is not True:
+            raise FeedFetchError("dependency_unavailable")
+
+    async def _read_ready(self) -> dict[str, Any]:
+        # Cancellation covers header parsing and chunk framing too. An idle
+        # socket timeout alone cannot bound a peer that continually drips data.
+        try:
+            async with (
+                asyncio.timeout(READY_TOTAL_TIMEOUT_SECONDS),
+                httpx.AsyncClient(
+                    base_url=self._base_url,
+                    transport=self._readiness_transport,
+                    trust_env=False,
+                    follow_redirects=False,
+                    timeout=httpx.Timeout(READY_IO_TIMEOUT_SECONDS),
+                    headers={"Accept": "application/json", "Accept-Encoding": "identity"},
+                ) as client,
+                client.stream("GET", READY_PATH) as response,
+            ):
+                if response.status_code != 200:
+                    if response.is_redirect:
+                        raise FeedFetchError("retriever_protocol")
+                    if response.status_code == 429:
+                        raise FeedFetchError("rate_limited")
+                    raise FeedFetchError("dependency_unavailable")
+                if (
+                    response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                    != "application/json"
+                    or response.headers.get("content-encoding", "identity").strip().lower()
+                    != "identity"
+                ):
+                    raise FeedFetchError("retriever_protocol")
+                content_length = response.headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        length = int(content_length)
+                    except ValueError as error:
+                        raise FeedFetchError("retriever_protocol") from error
+                    if length < 0 or length > MAX_READY_RESPONSE_BYTES:
+                        raise FeedFetchError("retriever_protocol")
+                chunks: list[bytes] = []
+                length = 0
+                async for chunk in response.aiter_raw():
+                    length += len(chunk)
+                    if length > MAX_READY_RESPONSE_BYTES:
+                        raise FeedFetchError("retriever_protocol")
+                    chunks.append(chunk)
+                return _decode_object(b"".join(chunks))
+        except (TimeoutError, httpx.TimeoutException) as error:
+            raise FeedFetchError("dependency_timeout") from error
+        except httpx.TransportError as error:
+            raise FeedFetchError("dependency_unavailable") from error
 
     def fetch(self, target: FeedPollTarget) -> FeedFetchResult:
         payload = self._post(

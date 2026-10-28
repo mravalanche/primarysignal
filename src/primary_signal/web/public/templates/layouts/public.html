@@ -1,5 +1,37 @@
 {% extends "layouts/base.html" %}
+{% from "components/brand.html" import pixel_mark %}
 {% block styles %}
+  <script>
+    (() => {
+      // A plain logo click requests one replay on the home page. Other arrivals
+      // get one entrance per browsing visit, including across tabs.
+      try {
+        if (!matchMedia("(prefers-reduced-motion: no-preference)").matches) return;
+        const visitKey = "primary-signal-brand-last-seen";
+        const replayKey = "primary-signal-brand-replay";
+        const now = Date.now();
+        const lastSeen = Number(localStorage.getItem(visitKey));
+        localStorage.setItem(visitKey, String(now));
+        let replay;
+        try { replay = JSON.parse(sessionStorage.getItem(replayKey) || "null"); } catch (_) {}
+        sessionStorage.removeItem(replayKey);
+        const requestedReplay = replay?.path === location.pathname
+          && Number.isFinite(replay.time) && now >= replay.time && now - replay.time < 30 * 1000;
+        if (!lastSeen || lastSeen > now || now - lastSeen > 30 * 60 * 1000 || requestedReplay) {
+          document.documentElement.classList.add("ps-brand-entrance");
+        }
+        document.addEventListener("DOMContentLoaded", () => {
+          document.querySelector(".ps-brand")?.addEventListener("click", (event) => {
+            if (event.defaultPrevented || event.button !== 0
+                || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            try {
+              sessionStorage.setItem(replayKey, JSON.stringify({ path: event.currentTarget.pathname, time: Date.now() }));
+            } catch (_) {}
+          });
+        });
+      } catch (_) {} // Unavailable storage leaves the complete, static mark.
+    })();
+  </script>
   <script>
     (() => {
       try {
@@ -9,28 +41,18 @@
     })();
   </script>
   <link rel="stylesheet" href="{{ url_for('public-assets', path='/public.css') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('public-assets', path='/brand/favicon-16.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('public-assets', path='/brand/favicon-32.png') }}">
+  <link rel="icon" type="image/png" sizes="48x48" href="{{ url_for('public-assets', path='/brand/favicon-48.png') }}">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('public-assets', path='/brand/favicon.svg') }}" data-light-icon="{{ url_for('public-assets', path='/brand/favicon-light.svg') }}" data-dark-icon="{{ url_for('public-assets', path='/brand/favicon-dark.svg') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('public-assets', path='/brand/apple-touch-icon.png') }}">
+  {% if request.app.state.static_tour %}<script src="{{ url_for('public-assets', path='/static-tour.js') }}" defer></script>{% endif %}
 {% endblock %}
 {% block body %}
   <header class="ps-masthead border-b ps-rule">
     <div class="ps-page flex min-h-16 items-center justify-between gap-4">
       <a href="/" class="ps-brand">
-        <svg class="ps-brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
-          <path d="M5 55V48l4-6 4 6 4-12 4 11 2-6v14zM49 55V44l3-8 3 10 3-6 1 7v8z" style="fill:var(--ps-logo-ink)"/>
-          <path d="M5 57h54" style="stroke:var(--ps-logo-ink)" stroke-width="3"/>
-          <defs>
-            <mask id="ps-brand-p-counter" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
-              <path d="M0 0h64v64H0z" fill="white"/>
-              <path d="M32 30h4c3 0 5 2 5 5s-2 5-5 5h-4z" fill="black"/>
-            </mask>
-            <mask id="ps-brand-floor-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
-              <path d="M0 0h64v64H0z" fill="white"/>
-              <path d="M40 56 43 49 47 56z" fill="black"/>
-            </mask>
-          </defs>
-          <path d="M25 55V23h11c8 0 12 5 12 12s-4 12-12 12h-4v8z" style="fill:var(--ps-logo-accent)" mask="url(#ps-brand-p-counter)"/>
-          <path d="M33 55v-3l3-2 3 3 3-6 3 5 4-1v4z" style="fill:var(--ps-logo-ink)" mask="url(#ps-brand-floor-cut)"/>
-        </svg>
+        {{ pixel_mark("entrance") }}
         <span class="ps-brand-name">Primary Signal</span>
       </a>
       <div class="flex items-center gap-3">
@@ -39,7 +61,8 @@
       </div>
     </div>
   </header>
-  <main id="main-content" class="ps-page py-10">{% block content %}{% endblock %}</main>
+  <main id="main-content" class="ps-page py-10">{% if request.app.state.static_tour and request.url.path == '/progress' %}<p class="ps-demo-notice" role="note">Synthetic demonstration · These stories and sources are fictional. This progress ledger is a repository snapshot.</p>{% endif %}{% block content %}{% endblock %}</main>
+  {% if not request.app.state.static_tour %}<template id="ps-brand-loading-template"><span class="ps-source-loading" role="status">{{ pixel_mark("loading") }}<span>Loading sources…</span></span></template>{% endif %}
   <script>
     (() => {
       const button = document.querySelector("[data-theme-toggle]");
@@ -50,7 +73,7 @@
         const dark = current() === "primarysignal-dark";
         button.setAttribute("aria-pressed", String(dark));
         button.textContent = dark ? "Light" : "Dark";
-        const icon = document.querySelector('link[rel="icon"]');
+        const icon = document.querySelector('link[rel="icon"][type="image/svg+xml"]');
         if (icon) icon.href = dark ? icon.dataset.darkIcon : icon.dataset.lightIcon;
       };
       button.addEventListener("click", () => {
@@ -69,6 +92,7 @@
         });
       });
 
+      {% if not request.app.state.static_tour %}
       const sourceControls = [];
       document.querySelectorAll(".ps-source-control").forEach((control) => {
         const trigger = control.querySelector(".ps-source-trigger");
@@ -115,7 +139,7 @@
           placePanel();
           if (loaded) return Promise.resolve(true);
           if (loading) return loading;
-          panel.textContent = "Loading sources…";
+          panel.replaceChildren(document.getElementById("ps-brand-loading-template").content.cloneNode(true));
           loading = fetch(trigger.dataset.sourcePreview, { headers: { Accept: "text/html" } })
             .then((response) => { if (!response.ok) throw new Error("Source preview unavailable"); return response.text(); })
             .then((html) => { panel.innerHTML = html; loaded = true; placePanel(); return true; })
@@ -190,7 +214,9 @@
           control.open = false;
         });
       });
+      {% endif %}
 
+      {% if not request.app.state.static_tour %}
       const relativeTimes = document.querySelectorAll("time[data-relative-time]");
       if (relativeTimes.length) {
         const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -215,6 +241,7 @@
         refreshTimes();
         window.setInterval(refreshTimes, 60_000);
       }
+      {% endif %}
     })();
   </script>
 {% endblock %}

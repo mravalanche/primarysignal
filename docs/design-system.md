@@ -1,6 +1,6 @@
 # Primary Signal design system
 
-Primary Signal uses Harbour Blue in light and dark modes and the waveform P mark in its public identity.
+Primary Signal uses Harbour Blue in light and dark modes and the selected 3×3 Spectrogram P mark in its public identity.
 
 This document is the reference for new public and administration UI. The two interfaces can use different page layouts, but share these foundations. Primary Signal should read as an editorial security publication: strong type, restrained colour, thin rules and clear source provenance. Colour supports labels and evidence; it never substitutes for them or implies a composite confidence score.
 
@@ -69,8 +69,8 @@ Components use role aliases rather than choosing a hex value or hue step ad hoc.
 
 | Role | Token | Use |
 | --- | --- | --- |
-| Logo spectrum and wordmark | `--ps-logo-ink = --ps-neutral-ink` | Waveform spectrum and masthead name |
-| Logo P, ordinary links, primary action, active filter, focus | `--ps-logo-accent` / `--ps-link` / `--ps-action = --ps-brand-blue-strong` | One recognisable interactive brand blue |
+| Logo stem and wordmark | `--ps-logo-ink = --ps-neutral-ink` | Dark P pixels and masthead name |
+| Logo bowl, ordinary links, primary action, active filter, focus | `--ps-logo-accent` / `--ps-link` / `--ps-action = --ps-brand-blue-strong` | Blue P pixels and interactive brand blue |
 | Supply-chain tag | `--ps-blue-soft` fill with `--ps-blue-ink` label | Quiet editorial subject badge |
 | Advisory article rail | `--ps-amber-strong` | Article type cue, alongside “Advisory” text |
 | Actionable signal | `--ps-amber-strong` dot and rule; `--ps-amber-soft` fill | Evidence-gated named signal |
@@ -149,4 +149,8 @@ Use the listed system font stacks without remote font requests. If identical typ
 
 ## Identity assets
 
-The public masthead uses an inline SVG waveform mark. Its spectrum follows `--ps-logo-ink` and its P follows `--ps-logo-accent` in either theme. The favicon uses the same paths. Its adaptive SVG follows the operating-system light/dark preference; explicit light and dark variants follow the in-site theme toggle. The logo is a mark and wordmark, not a story-type or signal indicator.
+The public masthead uses the 3×3 Spectrogram P as an inline SVG. All nine pixels
+are equal squares: quiet grid cells, an ink-coloured stem, and a blue bowl. The
+adaptive SVG favicon follows the operating-system light/dark preference; the
+site also provides themed SVG variants and 16px, 32px and 48px PNG fallbacks.
+The logo is a mark and wordmark, not a story-type or signal indicator.

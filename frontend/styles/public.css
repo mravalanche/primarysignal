@@ -30,9 +30,64 @@
 }
 
 .ps-brand-mark {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 36px;
+  height: 36px;
   flex: none;
+  shape-rendering: crispEdges;
+}
+
+.ps-brand-mark .ps-pixel { fill: var(--ps-neutral-rule); }
+.ps-brand-mark .ps-pixel--ink { --pixel-final: var(--ps-logo-ink); fill: var(--ps-logo-ink); }
+.ps-brand-mark .ps-pixel--accent { --pixel-final: var(--ps-logo-accent); fill: var(--ps-logo-accent); }
+
+/* The grid and its colours switch only between complete pixel states. */
+@media (prefers-reduced-motion: no-preference) {
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel {
+    animation: ps-pixel-appear 0.001s steps(1, end) both var(--grid-delay, 0s),
+      ps-pixel-paint 0.001s steps(1, end) both var(--paint-delay, 0s);
+  }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c1,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c2,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c3 { --grid-delay: 0s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c1,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c2,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c3 { --grid-delay: 0.14s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c1,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c2,
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c3 { --grid-delay: 0.28s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r3c2 { --paint-delay: 0.48s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c2 { --paint-delay: 0.59s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c2 { --paint-delay: 0.70s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r2c3 { --paint-delay: 0.81s; }
+  .ps-brand-entrance .ps-brand-mark--entrance .ps-pixel--r1c3 { --paint-delay: 0.92s; }
+  @keyframes ps-pixel-appear {
+    from { visibility: hidden; }
+    to { visibility: visible; }
+  }
+  @keyframes ps-pixel-paint {
+    from { fill: var(--ps-neutral-rule); }
+    to { fill: var(--pixel-final, var(--ps-neutral-rule)); }
+  }
+}
+
+/* The loader keeps all nine grid cells fixed; one bowl cell is blue at a time. */
+.ps-brand-mark--loading .ps-pixel--ink,
+.ps-brand-mark--loading .ps-pixel--accent { fill: var(--ps-logo-ink); }
+.ps-brand-mark--loading .ps-pixel--r1c2 { fill: var(--ps-logo-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .ps-brand-mark--loading .ps-pixel--r1c2,
+  .ps-brand-mark--loading .ps-pixel--r1c3,
+  .ps-brand-mark--loading .ps-pixel--r2c3,
+  .ps-brand-mark--loading .ps-pixel--r2c2 {
+    animation: ps-pixel-chase 1.2s steps(1, end) infinite;
+  }
+  .ps-brand-mark--loading .ps-pixel--r1c3 { animation-delay: -0.9s; }
+  .ps-brand-mark--loading .ps-pixel--r2c3 { animation-delay: -0.6s; }
+  .ps-brand-mark--loading .ps-pixel--r2c2 { animation-delay: -0.3s; }
+  @keyframes ps-pixel-chase {
+    0%, 24.999% { fill: var(--ps-logo-accent); }
+    25%, 100% { fill: var(--ps-logo-ink); }
+  }
 }
 
 .ps-brand-name {
@@ -372,25 +427,46 @@
 }
 
 .ps-progress { width: min(100%, 76rem); margin-inline: auto; }
-.ps-progress-summary { border-block-end: 1px solid var(--ps-rule); padding-block: 1.4rem; }
-.ps-progress-summary p + p { margin-block-start: 0.5rem; color: var(--ps-neutral-muted); }
-.ps-progress-summary strong { font-family: var(--ps-font-editorial); font-size: 2.5rem; color: var(--ps-neutral-ink); }
+.ps-progress-summary { border-block-end: 1px solid var(--ps-rule); padding-block: 1.25rem 1.5rem; }
+.ps-progress-total { display: flex; align-items: baseline; gap: 0.9rem; font-family: var(--ps-font-ui); }
+.ps-progress-total strong { font-family: var(--ps-font-editorial); font-size: 2.5rem; line-height: 1; color: var(--ps-neutral-ink); }
+.ps-progress-total span { color: var(--ps-neutral-muted); font-size: var(--ps-text-ui); }
+.ps-progress-summary .ps-progress-bar { margin-block-start: 0.8rem; height: 0.45rem; }
+.ps-progress-method, .ps-progress-reviewed { color: var(--ps-neutral-muted); font-size: var(--ps-text-ui); }
+.ps-progress-method { margin-block-start: 0.9rem; }
+.ps-progress-reviewed { margin-block-start: 0.3rem; }
 .ps-progress-list { list-style: none; margin: 0; padding: 0; }
-.ps-progress-item { border-block-end: 1px solid var(--ps-rule); padding-block: 1.8rem; }
+.ps-progress-item { border-block-end: 1px solid var(--ps-rule); padding-block: 1.5rem; }
 .ps-progress-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
-.ps-progress-heading h2 { font-family: var(--ps-font-editorial); font-size: var(--ps-text-section); line-height: var(--ps-leading-section); }
+.ps-progress-heading-main { min-width: 0; }
+.ps-progress-heading h2 { max-width: 38ch; margin-block-start: 0.35rem; font-family: var(--ps-font-editorial); font-size: var(--ps-text-section); line-height: var(--ps-leading-section); }
+.ps-progress-status { display: inline-flex; align-items: center; gap: 0.35rem; margin-inline-start: 0.7rem; color: var(--ps-neutral-muted); font-family: var(--ps-font-ui); font-size: var(--ps-text-meta); font-weight: 700; text-transform: none; letter-spacing: normal; }
+.ps-progress-status--complete { color: var(--ps-teal-ink); }
+.ps-progress-status--in-progress { color: var(--ps-brand-blue-ink); }
+.ps-progress-status > span { font-size: 1rem; line-height: 1; }
 .ps-progress-count { flex: none; text-align: end; font-family: var(--ps-font-ui); }
-.ps-progress-count strong { display: block; font-size: 1.5rem; }
+.ps-progress-count strong { display: block; font-size: 1.4rem; line-height: 1.2; }
 .ps-progress-count span { color: var(--ps-neutral-muted); font-size: var(--ps-text-meta); }
-.ps-progress-checks { list-style: none; margin-block-start: 1rem; padding: 0; }
-.ps-progress-checks li { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.8rem; padding-block: 0.4rem; }
-.ps-progress-state { font-family: var(--ps-font-ui); font-size: var(--ps-text-meta); font-weight: 700; }
+.ps-progress-bar { display: block; width: 100%; height: 0.35rem; margin-block-start: 0.95rem; appearance: none; border: 0; border-radius: 0; background: var(--ps-neutral-panel); color: var(--ps-brand-blue-strong); }
+.ps-progress-bar::-webkit-progress-bar { background: var(--ps-neutral-panel); }
+.ps-progress-bar::-webkit-progress-value { background: var(--ps-brand-blue-strong); }
+.ps-progress-bar::-moz-progress-bar { background: var(--ps-brand-blue-strong); }
+.ps-progress-next { margin-block-start: 0.9rem; line-height: var(--ps-leading-body); }
+.ps-progress-next strong { margin-inline-end: 0.45rem; color: var(--ps-brand-blue-ink); font-family: var(--ps-font-ui); font-size: var(--ps-text-ui); }
+.ps-progress-evidence { margin-block-start: 0.6rem; border-block-start: 1px solid var(--ps-rule); }
+.ps-progress-evidence summary { display: flex; align-items: center; min-height: 2.75rem; width: fit-content; max-width: 100%; gap: 0.55rem; color: var(--ps-link); font-family: var(--ps-font-ui); font-size: var(--ps-text-ui); font-weight: 700; cursor: pointer; list-style: none; }
+.ps-progress-evidence summary::-webkit-details-marker { display: none; }
+.ps-progress-evidence summary::before { content: "+"; font-family: var(--ps-font-mono); font-size: 1.15rem; line-height: 1; }
+.ps-progress-evidence[open] summary::before { content: "−"; }
+.ps-progress-evidence summary:focus-visible { outline: 2px solid var(--ps-brand-blue-strong); outline-offset: 2px; }
+.ps-progress-checks { list-style: none; margin: 0; padding: 0 0 0.4rem; }
+.ps-progress-checks li { display: grid; grid-template-columns: 5.8rem minmax(0, 1fr); gap: 0.8rem; border-block-start: 1px solid var(--ps-rule); padding-block: 0.55rem; }
+.ps-progress-state { display: flex; gap: 0.35rem; align-items: baseline; font-family: var(--ps-font-ui); font-size: var(--ps-text-meta); font-weight: 700; }
 .ps-progress-checks small { display: block; margin-block-start: 0.1rem; color: var(--ps-neutral-muted); font-family: var(--ps-font-ui); font-size: var(--ps-text-meta); }
-.ps-progress-next { margin-block-start: 1rem; }
-.ps-progress-next strong { margin-inline-end: 0.4rem; font-family: var(--ps-font-ui); }
 @media (max-width: 40rem) {
-  .ps-progress-heading { display: block; }
-  .ps-progress-count { margin-block-start: 0.5rem; text-align: start; }
+  .ps-progress-heading h2 { font-size: var(--ps-text-story); }
+  .ps-progress-total { flex-wrap: wrap; gap: 0.3rem 0.7rem; }
+  .ps-progress-checks li { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
 }
 
 .ps-latest-page,
@@ -640,6 +716,8 @@
   color: var(--ps-neutral-ink);
 }
 .ps-source-panel[hidden] { display: none; }
+.ps-source-loading { display: flex; align-items: center; gap: 0.65rem; padding: 0.8rem; font-size: var(--ps-text-ui); }
+.ps-source-loading .ps-brand-mark { width: 36px; height: 36px; }
 .ps-source-panel.align-end { inset-inline: auto 0; }
 .ps-source-panel.align-above { inset-block: auto 100%; }
 .ps-source-panel-content { padding: 0.6rem; }

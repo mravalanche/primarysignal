@@ -20,6 +20,7 @@ ARTICLE_INVENTORY_ROLE = "primary_signal_cap_article_inventory"
 PUBLIC_READ_ROLE = "primary_signal_cap_public_read"
 PUBLICATION_WRITE_ROLE = "primary_signal_cap_publication_write"
 SOURCE_HEALTH_ROLE = "primary_signal_cap_source_health"
+JOB_HEALTH_CAPABILITY_ROLE = "primary_signal_cap_job_health"
 EDITORIAL_READ_ROLE = "primary_signal_cap_editorial_read"
 ADMIN_SESSION_ROLE = "primary_signal_cap_admin_session"
 PUBLICATION_DECISION_ROLE = "primary_signal_cap_publication_decision"
@@ -30,6 +31,7 @@ INVENTORY_ROLE = "inventory_test"
 PUBLIC_ROLE = "public_test"
 PUBLICATION_ROLE = "publication_test"
 HEALTH_ROLE = "health_test"
+JOB_HEALTH_LOGIN_ROLE = "job_health_test"
 EDITORIAL_ROLE = "editorial_test"
 ADMIN_SESSION_LOGIN_ROLE = "admin_session_test"
 PUBLICATION_DECISION_LOGIN_ROLE = "publication_decision_test"
@@ -40,6 +42,7 @@ INVENTORY_PASSWORD = "primary_signal_inventory_test_only"  # noqa: S105  # pragm
 PUBLIC_PASSWORD = "primary_signal_public_test_only"  # noqa: S105  # pragma: allowlist secret
 PUBLICATION_PASSWORD = "primary_signal_publication_test_only"  # noqa: S105  # pragma: allowlist secret
 HEALTH_PASSWORD = "primary_signal_health_test_only"  # noqa: S105  # pragma: allowlist secret
+JOB_HEALTH_PASSWORD = "primary_signal_job_health_test_only"  # noqa: S105  # pragma: allowlist secret
 EDITORIAL_PASSWORD = "primary_signal_editorial_test_only"  # noqa: S105  # pragma: allowlist secret
 ADMIN_SESSION_PASSWORD = "primary_signal_admin_session_test_only"  # noqa: S105  # pragma: allowlist secret
 PUBLICATION_DECISION_PASSWORD = "primary_signal_publication_decision_test_only"  # noqa: S105  # pragma: allowlist secret
@@ -165,6 +168,7 @@ def main() -> None:
         repository_root / "deploy/postgres/initdb/100_admin_session_capability_role.sql",
         repository_root / "deploy/postgres/initdb/110_publication_decision_capability_role.sql",
         repository_root / "deploy/postgres/initdb/120_retention_cleanup_capability_role.sql",
+        repository_root / "deploy/postgres/initdb/130_job_health_capability_role.sql",
     )
     engine = create_engine(database_url, hide_parameters=True)
     try:
@@ -205,6 +209,12 @@ def main() -> None:
                 role_name=HEALTH_ROLE,
                 password=HEALTH_PASSWORD,
                 capabilities=(SOURCE_HEALTH_ROLE,),
+            )
+            _create_or_verify_login(
+                connection,
+                role_name=JOB_HEALTH_LOGIN_ROLE,
+                password=JOB_HEALTH_PASSWORD,
+                capabilities=(JOB_HEALTH_CAPABILITY_ROLE,),
             )
             _create_or_verify_login(
                 connection,

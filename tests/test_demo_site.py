@@ -1,6 +1,7 @@
 """The explicit sample site fills ordinary reading routes without a database."""
 
 import asyncio
+from typing import cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -56,6 +57,13 @@ def test_progress_is_demo_only_and_percentages_match_checks() -> None:
     progress = load_progress()
     assert f"{progress['completed']}/{progress['total']}" in page
     assert f"{progress['percent']}%" in page
+    milestones = cast(list[dict[str, object]], progress["milestones"])
+    assert page.count('<progress class="ps-progress-bar"') == len(milestones) + 1
+    assert page.count('<details class="ps-progress-evidence">') == len(milestones)
+    assert 'aria-label="Overall project progress:' in page
+    assert "In progress" in page
+    assert "Planned" in page
+    assert "Complete" in page
     assert get("/progress", demo=False)[0] == 404
 
 

@@ -23,6 +23,9 @@ jobs:
     name: Quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      # This job owns the PostgreSQL service and discards it after the run.
+      PRIMARY_SIGNAL_TEST_DATABASE_DISPOSABLE: "true"
     services:
       postgres:
         image: postgres:18.6
@@ -84,30 +87,12 @@ jobs:
           PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_URL: postgresql+psycopg://publication_test:primary_signal_publication_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_EXPECTED_ROLE: publication_test
           PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL: postgresql+psycopg://health_test:primary_signal_health_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
+          PRIMARY_SIGNAL_TEST_JOB_HEALTH_DATABASE_URL: postgresql+psycopg://job_health_test:primary_signal_job_health_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL: postgresql+psycopg://editorial_test:primary_signal_editorial_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_ADMIN_SESSION_DATABASE_URL: postgresql+psycopg://admin_session_test:primary_signal_admin_session_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_PUBLICATION_DECISION_DATABASE_URL: postgresql+psycopg://publication_decision_test:primary_signal_publication_decision_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
           PRIMARY_SIGNAL_TEST_RETENTION_CLEANUP_DATABASE_URL: postgresql+psycopg://retention_cleanup_test:primary_signal_retention_cleanup_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
         run: uv run --offline --locked poe check-offline
-
-      - name: Exercise PostgreSQL migrations
-        env:
-          PRIMARY_SIGNAL_TEST_DATABASE_URL: postgresql+psycopg://postgres:primary_signal_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_DATABASE_EXPECTED_ROLE: postgres
-          PRIMARY_SIGNAL_REQUIRE_RESTRICTED_ROLE_TESTS: "true"
-          # Fixed credentials for synthetic roles in this disposable CI database only.
-          PRIMARY_SIGNAL_TEST_SCHEDULER_DATABASE_URL: postgresql+psycopg://scheduler_test:primary_signal_scheduler_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_PROCESSOR_DATABASE_URL: postgresql+psycopg://processor_test:primary_signal_processor_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_INVENTORY_DATABASE_URL: postgresql+psycopg://inventory_test:primary_signal_inventory_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_PUBLIC_DATABASE_URL: postgresql+psycopg://public_test:primary_signal_public_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_URL: postgresql+psycopg://publication_test:primary_signal_publication_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_PUBLICATION_DATABASE_EXPECTED_ROLE: publication_test
-          PRIMARY_SIGNAL_TEST_HEALTH_DATABASE_URL: postgresql+psycopg://health_test:primary_signal_health_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_EDITORIAL_DATABASE_URL: postgresql+psycopg://editorial_test:primary_signal_editorial_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_ADMIN_SESSION_DATABASE_URL: postgresql+psycopg://admin_session_test:primary_signal_admin_session_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_PUBLICATION_DECISION_DATABASE_URL: postgresql+psycopg://publication_decision_test:primary_signal_publication_decision_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-          PRIMARY_SIGNAL_TEST_RETENTION_CLEANUP_DATABASE_URL: postgresql+psycopg://retention_cleanup_test:primary_signal_retention_cleanup_test_only@127.0.0.1:${{ job.services.postgres.ports[5432] }}/primary_signal_test # pragma: allowlist secret
-        run: uv run --offline --locked poe test-postgres
 
       - name: Build and smoke-test distributions
         run: uv run --locked poe build-check
@@ -223,3 +208,58 @@ jobs:
           digest="$(printf '%s\n' "$push_output" | sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' | tail -n 1)"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           printf 'Development image: `%s@%s`\n' "${image%:*}" "$digest" >> "$GITHUB_STEP_SUMMARY"
+
+  build-pages-tour:
+    name: Build fictional Pages tour
+    needs: [quality, secret-scan, dependency-audit]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.21"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Export and validate fictional tour
+        run: uv run --offline --locked python scripts/export_pages_tour.py --output _site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+          include-hidden-files: true
+
+  deploy-pages-tour:
+    name: Deploy fictional Pages tour
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && github.repository == 'mravalanche/primarysignal'
+    needs: [build-pages-tour]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
