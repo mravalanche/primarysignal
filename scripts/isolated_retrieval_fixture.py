@@ -41,6 +41,38 @@ NETWORKS = ("retrieval_rpc", "retrieval_db")
 EGRESS_NETWORK = "retrieval_egress"
 TRANSIT_HOST = "example.com"
 TRANSIT_URL = "https://example.com/"
+
+
+@dataclass(frozen=True)
+class LiveSource:
+    class_key: str
+    source_key: str
+    name: str
+    feed_url: str
+    article_host: str
+
+
+LIVE_SOURCES = (
+    LiveSource(
+        "authority",
+        "cert-eu",
+        "CERT-EU",
+        "https://cert.europa.eu/publications/security-advisories-rss",
+        "cert.europa.eu",
+    ),
+    LiveSource(
+        "vendor", "ubuntu", "Ubuntu", "https://ubuntu.com/security/notices/rss.xml", "ubuntu.com"
+    ),
+    LiveSource(
+        "research",
+        "sans-isc",
+        "SANS Internet Storm Center",
+        "https://isc.sans.edu/rssfeed.xml",
+        "isc.sans.edu",
+    ),
+)
+LIVE_DNS_HOSTS = tuple(source.article_host for source in LIVE_SOURCES)
+
 UPSTREAM_DNS_IP = "1.1.1.1"
 RPC_INTERFACE_PLACEHOLDER = "fixture_rpc"
 EGRESS_INTERFACE_PLACEHOLDER = "fixture_egress"
@@ -556,13 +588,19 @@ signal.pause()
     )
 
 
-def server_source(*, transit_example: bool = False) -> str:
-    """Serve synthetic content and optional exact-host DNS forwarding."""
+def server_source(*, transit_example: bool = False, live_three_sources: bool = False) -> str:
+    """Serve synthetic content and optional fixed-host DNS forwarding."""
     require(type(transit_example) is bool, "invalid transit fixture profile")
+    require(type(live_three_sources) is bool, "invalid live source fixture profile")
+    transit_example = transit_example or live_three_sources
     config = {
         "dns": DNS_IP,
         "transit": transit_example,
-        "transit_host": TRANSIT_HOST,
+        "upstream_hosts": (
+            (TRANSIT_HOST, *LIVE_DNS_HOSTS) if live_three_sources else (TRANSIT_HOST,)
+        )
+        if transit_example
+        else (),
         "upstream": UPSTREAM_DNS_IP,
         "public": PUBLIC_IP,
         "public_host": PUBLIC_HOST,
@@ -615,7 +653,7 @@ def answer(data, *, tcp=False):
                C["mixed_host"]: [C["public"], C["private"]]}
     addresses = mapping.get(host)
     increment("dns_queries")
-    if C["transit"] and host == C["transit_host"] and kind in (1, 28):
+    if C["transit"] and host in C["upstream_hosts"] and kind in (1, 28):
         return forward(data, tcp=tcp)
     records = addresses if addresses is not None and kind == 1 else []
     reply = struct.pack("!6H", ident, 0x8180 if addresses is not None else 0x8183, 1, len(records), 0, 0) + data[12:]
@@ -787,6 +825,7 @@ class IsolatedRetrievalFixture:
     expected_compose: dict[str, Any] = field(repr=False)
     expected_files: dict[str, str] = field(repr=False)
     transit_example: bool = False
+    live_three_sources: bool = False
     network_names: tuple[str, ...] = NETWORKS
     database_name: str = DATABASE
     bootstrap_role: str = BOOTSTRAP_ROLE
@@ -833,8 +872,11 @@ def create_fixture(
     image: str,
     policy_image: str,
     transit_example: bool = False,
+    live_three_sources: bool = False,
 ) -> IsolatedRetrievalFixture:
     require(type(transit_example) is bool, "invalid transit fixture profile")
+    require(type(live_three_sources) is bool, "invalid live source fixture profile")
+    transit_example = transit_example or live_three_sources
     root, directory = root.resolve(), directory.resolve()
     require(
         directory.is_relative_to(Path("/tmp")) and not directory.is_relative_to(root),  # noqa: S108 - caller creates private random directory.
@@ -857,7 +899,9 @@ def create_fixture(
             rpc_interface=RPC_INTERFACE_PLACEHOLDER if transit_example else None,
             egress_interface=EGRESS_INTERFACE_PLACEHOLDER if transit_example else None,
         ),
-        "server.py": server_source(transit_example=transit_example),
+        "server.py": server_source(
+            transit_example=transit_example, live_three_sources=live_three_sources
+        ),
         "resolv.conf": RESOLVER,
         "bootstrap-logins.sql": _login_sql(),
         "database_password": BOOTSTRAP_PASSWORD + "\n",
@@ -1043,6 +1087,7 @@ def create_fixture(
         model,
         files,
         transit_example=transit_example,
+        live_three_sources=live_three_sources,
         network_names=network_names,
     )
 

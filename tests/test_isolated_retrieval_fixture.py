@@ -168,10 +168,14 @@ def test_changed_generated_files_fail_before_compose_reads(
     execute.assert_not_called()
 
 
-def _server(*, transit: bool = False) -> dict[str, Any]:
+def _server(*, transit: bool = False, live: bool = False) -> dict[str, Any]:
     namespace: dict[str, Any] = {"__name__": "synthetic_test_only"}
     exec(  # noqa: S102 - generated fixed fixture code only.
-        compile(isolated.server_source(transit_example=transit), "synthetic_source.py", "exec"),
+        compile(
+            isolated.server_source(transit_example=transit, live_three_sources=live),
+            "synthetic_source.py",
+            "exec",
+        ),
         namespace,
     )
     return namespace
@@ -488,3 +492,127 @@ def test_transit_dns_rejects_nonquery_opcode_before_upstream(
     assert namespace["answer"](question) is None
     factory.assert_not_called()
     assert namespace["STATE"]["upstream_udp_queries"] == 0
+
+
+def test_live_profile_uses_only_fixed_public_planned_sources() -> None:
+    assert [
+        (source.class_key, source.source_key, source.feed_url, source.article_host)
+        for source in isolated.LIVE_SOURCES
+    ] == [
+        (
+            "authority",
+            "cert-eu",
+            "https://cert.europa.eu/publications/security-advisories-rss",
+            "cert.europa.eu",
+        ),
+        ("vendor", "ubuntu", "https://ubuntu.com/security/notices/rss.xml", "ubuntu.com"),
+        ("research", "sans-isc", "https://isc.sans.edu/rssfeed.xml", "isc.sans.edu"),
+    ]
+    assert len(set(isolated.LIVE_DNS_HOSTS)) == 3
+
+
+def test_live_profile_implies_transit_without_more_roles_or_privileges(tmp_path: Path) -> None:
+    fixture = isolated.create_fixture(
+        ROOT,
+        tmp_path / "live",
+        "synthetic-live-profile",
+        image="synthetic-app:local",
+        policy_image="synthetic-policy:local",
+        live_three_sources=True,
+    )
+    transit = isolated.create_fixture(
+        ROOT,
+        tmp_path / "transit",
+        "synthetic-transit-profile",
+        image="synthetic-app:local",
+        policy_image="synthetic-policy:local",
+        transit_example=True,
+    )
+    assert fixture.live_three_sources is True
+    assert fixture.transit_example is True
+    assert fixture.network_names == transit.network_names
+    for filename in ("bootstrap-logins.sql", "policy.py", "rules.json", "resolv.conf"):
+        assert fixture.expected_files[filename] == transit.expected_files[filename]
+    for service in fixture.expected_compose["services"].values():
+        assert not service.get("privileged")
+        assert not service.get("ports")
+    namespace = _server(live=True)
+    assert set(namespace["STATE"]) == {
+        "dns_queries",
+        "source_requests",
+        "forbidden_requests",
+        "source_443_connections",
+        "upstream_udp_queries",
+        "upstream_tcp_queries",
+        "upstream_failures",
+    }
+    assert namespace["C"]["upstream_hosts"] == [isolated.TRANSIT_HOST, *isolated.LIVE_DNS_HOSTS]
+    assert all(value == 0 for value in namespace["STATE"].values())
+
+
+@pytest.mark.parametrize("value", [1, "true", None])
+def test_live_profile_rejects_implicit_truthiness_before_files(tmp_path: Path, value: Any) -> None:
+    with pytest.raises(FixtureBoundaryError, match="invalid live source fixture profile"):
+        isolated.create_fixture(
+            ROOT,
+            tmp_path / "absent",
+            "synthetic-live-profile",
+            image="synthetic-app:local",
+            policy_image="synthetic-policy:local",
+            live_three_sources=value,
+        )
+    assert not (tmp_path / "absent").exists()
+
+
+@pytest.mark.parametrize("host", isolated.LIVE_DNS_HOSTS)
+@pytest.mark.parametrize("tcp", [False, True])
+@pytest.mark.parametrize("kind", [1, 28])
+def test_live_dns_forwards_only_fixed_hosts_faithfully_using_bounded_peer(
+    host: str, tcp: bool, kind: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    namespace = _server(live=True)
+    query = _question(host, kind)
+    address = (
+        socket.inet_aton("10.23.45.67")
+        if kind == 1
+        else socket.inet_pton(socket.AF_INET6, "2001:db8::1")
+    )
+    record = b"\xc0\x0c" + struct.pack("!HHIH", kind, 1, 19, len(address)) + address
+    response = query[:2] + struct.pack("!5H", 0x8180, 1, 1, 0, 0) + query[12:] + record
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.recv.side_effect = (
+        [struct.pack("!H", len(response)), response] if tcp else [response]
+    )
+    factory = MagicMock(return_value=connection)
+    monkeypatch.setattr(namespace["socket"], "socket", factory)
+    assert namespace["answer"](query, tcp=tcp) == response
+    connection.connect.assert_called_once_with((isolated.UPSTREAM_DNS_IP, 53))
+    assert factory.call_count == 1
+    assert namespace["STATE"]["upstream_tcp_queries" if tcp else "upstream_udp_queries"] == 1
+    assert namespace["STATE"]["upstream_failures"] == 0
+
+
+@pytest.mark.parametrize("live", [False, True])
+def test_live_dns_allowlist_has_no_wildcards_aliases_or_extra_types(
+    live: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    namespace = _server(transit=True, live=live)
+    factory = MagicMock(side_effect=AssertionError("unexpected upstream query"))
+    monkeypatch.setattr(namespace["socket"], "socket", factory)
+    disallowed = [
+        "www.cert.europa.eu",
+        "other.ubuntu.com",
+        "isc.sans.edu.other.example",
+        "127.0.0.11",
+        "localhost",
+        "unlisted.example.test",
+    ]
+    if not live:
+        disallowed.extend(isolated.LIVE_DNS_HOSTS)
+    for host in disallowed:
+        response = namespace["answer"](_question(host))
+        assert struct.unpack("!6H", response[:12])[1] & 15 == 3
+    for host in isolated.LIVE_DNS_HOSTS:
+        namespace["answer"](_question(host, 15))
+    factory.assert_not_called()

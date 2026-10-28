@@ -481,8 +481,12 @@ fixture DNS, separate real retriever/processor data flow and managed policy
 restart. The baseline endpoints remain namespace-local aliases. A separate bounded
 transit task has now verified public DNS over UDP/TCP, faithful A/AAAA answers,
 actual egress routes and HTTPS with normal TLS/pinning, after the synthetic
-checks. The next step is bounded ingestion from three public source classes
-through this isolated development topology; production readiness remains open. Before
+checks. The bounded three-source verifier is now implemented with synthetic database
+preflight coverage. Its first real run passed only two source/search checks
+within the fixed three-feed/three-article attempt budget and cleaned up. The
+three-source exit check remains open; resolve that incomplete proof without
+retaining article processing history or silently retrying/substituting sources.
+Production readiness remains open. Before
 unattended live polling, verify deployment egress controls and service readiness
 on the target deployment. Source-disable serialization and fixed-policy
 extracted-text cleanup have isolated PostgreSQL tests; verify their operation
