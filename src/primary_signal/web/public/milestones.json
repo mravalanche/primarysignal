@@ -1,6 +1,6 @@
 {
-  "reviewed_on": "2026-10-17",
-  "reviewed_against": "Synthetic Docker, seed and ingestion gates; local processor lease recovery test; GHCR development image published and digest verified; fictional Pages tour and README documentation reviewed; M2 Compose remains a draft pending operator configuration, browser and restart evidence",
+  "reviewed_on": "2026-10-28",
+  "reviewed_against": "Feed and article processor SIGKILL recovery proofs, narrow dependency advisory fixes and ingestion documentation review; full disposable PostgreSQL gate passed (760 tests, no skips, clean dependency audits and build smoke); M2 operator configuration and container restart evidence remain open",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
@@ -30,13 +30,13 @@
     {
       "id": "M3",
       "title": "Live source ingestion",
-      "next": "Prove killed-worker and container restart behavior, egress controls and text retention before testing three varied public sources.",
+      "next": "Verify container restart and deployment egress controls, then test three varied public sources; confirm retention operation and backup policy on the target deployment.",
       "checks": [
         {"title": "RSS/Atom parsing, retrieval and durable jobs have synthetic tests", "done": true, "evidence": "Feed, article and job test suites"},
         {"title": "Production-safe processor and retriever runtime bindings are ready", "done": false, "evidence": "Pending"},
         {"title": "Three varied source classes ingest into the article inventory", "done": false, "evidence": "Synthetic advisory RSS, research Atom and journal RDF pass end to end; three real public sources remain unverified"},
-        {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Synthetic re-poll dedupe and timeout retry pass; separate local processor subprocesses recover a manually expired lease and fence its old owner; killing a worker mid-job and container restart remain unverified"},
-        {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Deployment egress probes and extracted-text retention policy remain open"}
+        {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Synthetic re-poll dedupe and timeout retry pass; test_processor_entrypoint_postgres.py kills actual processors during feed and article fetches, verifies no partial observations, recovers expired leases and fences old owners; recovered content is searchable and identical content reuses its version; container restart remains unverified"},
+        {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Source-disable serialization and fixed-policy 90-day extracted-text cleanup have isolated PostgreSQL tests; deployment egress probes, target retention operation and backup retention remain unverified"}
       ]
     },
     {

@@ -23,6 +23,9 @@ jobs:
     name: Quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      # This job owns the PostgreSQL service and discards it after the run.
+      PRIMARY_SIGNAL_TEST_DATABASE_DISPOSABLE: "true"
     services:
       postgres:
         image: postgres:18.6

@@ -462,10 +462,13 @@ Synthetic ingestion reaches durable inventory. The local processor binds feed
 and article jobs to the loopback retriever with explicit development or test
 opt-in. Its disposable PostgreSQL test runs the processor in separate OS
 processes, recovers an expired lease and rejects stale lease completion. Next,
-ingest three varied public sources. A killed worker and container restart still
-need an end-to-end check. Production retrieval remains unbound. Before
-unattended live polling, verify deployment egress controls, service readiness,
-source-disable serialization, and an extracted-text retention policy. The local
+ingest three varied public sources after deployment controls are ready. An
+actual processor killed during a synthetic feed or article fetch now has an
+end-to-end recovery test; container restart remains open.
+Production retrieval remains unbound. Before unattended live polling, verify
+deployment egress controls and service readiness. Source-disable serialization
+and fixed-policy extracted-text cleanup have isolated PostgreSQL tests; verify
+their operation and backup retention on the target deployment. The local
 retriever's test opt-in is not a production deployment configuration.
 
 ## 18. V1 security baseline
