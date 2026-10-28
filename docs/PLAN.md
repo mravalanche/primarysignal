@@ -474,7 +474,10 @@ article lineage with exactly one untouched retrieval job. Combined with the
 controlled re-poll/dedupe and timeout/retry tests, this completes M3's recovery
 exit check. Live-source ingestion and deployment controls remain open.
 The local processor now checks retriever protocol and queue capability before
-recovering leases or claiming jobs. Production retrieval remains unbound. Before
+recovering leases or claiming jobs. Production retrieval remains unbound. A fixed development/test RPC profile
+now permits separate fixture namespaces at one reserved endpoint without
+changing retrieval-target policy. It supplies wiring only; isolated egress
+controls and actual allowed/forbidden-edge probes remain the next step. Before
 unattended live polling, verify deployment egress controls and service readiness
 on the target deployment. Source-disable serialization and fixed-policy
 extracted-text cleanup have isolated PostgreSQL tests; verify their operation

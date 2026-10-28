@@ -30,6 +30,7 @@ from primary_signal.jobs import (
 )
 from primary_signal.observability import configure_logging, log_event, log_exception
 from primary_signal.retrieval.client import RetrieverClient
+from primary_signal.retrieval.fixture_rpc import fixture_rpc_origin
 from primary_signal.retrieval.protocol import ARTICLE_FETCH_CAPABILITY, FEED_FETCH_CAPABILITY
 
 LOGGER = logging.getLogger(__name__)
@@ -245,18 +246,28 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true", help="process at most one job, then exit")
     parser.add_argument("--queue", choices=("ingestion", "retrieval"), required=True)
-    parser.add_argument("--retriever-origin", type=loopback_retriever_origin, required=True)
-    parser.add_argument("--allow-local-fetch", action="store_true")
+    parser.add_argument("--retriever-origin", required=True)
+    opt_in = parser.add_mutually_exclusive_group()
+    opt_in.add_argument("--allow-local-fetch", action="store_true")
+    opt_in.add_argument("--allow-fixture-rpc", action="store_true")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Run one bound queue with explicit local-only retrieval opt-in."""
+    """Run one queue with an explicit development or test RPC binding."""
 
     parser = _parser()
     args = parser.parse_args(argv)
-    if not args.allow_local_fetch:
-        parser.error("local processor requires explicit development or test opt-in")
+    if not args.allow_local_fetch and not args.allow_fixture_rpc:
+        parser.error("processor requires explicit development or test opt-in")
+    try:
+        origin = (
+            fixture_rpc_origin(args.retriever_origin)
+            if args.allow_fixture_rpc
+            else loopback_retriever_origin(args.retriever_origin)
+        )
+    except (ValueError, argparse.ArgumentTypeError) as error:
+        parser.error(str(error))
     configure_logging(level="INFO")
     engine: Engine | None = None
     exit_code = 0
@@ -266,12 +277,12 @@ def main(argv: Sequence[str] | None = None) -> None:
             "development",
             "test",
         ) or application_settings.environment.value not in ("development", "test"):
-            raise ValueError("local processor requires development or test environment")
+            raise ValueError("processor requires development or test environment")
         settings = ProcessorSettings()
         configure_logging(level=application_settings.log_level.value)
         engine = create_database_engine(processor_database_settings())
         stop_event = threading.Event()
-        with RetrieverClient(args.retriever_origin) as retriever:
+        with RetrieverClient(origin) as retriever:
             try:
                 retriever.require_ready(
                     FEED_FETCH_CAPABILITY if args.queue == "ingestion" else ARTICLE_FETCH_CAPABILITY
