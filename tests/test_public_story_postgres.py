@@ -10,6 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from psycopg import Connection as PsycopgConnection
+from psycopg import sql
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -311,18 +313,24 @@ def test_public_web_rejects_replication_login() -> None:
         pytest.skip("configure disposable PostgreSQL test database")
     admin = create_engine(admin_url, hide_parameters=True)
     role_name = "synthetic_public_replication_test"
+    replication_password = "primary_signal_replication_test_only"  # noqa: S105  # pragma: allowlist secret
     try:
         with admin.begin() as connection:
             assert str(connection.execute(text("SELECT current_database()")).scalar_one()).endswith(
                 "_test"
             )
-            connection.execute(
-                text("CREATE ROLE synthetic_public_replication_test LOGIN REPLICATION")
-            )
+            # Use the driver so SQLAlchemy exceptions cannot include the test credential.
+            driver = cast(PsycopgConnection[Any], connection.connection.driver_connection)
+            with driver.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("CREATE ROLE {} LOGIN REPLICATION PASSWORD {}").format(
+                        sql.Identifier(role_name), sql.Literal(replication_password)
+                    )
+                )
             connection.execute(
                 text("GRANT primary_signal_cap_public_read TO synthetic_public_replication_test")
             )
-        replication_url = make_url(admin_url).set(username=role_name)
+        replication_url = make_url(admin_url).set(username=role_name, password=replication_password)
         replication = create_engine(replication_url, hide_parameters=True)
         try:
             with (
