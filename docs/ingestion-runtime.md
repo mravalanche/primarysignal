@@ -97,6 +97,27 @@ success is more than two poll intervals old; and `healthy` otherwise. The
 report contains names and polling timestamps, but no configured URLs, error
 details, job payloads, or article content. It is a local operator command.
 
+## Retriever readiness
+
+The retriever exposes `GET /v1/ready` on its internal API. Its fixed response
+identifies protocol version 1 and the feed and article fetch capabilities. The
+probe performs no retrieval, DNS lookup or database access, and does not consume
+fetch admission capacity. It returns no deployment configuration.
+
+Before recovering leases or claiming a job, the local processor checks that the
+configured retriever responds with the capability required by its queue. The
+probe uses the same fixed origin and disables ambient proxies and redirects.
+The probe accepts at most 1 KiB of JSON and has a five-second overall network
+deadline and a two-second idle timeout, separate from feed and article fetches.
+Cancellation covers response headers and chunk framing as well as body reads.
+An unavailable or incompatible retriever stops startup without consuming a job
+attempt. Once startup succeeds, ordinary job retries still handle later
+retriever failures.
+
+Readiness establishes API availability and compatibility. Deployment network
+isolation, source reachability and spare fetch capacity need separate checks.
+Production processor and retriever startup remain disabled.
+
 ## Abrupt worker recovery
 
 The disposable PostgreSQL gate includes a processor crash-recovery test in

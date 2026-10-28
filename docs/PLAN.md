@@ -465,11 +465,13 @@ processes, recovers an expired lease and rejects stale lease completion. Next,
 ingest three varied public sources after deployment controls are ready. An
 actual processor killed during a synthetic feed or article fetch now has an
 end-to-end recovery test; container restart remains open.
-Production retrieval remains unbound. Before unattended live polling, verify
-deployment egress controls and service readiness. Source-disable serialization
-and fixed-policy extracted-text cleanup have isolated PostgreSQL tests; verify
-their operation and backup retention on the target deployment. The local
-retriever's test opt-in is not a production deployment configuration.
+The local processor now checks retriever protocol and queue capability before
+recovering leases or claiming jobs. Production retrieval remains unbound. Before
+unattended live polling, verify deployment egress controls and service readiness
+on the target deployment. Source-disable serialization and fixed-policy
+extracted-text cleanup have isolated PostgreSQL tests; verify their operation
+and backup retention on the target deployment. The local retriever's test
+opt-in is not a production deployment configuration.
 
 ## 18. V1 security baseline
 

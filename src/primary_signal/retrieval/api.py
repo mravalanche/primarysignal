@@ -30,6 +30,7 @@ from primary_signal.retrieval.policy import (
     PolicyError,
     _canonical_host,  # pyright: ignore[reportPrivateUsage]
 )
+from primary_signal.retrieval.protocol import CAPABILITIES, PROTOCOL_VERSION, READY_PATH
 
 _TRANSPORT_FEED = fetch_feed
 _TRANSPORT_ARTICLE = retrieve_article
@@ -277,6 +278,13 @@ def create_retriever_app(
         max_origins=max_tracked_origins,
     )
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get(READY_PATH)
+    async def ready() -> JSONResponse:
+        return JSONResponse(
+            {"ready": True, "protocol_version": PROTOCOL_VERSION, "capabilities": CAPABILITIES},
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.post("/v1/feeds/fetch")
     async def retrieve(request: Request) -> JSONResponse:

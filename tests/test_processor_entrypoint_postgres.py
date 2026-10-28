@@ -38,7 +38,23 @@ from primary_signal.retrieval.extract import (
     NORMALIZATION_VERSION,
     extract_article_html,
 )
+from primary_signal.retrieval.protocol import CAPABILITIES, PROTOCOL_VERSION, READY_PATH
 from primary_signal.sources.models import Feed, Source
+
+
+class _ReadyRetriever(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.path != READY_PATH:
+            self.send_error(404)
+            return
+        response = json.dumps(
+            {"ready": True, "protocol_version": PROTOCOL_VERSION, "capabilities": CAPABILITIES}
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
 
 
 @pytest.mark.postgres
@@ -70,7 +86,7 @@ def test_new_process_reclaims_expired_lease_and_fences_old_worker(
     queue = TransactionalJobQueue(engine, catalogue)
     requests: list[str] = []
 
-    class SyntheticRetriever(BaseHTTPRequestHandler):
+    class SyntheticRetriever(_ReadyRetriever):
         def do_POST(self) -> None:
             requests.append(self.path)
             length = int(self.headers.get("Content-Length", "0"))
@@ -249,7 +265,7 @@ def test_killed_processor_recovers_without_partial_or_duplicate_effects(
     requests: list[str] = []
     blocked_path = "/v1/feeds/fetch" if queue_name == "ingestion" else "/v1/articles/fetch"
 
-    class BlockingRetriever(BaseHTTPRequestHandler):
+    class BlockingRetriever(_ReadyRetriever):
         def do_POST(self) -> None:
             length = int(self.headers.get("Content-Length", "0"))
             self.rfile.read(length)
