@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-28",
-  "reviewed_against": "Prepared publication bundle refreshed onto audited source controls and the TCP gate; isolated synthetic stack and browser verification remain open",
+  "reviewed_against": "Synthetic publication fixture, browser orchestration and isolation guards reviewed; 38 focused safety tests pass; real container/browser/restart evidence pending; M2 exit checks remain open",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {

@@ -9,6 +9,35 @@ published port. Public and admin use separate internal database networks, with
 PostgreSQL attached to both. Migration checks the connected database name
 before changing its schema. This file is not a production deployment definition.
 
+## Synthetic browser smoke
+
+For a repeatable local check, use the smoke runner with Docker, OpenSSL, the
+pinned Node toolchain and Playwright Chromium available:
+
+```sh
+bash scripts/dev_test_env.sh --skip-apt --setup-only
+uv run poe publication-smoke
+```
+
+The runner builds the current application image and uses the Compose services
+below with temporary synthetic configuration. It creates a unique project and
+volume, a private Docker configuration, fixed test-only accounts, and an
+ephemeral localhost TLS fixture. Operator environment and secret files belong
+to the manual setup below; the smoke uses its own temporary files.
+
+Before startup, it checks the rendered model's paths, loopback ports, internal
+networks, service image and database roles. The browser then signs in through
+HTTPS, publishes the seeded draft through the Reading desk, and reads the
+public story and source trail. It restarts the running services with the same
+volume, checks publication persisted, suppresses through the browser, and
+restarts again to check the story remains absent publicly.
+
+The browser is restricted to the two local fixture origins. Its HTTPS exception
+applies only to that test context; authentication and Secure cookies retain
+their application settings. Temporary configuration, TLS material, browser
+state, containers and the project volume are removed after the run. The
+summary reports checks rather than environment values or database contents.
+
 ## Operator setup
 
 Copy each `.env.publication.*.example` file to the corresponding ignored file
@@ -40,7 +69,8 @@ or publication-writer credential is present in either web service. Never use
 the fixed login values from the test-role helper here.
 
 Provide an operator-owned Argon2id PHC password hash and a hex session key
-of at least 32 bytes through `.env.publication.admin`. Keep the exact admin
+of at least 32 bytes through `.env.publication.admin`. Keep the PHC value
+single-quoted so Compose preserves its dollar signs. Keep the exact admin
 origin at `https://localhost:8443`. Provide a locally trusted TLS certificate
 covering `localhost` and its key at
 `.secrets/publication/admin_tls_certificate.pem` and
@@ -58,7 +88,7 @@ and seed services run once; the seed creates a fictional draft with source,
 article, fetch and content-version lineage. Browse the admin origin, publish
 the draft, verify it at `http://127.0.0.1:8002`, suppress it in admin, then
 verify it disappears. Restart the stack and check the state again. The
-automated clean-start browser smoke is still pending.
+synthetic smoke above provides the automated version of this exercise.
 
 Stop with `docker compose -f compose.publication.yaml down`. The named volume
 persists for restart checks. `down --volumes` destroys the disposable database
@@ -68,21 +98,8 @@ and should only be used when its contents are no longer needed.
 
 On the Docker host, check that `docker info --format '{{.Architecture}}'`
 reports `x86_64` or `amd64`. The current development image is built for Linux
-amd64. While this bundle is in draft PR #54, check out its
-`feat/disposable-publication-compose` branch on the Docker host. Choose the
-image digest from a successful Publish development image job on `develop`.
-The draft branch contains the Compose bundle; the successful `develop` run
-contains the published application image. After PR #54 merges, use a `develop`
-revision containing the bundle and the digest published for that revision.
-
-For the draft bundle, start with:
-
-```sh
-git clone --branch feat/disposable-publication-compose https://github.com/mravalanche/primarysignal.git
-cd primarysignal
-```
-
-After merge, clone `develop` instead and select its successful publish run.
+amd64. Use a `develop` revision containing the Compose bundle and select the
+image digest from that revision's successful Publish development image job.
 
 The bundle needs `compose.publication.image.yaml`, the five
 `.env.publication.*.example` templates, `deploy/postgres/initdb/`, and

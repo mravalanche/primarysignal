@@ -1,12 +1,16 @@
 """Check the disposable Compose model using placeholder-only example files."""
 
 import json
-import os
-import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, TypedDict, cast
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.publication_smoke_fixture import approved_assets, local_docker_context
 
 
 class ComposeConfig(TypedDict):
@@ -23,40 +27,88 @@ IMAGE_DIGEST = "ghcr.io/mravalanche/primarysignal@sha256:" + "0" * 64
 RUNTIME_SERVICES = ("migrate", "seed", "public", "admin")
 
 
-def render_model(root: Path, filename: str) -> ComposeConfig:
+def render_model(root: Path, filename: str, directory: Path) -> ComposeConfig:
+    require(
+        filename in {"compose.publication.yaml", "compose.publication.image.yaml"},
+        "unknown publication Compose model",
+    )
     model = (root / filename).read_text(encoding="utf-8")
+    examples: set[Path] = set()
     for name in ("database", "migrate", "seed", "public", "admin"):
         source = f"env_file: .env.publication.{name}\n"
         require(source in model, f"missing {name} service configuration")
-        model = model.replace(source, f"env_file: .env.publication.{name}.example\n")
-
-    with tempfile.TemporaryDirectory(prefix="primary-signal-compose-check-") as directory:
-        path = Path(directory) / "compose.yaml"
-        path.write_text(model, encoding="utf-8")
-        docker = shutil.which("docker")
-        if docker is None:
-            raise SystemExit("docker compose is required")
-        environment = os.environ.copy()
-        environment["PRIMARY_SIGNAL_PUBLICATION_IMAGE"] = IMAGE_DIGEST
-        result = subprocess.run(  # noqa: S603 - fixed argv; model is this repository's file.
-            [
-                docker,
-                "compose",
-                "--project-directory",
-                str(root),
-                "-f",
-                str(path),
-                "config",
-                "--no-env-resolution",
-                "--format",
-                "json",
-            ],
-            check=True,
-            capture_output=True,
-            env=environment,
-            text=True,
+        example = root / f".env.publication.{name}.example"
+        require(
+            example.is_file() and not example.is_symlink(), "invalid tracked environment template"
         )
-    return cast(ComposeConfig, json.loads(result.stdout))
+        examples.add(example.resolve())
+        model = model.replace(source, f"env_file: .env.publication.{name}.example\n")
+    placeholders = {
+        ".secrets/publication/database_password": "example_database_password",  # pragma: allowlist secret
+        ".secrets/publication/admin_tls_certificate.pem": "example_certificate.pem",
+        ".secrets/publication/admin_tls_key.pem": "example_key.pem",
+        "./.secrets/publication/local_logins.sql": "example_logins.sql",
+    }
+    for source, name in placeholders.items():
+        placeholder = directory / name
+        if not placeholder.exists():
+            placeholder.write_text("public placeholder only\n", encoding="utf-8")
+            placeholder.chmod(0o600)
+        require(source in model, "missing publication placeholder substitution")
+        model = model.replace(source, str(placeholder))
+    path = directory / filename
+    path.write_text(model, encoding="utf-8")
+    docker, environment = local_docker_context(directory)
+    environment["PRIMARY_SIGNAL_PUBLICATION_IMAGE"] = IMAGE_DIGEST
+    result = subprocess.run(  # noqa: S603 - fixed localhost daemon and placeholder-only model.
+        [
+            *docker,
+            "compose",
+            "--project-directory",
+            str(root),
+            "--project-name",
+            "primary-signal-compose-check",
+            "--env-file",
+            "/dev/null",
+            "-f",
+            str(path),
+            "config",
+            "--no-env-resolution",
+            "--format",
+            "json",
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=30,
+    )
+    require(result.returncode == 0, "placeholder Compose rendering failed")
+    config = cast(ComposeConfig, json.loads(result.stdout))
+    allowed = (
+        approved_assets(root)
+        | examples
+        | {directory.resolve() / name for name in placeholders.values()}
+    )
+    for service in config["services"].values():
+        for item in service.get("env_file", []):
+            source = cast(dict[str, Any], item).get("path") if isinstance(item, dict) else item
+            require(
+                isinstance(source, str) and Path(source).resolve() in examples,
+                "environment path escaped the tracked examples",
+            )
+        for mount in service.get("volumes", []):
+            if mount.get("type") == "bind":
+                require(
+                    Path(mount["source"]).resolve() in allowed,
+                    "bind path escaped the placeholder model",
+                )
+    for secret in cast(dict[str, dict[str, Any]], config.get("secrets", {})).values():
+        require(
+            Path(secret["file"]).resolve().is_relative_to(directory.resolve()),
+            "secret path escaped the placeholder fixture",
+        )
+    return config
 
 
 def check_boundaries(config: ComposeConfig, root: Path) -> None:
@@ -123,8 +175,11 @@ def check_boundaries(config: ComposeConfig, root: Path) -> None:
 
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
-    local = render_model(root, "compose.publication.yaml")
-    published = render_model(root, "compose.publication.image.yaml")
+    with tempfile.TemporaryDirectory(
+        prefix="primary-signal-compose-check-", dir="/tmp"
+    ) as directory:
+        local = render_model(root, "compose.publication.yaml", Path(directory))
+        published = render_model(root, "compose.publication.image.yaml", Path(directory))
     for config in (local, published):
         check_boundaries(config, root)
 
