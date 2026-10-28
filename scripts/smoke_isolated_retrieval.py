@@ -1,10 +1,13 @@
 """Exercise a synthetic kernel boundary and the real isolated ingestion path."""
 
+import argparse
+import ipaddress
 import json
 import re
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from time import monotonic, sleep
 from typing import Any, cast
@@ -27,6 +30,9 @@ from scripts.isolated_retrieval_fixture import (
     PUBLIC_IP,
     REDIRECT_URL,
     RESOLVER,
+    TRANSIT_HOST,
+    TRANSIT_URL,
+    UPSTREAM_DNS_IP,
     VOLUME,
     IsolatedRetrievalFixture,
     create_fixture,
@@ -38,6 +44,7 @@ from scripts.publication_smoke_fixture import FixtureBoundaryError, PublicationS
 SmokeFailure = publication.SmokeFailure
 DENIED_PORTS = (5432, 8001, 11434, 8080)
 STATE_KEYS = {"dns_queries", "source_requests", "forbidden_requests", "source_443_connections"}
+UPSTREAM_KEYS = {"upstream_udp_queries", "upstream_tcp_queries", "upstream_failures"}
 SOURCE_ID = "10000000-0000-4000-8000-000000000001"
 FEED_ID = "10000000-0000-4000-8000-000000000002"
 JOB_ID = "10000000-0000-4000-8000-000000000003"
@@ -136,6 +143,76 @@ try:
         result={'status':response.status,'error':None}
 except urllib.error.HTTPError as error:
     result={'status':error.code,'error':json.loads(error.read(16384)).get('error')}
+print(json.dumps(result))
+"""
+
+
+DNS_WIRE_PROBE = r"""
+import json, secrets, socket, struct, sys, time
+p=json.load(sys.stdin)
+ident=secrets.randbits(16)
+host=b''.join(bytes([len(part)])+part.encode('ascii') for part in p['host'].split('.'))+b'\0'
+question=host+struct.pack('!HH',p['type'],1)
+query=struct.pack('!6H',ident,0x100,1,0,0,0)+question
+deadline=time.monotonic()+4
+s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM if p['protocol']=='udp' else socket.SOCK_STREAM)
+def remaining():
+    value=deadline-time.monotonic()
+    if value<=0:raise TimeoutError('bounded DNS deadline')
+    s.settimeout(value)
+def read_exact(size):
+    result=b''
+    while len(result)<size:
+        remaining();piece=s.recv(size-len(result))
+        if not piece:raise OSError('short DNS response')
+        result+=piece
+    return result
+try:
+    remaining();s.connect((p['resolver'],53))
+    remaining();s.sendall(query if p['protocol']=='udp' else struct.pack('!H',len(query))+query)
+    if p['protocol']=='tcp':
+        size=struct.unpack('!H',read_exact(2))[0]
+        assert 12<=size<=4096
+        response=read_exact(size)
+    else:
+        remaining();response=s.recv(4097)
+    assert 12<=len(response)<=4096
+    rid,flags,qd,an,ns,ar=struct.unpack('!6H',response[:12])
+    assert rid==ident and flags&0x8000 and not flags&0x7800 and flags&15==0 and not flags&0x200 and qd==1 and an<=64 and ns<=64 and ar<=64
+    assert response[12:12+len(question)]==question
+    print(json.dumps({'response':True,'type':p['type'],'answers':an}))
+finally:
+    s.close()
+"""
+
+TRANSIT_ANSWERS = r"""
+import json, sys
+from primary_signal.retrieval.dns import DEFAULT_RESOLVER
+from primary_signal.retrieval.policy import validate_target
+p=json.load(sys.stdin)
+target=validate_target(p['url'],DEFAULT_RESOLVER)
+print(json.dumps({'addresses':[str(address) for address in target.addresses]}))
+"""
+
+TRANSIT_PROBE = r"""
+import json, re, sys, urllib.request, urllib.error
+p=json.load(sys.stdin)
+opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+request=urllib.request.Request('http://192.0.2.10:8765/v1/articles/fetch',data=json.dumps({'url':p['url']}).encode(),headers={'Content-Type':'application/json'})
+try:
+    with opener.open(request,timeout=30) as response:
+        body=response.read(65537)
+        assert len(body)<=65536
+        data=json.loads(body)
+        title,content=data.get('extracted_title'),data.get('extracted_text')
+        size,words=data.get('decoded_byte_count'),data.get('word_count')
+        hashes=all(isinstance(data.get(key),str) and re.fullmatch('[0-9a-f]{64}',data[key]) for key in ('raw_response_hash','normalized_content_hash'))
+        result={'api_status':response.status,'source_status':data.get('status'),'exact_url':data.get('final_url')==p['url'],'empty_redirect_chain':data.get('redirect_chain')==[],'bounded':type(size) is int and 0<size<=65536 and isinstance(title,str) and len(title)<=256 and isinstance(content,str) and 0<len(content)<=32768,'html':isinstance(data.get('content_type'),str) and data['content_type'].split(';',1)[0].strip().lower() in ('text/html','application/xhtml+xml'),'title_matches':title=='Example Domain','hashes':bool(hashes),'word_count':words}
+except urllib.error.HTTPError as error:
+    body=error.read(16385)
+    assert len(body)<=16384
+    code=json.loads(body).get('error')
+    result={'api_status':error.code,'error':code if isinstance(code,str) and re.fullmatch('[a-z_]{1,50}',code) else 'withheld'}
 print(json.dumps(result))
 """
 
@@ -255,6 +332,7 @@ def _python(
 
 def _policy(fixture: IsolatedRetrievalFixture) -> dict[str, int]:
     owner = _inspect(fixture, "policy")
+    interfaces = _interfaces(fixture) if fixture.transit_example else {}
     return validate_policy_readback(
         _docker(
             fixture,
@@ -267,7 +345,10 @@ def _policy(fixture: IsolatedRetrievalFixture) -> dict[str, int]:
             "inet",
             POLICY_TABLE,
             stage="policy readback",
-        )
+        ),
+        transit_example=fixture.transit_example,
+        rpc_interface=interfaces.get("rpc"),
+        egress_interface=interfaces.get("egress"),
     )
 
 
@@ -325,7 +406,8 @@ def _state(fixture: IsolatedRetrievalFixture) -> dict[str, int]:
         + CONTROL_ORIGIN
         + "/state',timeout=2);print(r.read(4096).decode())",
     )
-    if set(value) != STATE_KEYS or any(
+    expected_keys = STATE_KEYS | UPSTREAM_KEYS if fixture.transit_example else STATE_KEYS
+    if set(value) != expected_keys or any(
         type(n) is not int or not 0 <= n <= 1000000 for n in value.values()
     ):
         raise SmokeFailure("synthetic receipt shape")
@@ -503,7 +585,10 @@ def _topology(fixture: IsolatedRetrievalFixture) -> dict[str, Any]:
     )
     if resolver != {"exact": True}:
         raise SmokeFailure("fixed resolver binding")
-    if set(owner["NetworkSettings"]["Networks"]) != {fixture.project + "_" + NETWORKS[0]}:
+    owner_networks = {fixture.project + "_" + NETWORKS[0]}
+    if fixture.transit_example:
+        owner_networks.add(fixture.project + "_" + fixture.network_names[-1])
+    if set(owner["NetworkSettings"]["Networks"]) != owner_networks:
         raise SmokeFailure("retrieval network isolation")
     return owner
 
@@ -627,6 +712,272 @@ def _rejected_targets(fixture: IsolatedRetrievalFixture) -> None:
             raise SmokeFailure("real retriever forbidden sink")
 
 
+def _interfaces(fixture: IsolatedRetrievalFixture) -> dict[str, str]:
+    owner = _inspect(fixture, "policy")
+    raw = _python(
+        fixture,
+        "policy",
+        "import json,pathlib;print(pathlib.Path('/tmp/interfaces.json').read_text())",
+    )
+    if (
+        set(raw) != {"rpc", "egress"}
+        or any(
+            not isinstance(name, str)
+            or re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", name) is None
+            or name == "lo"
+            for name in raw.values()
+        )
+        or raw["rpc"] == raw["egress"]
+    ):
+        raise SmokeFailure("owned transit interface names")
+    interfaces = cast(dict[str, str], raw)
+    addresses = json.loads(
+        _docker(
+            fixture,
+            "exec",
+            owner["Id"],
+            "ip",
+            "-j",
+            "-4",
+            "address",
+            "show",
+            stage="owned interface addresses",
+        )
+    )
+    expected = {
+        interfaces["rpc"]: "192.0.2.10",
+        interfaces["egress"]: owner["NetworkSettings"]["Networks"][
+            fixture.project + "_" + fixture.network_names[-1]
+        ]["IPAddress"],
+    }
+    for name, address in expected.items():
+        matching = [link for link in addresses if link.get("ifname") == name]
+        if len(matching) != 1 or not any(
+            item.get("local") == address for item in matching[0].get("addr_info", [])
+        ):
+            raise SmokeFailure("owned transit interface addresses")
+    return interfaces
+
+
+def _external_route(
+    fixture: IsolatedRetrievalFixture, address: str, interfaces: dict[str, str]
+) -> None:
+    candidate = ipaddress.ip_address(address)
+    if not isinstance(candidate, ipaddress.IPv4Address) or address in ALIASES:
+        raise SmokeFailure("external IPv4 candidate")
+    # Reuse the application's complete special-purpose policy, never is_private alone.
+    from primary_signal.retrieval.policy import validate_target
+
+    validate_target("https://" + address + "/", lambda _host, _port: (address,))
+    if (
+        _namespace(fixture, "policy") != _namespace(fixture, "probe")
+        or _interfaces(fixture) != interfaces
+    ):
+        raise SmokeFailure("transit namespace identity")
+    owner = _inspect(fixture, "policy")
+    network = owner["NetworkSettings"]["Networks"][
+        fixture.project + "_" + fixture.network_names[-1]
+    ]
+    routes = json.loads(
+        _docker(
+            fixture,
+            "exec",
+            owner["Id"],
+            "ip",
+            "-j",
+            "-4",
+            "route",
+            "get",
+            address,
+            stage="owned external route",
+        )
+    )
+    if (
+        len(routes) != 1
+        or routes[0].get("type", "unicast") != "unicast"
+        or routes[0].get("dev") != interfaces["egress"]
+        or routes[0].get("prefsrc") != network["IPAddress"]
+        or routes[0].get("gateway") != network["Gateway"]
+        or routes[0].get("dst") != address
+    ):
+        raise SmokeFailure("owned external route")
+
+
+def _no_upstream(fixture: IsolatedRetrievalFixture) -> None:
+    if fixture.transit_example:
+        state = _state(fixture)
+        if any(state[key] != 0 for key in UPSTREAM_KEYS):
+            raise SmokeFailure("unexpected upstream DNS before transit phase")
+        counters = _policy(fixture)
+        if any(
+            counters["output_upstream_dns_" + protocol] != 0
+            or counters["input_upstream_dns_reply_" + protocol] != 0
+            for protocol in ("udp", "tcp")
+        ):
+            raise SmokeFailure("unexpected upstream counters before transit phase")
+
+
+def _transit_answers(value: dict[str, Any]) -> tuple[str, ...]:
+    from primary_signal.retrieval.policy import validate_target
+
+    addresses = value.get("addresses")
+    if (
+        set(value) != {"addresses"}
+        or not isinstance(addresses, list)
+        or not addresses
+        or any(
+            not isinstance(address, str) or address in ALIASES
+            for address in cast(list[object], addresses)
+        )
+    ):
+        raise SmokeFailure("transit DNS answer shape")
+    # Validate the whole A+AAAA set before selecting any usable IPv4 route.
+    target = validate_target(TRANSIT_URL, lambda _host, _port: cast(list[str], addresses))
+    ipv4 = tuple(
+        str(address) for address in target.addresses if isinstance(address, ipaddress.IPv4Address)
+    )
+    if not ipv4:
+        raise SmokeFailure("no usable IPv4 transit answer")
+    return ipv4
+
+
+def _transit_result(value: dict[str, Any]) -> None:
+    if value.get("api_status") != 200:
+        status = value.get("api_status")
+        code = value.get("error")
+        if (
+            type(status) is int
+            and 100 <= status <= 599
+            and isinstance(code, str)
+            and re.fullmatch(r"[a-z_]{1,50}", code)
+        ):
+            raise SmokeFailure(f"verified example HTTPS response (API {status}, {code})")
+    expected = {
+        "api_status",
+        "source_status",
+        "exact_url",
+        "empty_redirect_chain",
+        "bounded",
+        "html",
+        "title_matches",
+        "hashes",
+        "word_count",
+    }
+    if (
+        set(value) != expected
+        or value.get("api_status") != 200
+        or value.get("source_status") != 200
+        or any(
+            value.get(key) is not True
+            for key in (
+                "exact_url",
+                "empty_redirect_chain",
+                "bounded",
+                "html",
+                "title_matches",
+                "hashes",
+            )
+        )
+        or type(value.get("word_count")) is not int
+        or not 0 < value["word_count"] <= 4096
+    ):
+        raise SmokeFailure("verified example HTTPS response")
+
+
+def _transit(fixture: IsolatedRetrievalFixture) -> None:
+    owner = _topology(fixture)
+    _no_upstream(fixture)
+    interfaces = _interfaces(fixture)
+    _external_route(fixture, UPSTREAM_DNS_IP, interfaces)
+    _progress("verified owned RPC and egress interfaces before public DNS")
+    for protocol in ("udp", "tcp"):
+        for kind in (1, 28):
+            _local_route(fixture, DNS_IP)
+            _external_route(fixture, UPSTREAM_DNS_IP, interfaces)
+            before, receipts_before = _policy(fixture), _state(fixture)
+            try:
+                result = _python(
+                    fixture,
+                    "probe",
+                    DNS_WIRE_PROBE,
+                    {"host": TRANSIT_HOST, "resolver": DNS_IP, "protocol": protocol, "type": kind},
+                )
+            except SmokeFailure:
+                observed = _policy(fixture)
+                if (
+                    observed["output_upstream_dns_" + protocol]
+                    > before["output_upstream_dns_" + protocol]
+                    and observed["input_upstream_dns_reply_" + protocol]
+                    == before["input_upstream_dns_reply_" + protocol]
+                ):
+                    raise SmokeFailure(
+                        "approved public DNS " + protocol + " sent without an established reply"
+                    ) from None
+                raise SmokeFailure(
+                    "approved public DNS " + protocol + " invalid or unavailable response"
+                ) from None
+            after, receipts_after = _policy(fixture), _state(fixture)
+            if (
+                result.get("response") is not True
+                or result.get("type") != kind
+                or type(result.get("answers")) is not int
+                or (kind == 1 and result["answers"] == 0)
+                or any(
+                    after[rule] <= before[rule]
+                    for rule in (
+                        "output_upstream_dns_" + protocol,
+                        "input_upstream_dns_reply_" + protocol,
+                    )
+                )
+                or receipts_after["upstream_" + protocol + "_queries"]
+                <= receipts_before["upstream_" + protocol + "_queries"]
+                or receipts_after["upstream_failures"] != 0
+                or receipts_after["forbidden_requests"] != 0
+            ):
+                raise SmokeFailure("approved public DNS " + protocol)
+    answers = _python(fixture, "probe", TRANSIT_ANSWERS, {"url": TRANSIT_URL})
+    for address in _transit_answers(answers):
+        _external_route(fixture, address, interfaces)
+    _owner_unchanged(fixture, owner)
+    _progress("verified public UDP and TCP DNS with complete A and AAAA validation")
+    before, receipts_before = _policy(fixture), _state(fixture)
+    # Exactly one unchanged packaged API invocation. No public body leaves the child.
+    value = _json(
+        _compose(
+            fixture,
+            "run",
+            "--rm",
+            "--no-deps",
+            "-T",
+            "feed_processor",
+            "python",
+            "-c",
+            TRANSIT_PROBE,
+            input_text=json.dumps({"url": TRANSIT_URL}),
+            stage="fixed example HTTPS invocation",
+            timeout=45,
+        ),
+        "fixed example HTTPS metadata",
+    )
+    _transit_result(value)
+    after, receipts_after = _policy(fixture), _state(fixture)
+    if (
+        after["output_public"] <= before["output_public"]
+        or after["input_public_reply"] <= before["input_public_reply"]
+        or receipts_after["upstream_udp_queries"] + receipts_after["upstream_tcp_queries"]
+        <= receipts_before["upstream_udp_queries"] + receipts_before["upstream_tcp_queries"]
+        or receipts_after["upstream_failures"] != 0
+        or receipts_after["forbidden_requests"] != 0
+        or receipts_after["source_requests"] != receipts_before["source_requests"]
+    ):
+        raise SmokeFailure("real HTTPS transit counter evidence")
+    _pipeline_snapshot(_database(fixture, "snapshot"), complete=True)
+    _owner_unchanged(fixture, owner)
+    _progress(
+        "verified one real example HTTPS response through the unchanged retriever without database persistence"
+    )
+
+
 def _exists(fixture: IsolatedRetrievalFixture, kind: str, name: str) -> bool:
     return publication._exists(_shared(fixture), kind, name)  # pyright: ignore[reportPrivateUsage]
 
@@ -646,7 +997,9 @@ def _fresh(fixture: IsolatedRetrievalFixture) -> None:
         )
         or any(_exists(fixture, "image", i) for i in (fixture.image, fixture.policy_image))
         or _exists(fixture, "volume", fixture.project + "_" + VOLUME)
-        or any(_exists(fixture, "network", fixture.project + "_" + n) for n in NETWORKS)
+        or any(
+            _exists(fixture, "network", fixture.project + "_" + n) for n in fixture.network_names
+        )
     ):
         raise SmokeFailure("fresh project")
 
@@ -675,7 +1028,9 @@ def _cleanup(fixture: IsolatedRetrievalFixture) -> None:
     if (
         any(_exists(fixture, "image", i) for i in (fixture.image, fixture.policy_image))
         or _exists(fixture, "volume", fixture.project + "_" + VOLUME)
-        or any(_exists(fixture, "network", fixture.project + "_" + n) for n in NETWORKS)
+        or any(
+            _exists(fixture, "network", fixture.project + "_" + n) for n in fixture.network_names
+        )
         or _docker(
             fixture,
             "ps",
@@ -849,10 +1204,21 @@ def _exercise(fixture: IsolatedRetrievalFixture) -> None:
     _progress(
         "real retriever rejected private, mixed DNS and redirect targets without forbidden sink receipts"
     )
+    _no_upstream(fixture)
     _managed_restart(fixture, owner)
+    _no_upstream(fixture)
+    if fixture.transit_example:
+        _transit(fixture)
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--transit-example",
+        action="store_true",
+        help="Also verify fixed public DNS and one example.com HTTPS response",
+    )
+    args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
     status = 1
     try:
@@ -864,6 +1230,7 @@ def main() -> int:
                 project,
                 image=project + ":local",
                 policy_image=project + ":policy",
+                transit_example=args.transit_example,
             )
             owned = False
             try:

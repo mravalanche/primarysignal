@@ -76,3 +76,47 @@ snapshot unchanged. This does not establish arbitrary crash resilience.
 All owned containers, networks, volume, images and temporary files were removed.
 No external requests were made; TCP port 443 permission is not an HTTPS or
 public-transit verification.
+
+## Bounded transit verification
+
+The separate `uv run --locked --offline poe retrieval-transit-smoke` task
+explicitly enables a transit-example fixture profile. The default synthetic
+task still makes no external requests. Only the policy owner gains the
+project-owned egress bridge; processors and PostgreSQL remain internal.
+RPC exceptions are tied to the verified RPC interface. Approved upstream DNS
+and established public replies are tied to the verified egress interface.
+
+The credential-free DNS fixture forwards only `example.com` IN A/AAAA queries
+to literal `1.1.1.1`, using bounded, transaction-matched UDP/TCP requests. It
+preserves both answer families; the application still validates every answer,
+and the kernel still denies IPv6. It does not use an operator resolver,
+Docker's DNS stub, or a private fallback. Unreachable public DNS stops the run.
+
+After the synthetic deny/pipeline/restart checks, the runner verifies actual
+DNS and egress routing, then invokes the unchanged packaged retrieval API for
+`https://example.com/`. A passing result requires normal certificate, hostname
+and peer checks, HTTP 200, the exact final URL and no redirects, plus nonlocal
+reply-counter evidence. The normal bounded redirect policy is retained; the
+fixture DNS name filter is not a hard connection-level hostname boundary.
+Unexpected results fail the proof. No example content is stored in PostgreSQL
+or repository artifacts.
+
+This verifies a controlled development transit path. It does not ingest a live
+feed, enable production startup, select production DNS policy or establish a
+target deployment's readiness.
+
+The explicit transit task passed on 2026-10-28. Full synthetic enforcement,
+data-flow and managed-restart checks ran first with zero upstream DNS activity.
+The subsequent phase verified UDP/TCP traffic to `1.1.1.1`, faithful A/AAAA
+answers, all-answer policy validation, and nonlocal IPv4 routes through the
+owned egress interface. The real API returned HTTP 200 for the exact HTTPS
+example URL with an empty redirect chain, bounded extraction metadata and
+nonlocal established-reply counter evidence. The database snapshot remained
+unchanged; no example body was retained.
+
+Verified runtime image:
+`sha256:11080be4fcc02377a497eaa27d3ccb998db22193c08e39bd4bed4434b0248315`.
+Verified policy image:
+`sha256:f914df369469eda1bbbef45742214649be94df294c39aab57743e153c3be7b89`.
+All owned resources were removed. This verifies the development fixture's
+transit path, not a production deployment or any live feed.

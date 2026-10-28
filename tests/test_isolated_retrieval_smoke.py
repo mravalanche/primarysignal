@@ -28,6 +28,8 @@ def fixture(tmp_path: Path) -> IsolatedRetrievalFixture:
             env={"PATH": os.defpath},
             docker_args=("docker",),
             compose_args=("compose",),
+            transit_example=False,
+            network_names=smoke.NETWORKS,
         ),
     )
 
@@ -518,3 +520,332 @@ def test_rejection_requires_specific_policy_failure(
     monkeypatch.setattr(smoke, "_compose", compose)
     with pytest.raises(smoke.SmokeFailure, match="private rejection"):
         smoke._rejected_targets(fixture(tmp_path))
+
+
+def transit_fixture(tmp_path: Path) -> IsolatedRetrievalFixture:
+    value = fixture(tmp_path)
+    object.__setattr__(value, "transit_example", True)
+    object.__setattr__(value, "network_names", (*smoke.NETWORKS, "retrieval_egress"))
+    return value
+
+
+def test_transit_validates_all_aaaa_before_selecting_ipv4() -> None:
+    from primary_signal.retrieval.policy import PolicyError
+
+    with pytest.raises(PolicyError, match="forbidden_address"):
+        smoke._transit_answers({"addresses": ["9.9.9.9", "fd00::1"]})
+    assert smoke._transit_answers({"addresses": ["9.9.9.9", "2001:4860:4860::8888"]}) == (
+        "9.9.9.9",
+    )
+
+
+@pytest.mark.parametrize(
+    "answers", [[], ["8.8.8.8"], ["127.0.0.1"], [True], ["2001:4860:4860::8888"]]
+)
+def test_transit_rejects_local_alias_invalid_or_ipv6_only_candidates(answers: list[Any]) -> None:
+    with pytest.raises((smoke.SmokeFailure, ValueError)):
+        smoke._transit_answers({"addresses": answers})
+
+
+def transit_metadata() -> dict[str, Any]:
+    return {
+        "api_status": 200,
+        "source_status": 200,
+        "exact_url": True,
+        "empty_redirect_chain": True,
+        "bounded": True,
+        "html": True,
+        "title_matches": True,
+        "hashes": True,
+        "word_count": 42,
+    }
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("api_status", 502),
+        ("source_status", 304),
+        ("exact_url", False),
+        ("empty_redirect_chain", False),
+        ("bounded", False),
+        ("html", False),
+        ("title_matches", False),
+        ("hashes", False),
+        ("word_count", True),
+        ("word_count", 0),
+        ("word_count", 4097),
+    ],
+)
+def test_real_https_requires_bounded_exact_nonredirected_response(field: str, value: Any) -> None:
+    result = transit_metadata()
+    result[field] = value
+    with pytest.raises(smoke.SmokeFailure, match="verified example HTTPS"):
+        smoke._transit_result(result)
+
+
+def test_real_https_metadata_accepts_only_verified_shape() -> None:
+    smoke._transit_result(transit_metadata())
+    with pytest.raises(smoke.SmokeFailure):
+        smoke._transit_result(transit_metadata() | {"unexpected": "body"})
+
+
+@pytest.mark.parametrize("key", sorted(smoke.UPSTREAM_KEYS))
+def test_external_dns_cannot_precede_synthetic_restart_proof(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, key: str
+) -> None:
+    def control(*_args: Any) -> dict[str, int]:
+        return receipts() | dict.fromkeys(smoke.UPSTREAM_KEYS, 0) | {key: 1}
+
+    monkeypatch.setattr(smoke, "_state", control)
+    with pytest.raises(smoke.SmokeFailure, match="before transit phase"):
+        smoke._no_upstream(transit_fixture(tmp_path))
+
+
+def test_default_profile_never_checks_an_upstream_resolver(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def control(*_args: Any) -> Any:
+        pytest.fail("default synthetic proof attempted upstream access")
+
+    monkeypatch.setattr(smoke, "_state", control)
+    smoke._no_upstream(fixture(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"rpc": "lo", "egress": "eth1"},
+        {"rpc": "eth0", "egress": "eth0"},
+        {"rpc": "eth0", "egress": None},
+        {"rpc": "eth0"},
+    ],
+)
+def test_transit_interface_receipt_must_name_distinct_nonloopback_interfaces(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, bad: dict[str, Any]
+) -> None:
+    def inspect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return state()
+
+    def python(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return bad
+
+    def docker(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("invalid interface receipt reached address probing")
+
+    monkeypatch.setattr(smoke, "_inspect", inspect)
+    monkeypatch.setattr(smoke, "_python", python)
+    monkeypatch.setattr(smoke, "_docker", docker)
+    with pytest.raises(smoke.SmokeFailure, match="interface names"):
+        smoke._interfaces(transit_fixture(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"type": "local"},
+        {"dev": "lo"},
+        {"dev": "eth0"},
+        {"prefsrc": "203.0.113.12"},
+        {"gateway": "203.0.113.2"},
+        {"dst": "9.9.9.9"},
+    ],
+)
+def test_external_route_must_use_owned_egress_gateway_and_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, change: dict[str, str]
+) -> None:
+    interfaces = {"rpc": "eth0", "egress": "eth1"}
+    owner = state()
+    owner["NetworkSettings"]["Networks"]["synthetic-boundary_retrieval_egress"] = {
+        "IPAddress": "203.0.113.10",
+        "Gateway": "203.0.113.1",
+    }
+    route = {
+        "type": "unicast",
+        "dev": "eth1",
+        "prefsrc": "203.0.113.10",
+        "gateway": "203.0.113.1",
+        "dst": smoke.UPSTREAM_DNS_IP,
+    } | change
+
+    def namespace(*_args: Any) -> str:
+        return "net:[123]"
+
+    def observed_interfaces(*_args: Any) -> dict[str, str]:
+        return interfaces
+
+    def inspect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return owner
+
+    def docker(*_args: Any, **_kwargs: Any) -> str:
+        return json.dumps([route])
+
+    monkeypatch.setattr(smoke, "_namespace", namespace)
+    monkeypatch.setattr(smoke, "_interfaces", observed_interfaces)
+    monkeypatch.setattr(smoke, "_inspect", inspect)
+    monkeypatch.setattr(smoke, "_docker", docker)
+    with pytest.raises(smoke.SmokeFailure, match="owned external route"):
+        smoke._external_route(transit_fixture(tmp_path), smoke.UPSTREAM_DNS_IP, interfaces)
+
+
+@pytest.mark.parametrize("address", ["8.8.8.8", "127.0.0.1", "169.254.169.254", "::1"])
+def test_external_probe_never_uses_alias_or_special_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, address: str
+) -> None:
+    def namespace(*_args: Any) -> Any:
+        pytest.fail("special destination reached namespace probing")
+
+    monkeypatch.setattr(smoke, "_namespace", namespace)
+    with pytest.raises((smoke.SmokeFailure, ValueError)):
+        smoke._external_route(transit_fixture(tmp_path), address, {"rpc": "eth0", "egress": "eth1"})
+
+
+def test_failed_public_dns_stops_before_https_invocation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def noop(*_args: Any, **_kwargs: Any) -> Any:
+        return None
+
+    def topology(*_args: Any) -> dict[str, Any]:
+        return state()
+
+    def interfaces(*_args: Any) -> dict[str, str]:
+        return {"rpc": "eth0", "egress": "eth1"}
+
+    def counters(*_args: Any) -> dict[str, int]:
+        return {"output_upstream_dns_udp": 0, "input_upstream_dns_reply_udp": 0}
+
+    def control(*_args: Any) -> dict[str, int]:
+        return receipts() | dict.fromkeys(smoke.UPSTREAM_KEYS, 0)
+
+    def python(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"response": False, "type": 1, "answers": 0}
+
+    def compose(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("HTTPS invoked after DNS failed")
+
+    for name, callback in [
+        ("_topology", topology),
+        ("_no_upstream", noop),
+        ("_interfaces", interfaces),
+        ("_external_route", noop),
+        ("_local_route", noop),
+        ("_policy", counters),
+        ("_state", control),
+        ("_python", python),
+        ("_compose", compose),
+    ]:
+        monkeypatch.setattr(smoke, name, callback)
+    with pytest.raises(smoke.SmokeFailure, match="approved public DNS udp"):
+        smoke._transit(transit_fixture(tmp_path))
+
+
+def test_transit_runs_four_dns_queries_then_one_unchanged_api_invocation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    ticks = {"policy": 0, "state": 0}
+
+    def noop(*_args: Any, **_kwargs: Any) -> Any:
+        return None
+
+    def topology(*_args: Any) -> dict[str, Any]:
+        return state()
+
+    def interfaces(*_args: Any) -> dict[str, str]:
+        return {"rpc": "eth0", "egress": "eth1"}
+
+    def route(_fixture: Any, address: str, *_args: Any) -> None:
+        events.append("route:" + address)
+
+    def policy(*_args: Any) -> dict[str, int]:
+        ticks["policy"] += 1
+        return dict.fromkeys(
+            (
+                "output_upstream_dns_udp",
+                "input_upstream_dns_reply_udp",
+                "output_upstream_dns_tcp",
+                "input_upstream_dns_reply_tcp",
+                "output_public",
+                "input_public_reply",
+            ),
+            ticks["policy"],
+        )
+
+    def control(*_args: Any) -> dict[str, int]:
+        ticks["state"] += 1
+        return receipts() | {
+            "upstream_udp_queries": ticks["state"],
+            "upstream_tcp_queries": ticks["state"],
+            "upstream_failures": 0,
+        }
+
+    def python(
+        _fixture: Any, _service: str, code: str, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        if code == smoke.DNS_WIRE_PROBE:
+            events.append("dns:" + parameters["protocol"] + ":" + str(parameters["type"]))
+            return {"response": True, "type": parameters["type"], "answers": 1}
+        assert code == smoke.TRANSIT_ANSWERS
+        events.append("all_answers")
+        return {"addresses": ["9.9.9.9", "2001:4860:4860::8888"]}
+
+    def compose(_fixture: Any, *args: str, **kwargs: Any) -> str:
+        assert args[-1] == smoke.TRANSIT_PROBE
+        assert json.loads(kwargs["input_text"]) == {"url": "https://example.com/"}
+        events.append("one_https_api")
+        return json.dumps(transit_metadata())
+
+    def database(*_args: Any) -> dict[str, Any]:
+        return snapshot(True)
+
+    for name, callback in [
+        ("_topology", topology),
+        ("_no_upstream", noop),
+        ("_interfaces", interfaces),
+        ("_external_route", route),
+        ("_local_route", noop),
+        ("_policy", policy),
+        ("_state", control),
+        ("_python", python),
+        ("_compose", compose),
+        ("_owner_unchanged", noop),
+        ("_database", database),
+    ]:
+        monkeypatch.setattr(smoke, name, callback)
+    smoke._transit(transit_fixture(tmp_path))
+    assert [e for e in events if e.startswith("dns:")] == [
+        "dns:udp:1",
+        "dns:udp:28",
+        "dns:tcp:1",
+        "dns:tcp:28",
+    ]
+    assert events.count("one_https_api") == 1
+    assert (
+        events.index("all_answers") < events.index("route:9.9.9.9") < events.index("one_https_api")
+    )
+
+
+def test_transit_embedded_programs_compile() -> None:
+    for name in ("DNS_WIRE_PROBE", "TRANSIT_ANSWERS", "TRANSIT_PROBE"):
+        compile(getattr(smoke, name), name, "exec")
+
+
+def test_upstream_packet_counters_must_be_zero_before_transit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def control(*_args: Any) -> dict[str, int]:
+        return receipts() | dict.fromkeys(smoke.UPSTREAM_KEYS, 0)
+
+    def counters(*_args: Any) -> dict[str, int]:
+        return {
+            "output_upstream_dns_udp": 1,
+            "input_upstream_dns_reply_udp": 0,
+            "output_upstream_dns_tcp": 0,
+            "input_upstream_dns_reply_tcp": 0,
+        }
+
+    monkeypatch.setattr(smoke, "_state", control)
+    monkeypatch.setattr(smoke, "_policy", counters)
+    with pytest.raises(smoke.SmokeFailure, match="upstream counters before transit phase"):
+        smoke._no_upstream(transit_fixture(tmp_path))

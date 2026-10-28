@@ -38,6 +38,12 @@ ARTICLE_URL = f"http://{PUBLIC_HOST}/article"
 REDIRECT_URL = f"http://{PUBLIC_HOST}/redirect-private"
 CONTROL_ORIGIN = "http://127.0.0.1:8766"
 NETWORKS = ("retrieval_rpc", "retrieval_db")
+EGRESS_NETWORK = "retrieval_egress"
+TRANSIT_HOST = "example.com"
+TRANSIT_URL = "https://example.com/"
+UPSTREAM_DNS_IP = "1.1.1.1"
+RPC_INTERFACE_PLACEHOLDER = "fixture_rpc"
+EGRESS_INTERFACE_PLACEHOLDER = "fixture_egress"
 VOLUME = "isolated-data"
 SERVICES = {
     "database",
@@ -84,7 +90,24 @@ def _payload(protocol: str, key: str) -> dict[str, object]:
     return {"payload": {"protocol": protocol, "field": key}}
 
 
-def _rules() -> list[dict[str, Any]]:
+def _rules(
+    *,
+    transit_example: bool = False,
+    rpc_interface: str | None = None,
+    egress_interface: str | None = None,
+) -> list[dict[str, Any]]:
+    require(type(transit_example) is bool, "invalid transit fixture profile")
+    if transit_example:
+        require(
+            all(
+                isinstance(name, str)
+                and re.fullmatch(r"[a-z][a-z0-9_.-]{0,14}", name)
+                and name != "lo"
+                for name in (rpc_interface, egress_interface)
+            ),
+            "invalid transit fixture interfaces",
+        )
+        require(rpc_interface != egress_interface, "fixture interfaces must differ")
     rules: list[dict[str, Any]] = []
 
     def add(chain: str, name: str, expressions: list[object], verdict: str) -> None:
@@ -243,10 +266,67 @@ def _rules() -> list[dict[str, Any]]:
     )
     add("input", "input_drop", [], "drop")
     add("forward", "forward_drop", [], "drop")
+    if transit_example:
+        for rule in rules:
+            if rule["comment"] == "input_rpc":
+                rule["expr"].insert(0, _match(_meta("iifname"), rpc_interface))
+            elif rule["comment"] == "output_rpc_reply":
+                rule["expr"].insert(0, _match(_meta("oifname"), rpc_interface))
+            elif rule["comment"] == "output_public":
+                rule["expr"].insert(0, _match(_meta("oifname"), {"set": ["lo", egress_interface]}))
+        upstream: list[dict[str, Any]] = []
+        for protocol in ("udp", "tcp"):
+            add(
+                "output",
+                f"output_upstream_dns_{protocol}",
+                [
+                    _match(_meta("oifname"), egress_interface),
+                    _match(_payload("ip", "daddr"), UPSTREAM_DNS_IP),
+                    _match(_payload(protocol, "dport"), 53),
+                ],
+                "accept",
+            )
+            upstream.append(rules.pop())
+            add(
+                "input",
+                f"input_upstream_dns_reply_{protocol}",
+                [
+                    _match(_meta("iifname"), egress_interface),
+                    _match(_payload("ip", "saddr"), UPSTREAM_DNS_IP),
+                    _match(_payload(protocol, "sport"), 53),
+                    _match({"ct": {"key": "state"}}, "established"),
+                ],
+                "accept",
+            )
+            upstream.append(rules.pop())
+        add(
+            "input",
+            "input_public_reply",
+            [
+                _match(_meta("iifname"), egress_interface),
+                _match(_payload("ip", "saddr"), "@denied_v4", "!="),
+                _match(_payload("tcp", "sport"), {"set": [80, 443]}),
+                _match({"ct": {"key": "state"}}, "established"),
+            ],
+            "accept",
+        )
+        upstream.append(rules.pop())
+        for rule in upstream:
+            index = next(
+                i
+                for i, existing in enumerate(rules)
+                if existing["comment"] == rule["chain"] + "_drop"
+            )
+            rules.insert(index, rule)
     return sorted(rules, key=lambda rule: ("input", "output", "forward").index(rule["chain"]))
 
 
-def rules_source() -> str:
+def rules_source(
+    *,
+    transit_example: bool = False,
+    rpc_interface: str | None = None,
+    egress_interface: str | None = None,
+) -> str:
     """An atomic transaction creates only a dedicated table in an owned namespace."""
     commands: list[dict[str, object]] = [
         {"add": {"table": {"family": "inet", "name": POLICY_TABLE}}}
@@ -284,11 +364,24 @@ def rules_source() -> str:
                 }
             }
         )
-    commands.extend({"add": {"rule": rule}} for rule in _rules())
+    commands.extend(
+        {"add": {"rule": rule}}
+        for rule in _rules(
+            transit_example=transit_example,
+            rpc_interface=rpc_interface,
+            egress_interface=egress_interface,
+        )
+    )
     return json.dumps({"nftables": commands})
 
 
-def validate_policy_readback(value: object) -> dict[str, int]:
+def validate_policy_readback(
+    value: object,
+    *,
+    transit_example: bool = False,
+    rpc_interface: str | None = None,
+    egress_interface: str | None = None,
+) -> dict[str, int]:
     """Verify table semantics and return counters without leaking runtime addresses."""
     if isinstance(value, str):
         value = json.loads(value)
@@ -387,20 +480,33 @@ def validate_policy_readback(value: object) -> dict[str, int]:
         },
         "namespace default policy changed",
     )
-    require(observed_rules == _rules(), "namespace policy rules changed")
+    require(
+        observed_rules
+        == _rules(
+            transit_example=transit_example,
+            rpc_interface=rpc_interface,
+            egress_interface=egress_interface,
+        ),
+        "namespace policy rules changed",
+    )
     return counters
 
 
-def policy_source() -> str:
+def policy_source(*, transit_example: bool = False) -> str:
     import inspect
 
-    validator = inspect.getsource(validate_policy_readback).replace("_rules()", "EXPECTED_RULES")
+    require(type(transit_example) is bool, "invalid transit fixture profile")
+
+    validator = inspect.getsource(validate_policy_readback)
     header = (
         "import ipaddress, json, pathlib, signal, subprocess\nfrom typing import Any, cast\n"
         f"POLICY_TABLE = {POLICY_TABLE!r}\nALIASES = {ALIASES!r}\n"
         f"V4_DENY = {tuple(str(network) for network in V4_DENY)!r}\n"
-        f"EXPECTED_RULES = json.loads({json.dumps(_rules())!r})\n"
+        f"TRANSIT_EXAMPLE = {transit_example!r}\n"
+        f"UPSTREAM_DNS_IP = {UPSTREAM_DNS_IP!r}\n"
+        f"EXPECTED_RULES = json.loads({json.dumps(_rules(transit_example=transit_example, rpc_interface=RPC_INTERFACE_PLACEHOLDER if transit_example else None, egress_interface=EGRESS_INTERFACE_PLACEHOLDER if transit_example else None))!r})\n"
         "def require(condition, message):\n    if not condition: raise RuntimeError(message)\n"
+        "def _rules(**_kwargs):\n    return EXPECTED_RULES\n"
     )
     return (
         header
@@ -419,7 +525,22 @@ for address in ALIASES:
 for address in ALIASES:
     route = json.loads(subprocess.check_output(["ip", "-j", "route", "get", address], timeout=5))
     assert len(route) == 1 and route[0]["type"] == "local" and route[0]["dev"] == "lo"
+interfaces = {"rpc": None, "egress": None}
+if TRANSIT_EXAMPLE:
+    links = json.loads(subprocess.check_output(["ip", "-j", "address", "show"], timeout=5))
+    rpc = [link["ifname"] for link in links if any(entry.get("local") == "192.0.2.10" and entry.get("prefixlen") == 24 for entry in link.get("addr_info", []))]
+    defaults = json.loads(subprocess.check_output(["ip", "-j", "-4", "route", "show", "default"], timeout=5))
+    assert len(rpc) == 1 and len(defaults) == 1
+    egress = defaults[0]["dev"]
+    owned_egress = [link for link in links if link["ifname"] == egress and any(entry.get("family") == "inet" and ipaddress.IPv4Address(entry["local"]) in ipaddress.IPv4Network("203.0.113.0/24") for entry in link.get("addr_info", []))]
+    assert len(owned_egress) == 1 and egress != rpc[0] and egress != "lo"
+    route = json.loads(subprocess.check_output(["ip", "-j", "route", "get", UPSTREAM_DNS_IP], timeout=5))
+    assert len(route) == 1 and route[0]["dev"] == egress and route[0].get("type", "unicast") == "unicast"
+    interfaces = {"rpc": rpc[0], "egress": egress}
+    EXPECTED_RULES = json.loads(json.dumps(EXPECTED_RULES).replace("fixture_rpc", rpc[0]).replace("fixture_egress", egress))
 transaction = json.loads(pathlib.Path("/fixture/rules.json").read_text())
+if TRANSIT_EXAMPLE:
+    transaction = json.loads(json.dumps(transaction).replace("fixture_rpc", interfaces["rpc"]).replace("fixture_egress", interfaces["egress"]))
 prior = subprocess.run(["nft", "--json", "list", "table", "inet", POLICY_TABLE], capture_output=True, text=True, timeout=5, check=False)
 if prior.returncode == 0:
     validate_policy_readback(prior.stdout)
@@ -428,16 +549,21 @@ body = json.dumps(transaction)
 subprocess.run(["nft", "--json", "--check", "--file", "-"], input=body, text=True, check=True, timeout=5)
 subprocess.run(["nft", "--json", "--file", "-"], input=body, text=True, check=True, timeout=5)
 validate_policy_readback(subprocess.check_output(["nft", "--json", "list", "table", "inet", POLICY_TABLE], text=True, timeout=5))
+pathlib.Path("/tmp/interfaces.json").write_text(json.dumps(interfaces))
 ready.write_text("ready")
 signal.pause()
 """
     )
 
 
-def server_source() -> str:
-    """Serve fixed DNS answers and synthetic content, never forward requests."""
+def server_source(*, transit_example: bool = False) -> str:
+    """Serve synthetic content and optional exact-host DNS forwarding."""
+    require(type(transit_example) is bool, "invalid transit fixture profile")
     config = {
         "dns": DNS_IP,
+        "transit": transit_example,
+        "transit_host": TRANSIT_HOST,
+        "upstream": UPSTREAM_DNS_IP,
         "public": PUBLIC_IP,
         "public_host": PUBLIC_HOST,
         "private_host": PRIVATE_HOST,
@@ -449,19 +575,21 @@ def server_source() -> str:
         "article": ARTICLE_BODY.decode(),
     }
     return r'''"""Credential-free bounded synthetic DNS and HTTP, with no forwarding."""
-import json, socket, socketserver, struct, threading
+import json, socket, socketserver, struct, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 C = json.loads(__CONFIG__)
 LOCK = threading.Lock()
 STATE = {"dns_queries": 0, "source_requests": 0, "forbidden_requests": 0, "source_443_connections": 0}
+if C["transit"]:
+    STATE.update(upstream_udp_queries=0, upstream_tcp_queries=0, upstream_failures=0)
 def increment(key):
     with LOCK:
         STATE[key] = min(STATE[key] + 1, 1000000)
-def answer(data):
+def answer(data, *, tcp=False):
     if not 12 <= len(data) <= 512:
         return None
     ident, flags, questions, an, ns, ar = struct.unpack("!6H", data[:12])
-    if flags & 0x8000 or questions != 1 or an or ns or ar:
+    if flags & 0xF800 or questions != 1 or an or ns or ar:
         return None
     parts, pos = [], 12
     while pos < len(data):
@@ -487,11 +615,57 @@ def answer(data):
                C["mixed_host"]: [C["public"], C["private"]]}
     addresses = mapping.get(host)
     increment("dns_queries")
+    if C["transit"] and host == C["transit_host"] and kind in (1, 28):
+        return forward(data, tcp=tcp)
     records = addresses if addresses is not None and kind == 1 else []
     reply = struct.pack("!6H", ident, 0x8180 if addresses is not None else 0x8183, 1, len(records), 0, 0) + data[12:]
     for address in records:
         reply += b"\xc0\x0c" + struct.pack("!HHIH", 1, 1, 0, 4) + socket.inet_aton(address)
     return reply
+def forward(data, *, tcp):
+    increment("upstream_tcp_queries" if tcp else "upstream_udp_queries")
+    deadline = time.monotonic() + 2
+    def receive(connection, length):
+        value = b""
+        while len(value) < length:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError()
+            connection.settimeout(remaining)
+            piece = connection.recv(length-len(value))
+            if not piece:
+                raise ValueError()
+            value += piece
+        return value
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM) as connection:
+            connection.settimeout(2)
+            connection.connect((C["upstream"], 53))
+            remaining = deadline-time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError()
+            connection.settimeout(remaining)
+            if tcp:
+                connection.sendall(struct.pack("!H", len(data)) + data)
+                length = struct.unpack("!H", receive(connection, 2))[0]
+                if not 12 <= length <= 4096:
+                    raise ValueError()
+                response = receive(connection, length)
+            else:
+                connection.send(data)
+                connection.settimeout(max(0.001, deadline-time.monotonic()))
+                response = connection.recv(4097)
+            if not 12 <= len(response) <= 4096:
+                raise ValueError()
+            header = struct.unpack("!6H", response[:12])
+            if header[0] != struct.unpack("!H", data[:2])[0] or not header[1] & 0x8000 or header[1] & 0x7800 or header[2] != 1:
+                raise ValueError()
+            if response[12:len(data)] != data[12:]:
+                raise ValueError()
+            return response
+    except (OSError, ValueError):
+        increment("upstream_failures")
+        return data[:2] + struct.pack("!5H", 0x8182, 1, 0, 0, 0) + data[12:]
 class UDP(socketserver.BaseRequestHandler):
     def handle(self):
         data, connection = self.request
@@ -514,7 +688,7 @@ class TCP(socketserver.BaseRequestHandler):
                 if not piece:
                     return
                 data += piece
-            response = answer(data)
+            response = answer(data, tcp=True)
             if response is not None:
                 self.request.sendall(struct.pack("!H", len(response)) + response)
         except OSError:
@@ -612,6 +786,8 @@ class IsolatedRetrievalFixture:
     env: dict[str, str] = field(repr=False)
     expected_compose: dict[str, Any] = field(repr=False)
     expected_files: dict[str, str] = field(repr=False)
+    transit_example: bool = False
+    network_names: tuple[str, ...] = NETWORKS
     database_name: str = DATABASE
     bootstrap_role: str = BOOTSTRAP_ROLE
     migration_role: str = MIGRATION_ROLE
@@ -650,8 +826,15 @@ def _db_environment(role: str, password: str) -> dict[str, str]:
 
 
 def create_fixture(
-    root: Path, directory: Path, project: str, *, image: str, policy_image: str
+    root: Path,
+    directory: Path,
+    project: str,
+    *,
+    image: str,
+    policy_image: str,
+    transit_example: bool = False,
 ) -> IsolatedRetrievalFixture:
+    require(type(transit_example) is bool, "invalid transit fixture profile")
     root, directory = root.resolve(), directory.resolve()
     require(
         directory.is_relative_to(Path("/tmp")) and not directory.is_relative_to(root),  # noqa: S108 - caller creates private random directory.
@@ -668,9 +851,13 @@ def create_fixture(
     directory.chmod(0o700)
     docker_args, env = local_docker_context(directory)
     files = {
-        "policy.py": policy_source(),
-        "rules.json": rules_source(),
-        "server.py": server_source(),
+        "policy.py": policy_source(transit_example=transit_example),
+        "rules.json": rules_source(
+            transit_example=transit_example,
+            rpc_interface=RPC_INTERFACE_PLACEHOLDER if transit_example else None,
+            egress_interface=EGRESS_INTERFACE_PLACEHOLDER if transit_example else None,
+        ),
+        "server.py": server_source(transit_example=transit_example),
         "resolv.conf": RESOLVER,
         "bootstrap-logins.sql": _login_sql(),
         "database_password": BOOTSTRAP_PASSWORD + "\n",
@@ -819,6 +1006,18 @@ def create_fixture(
             }
         },
     }
+    network_names = NETWORKS
+    if transit_example:
+        network_names = (*NETWORKS, EGRESS_NETWORK)
+        model["networks"][EGRESS_NETWORK] = {
+            "name": f"{project}_{EGRESS_NETWORK}",
+            "internal": False,
+            "ipam": {"config": [{"subnet": "203.0.113.0/24"}]},
+        }
+        model["services"]["policy"]["networks"][EGRESS_NETWORK] = {
+            "ipv4_address": "203.0.113.10",
+            "gw_priority": 1,
+        }
     path = directory / "compose.synthetic.json"
     path.write_text(json.dumps(model))
     path.chmod(0o600)
@@ -843,6 +1042,8 @@ def create_fixture(
         env,
         model,
         files,
+        transit_example=transit_example,
+        network_names=network_names,
     )
 
 
@@ -888,6 +1089,8 @@ def _normal_model(model: dict[str, Any]) -> dict[str, Any]:
                 "policy": {"condition": "service_started", "restart": True, "required": True}
             }
     for network in result.get("networks", {}).values():
+        if network.get("internal") is False:
+            network.pop("internal")
         if network.get("ipam", {}).get("driver") == "default":
             network["ipam"].pop("driver")
     return result
