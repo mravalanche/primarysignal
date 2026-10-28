@@ -1,0 +1,408 @@
+{
+  "name": "primary-signal-fixture-contract",
+  "networks": {
+    "admin_db": {
+      "name": "primary-signal-fixture-contract_admin_db",
+      "ipam": {},
+      "internal": true
+    },
+    "admin_ingress": {
+      "name": "primary-signal-fixture-contract_admin_ingress",
+      "driver": "bridge",
+      "ipam": {}
+    },
+    "public_db": {
+      "name": "primary-signal-fixture-contract_public_db",
+      "ipam": {},
+      "internal": true
+    },
+    "public_ingress": {
+      "name": "primary-signal-fixture-contract_public_ingress",
+      "driver": "bridge",
+      "ipam": {}
+    }
+  },
+  "secrets": {
+    "admin_tls_certificate": {
+      "name": "primary-signal-fixture-contract_admin_tls_certificate",
+      "file": "${FIXTURE}/admin_tls_certificate.pem"
+    },
+    "admin_tls_key": {
+      "name": "primary-signal-fixture-contract_admin_tls_key",
+      "file": "${FIXTURE}/admin_tls_key.pem"
+    },
+    "database_password": {
+      "name": "primary-signal-fixture-contract_database_password",
+      "file": "${FIXTURE}/database_password"
+    }
+  },
+  "services": {
+    "admin": {
+      "cap_drop": [
+        "ALL"
+      ],
+      "command": [
+        "primary-signal-web",
+        "--surface",
+        "admin",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001"
+      ],
+      "entrypoint": null,
+      "image": "primary-signal-publication-smoke:contract",
+      "init": true,
+      "networks": {
+        "admin_db": null,
+        "admin_ingress": null
+      },
+      "pids_limit": 64,
+      "pull_policy": "never",
+      "read_only": true,
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=16m"
+      ],
+      "depends_on": {
+        "seed": {
+          "condition": "service_completed_successfully",
+          "required": true
+        }
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 8443,
+          "published": "18443",
+          "protocol": "tcp"
+        }
+      ]
+    },
+    "admin_tls": {
+      "cap_drop": [
+        "ALL"
+      ],
+      "command": null,
+      "entrypoint": null,
+      "image": "nginx:1.29-alpine",
+      "init": true,
+      "network_mode": "service:admin",
+      "pids_limit": 64,
+      "read_only": true,
+      "secrets": [
+        {
+          "source": "admin_tls_certificate",
+          "target": "/run/secrets/admin_tls_certificate"
+        },
+        {
+          "source": "admin_tls_key",
+          "target": "/run/secrets/admin_tls_key"
+        }
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=16m"
+      ],
+      "user": "101:101",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/publication/admin-nginx.conf",
+          "target": "/etc/nginx/nginx.conf",
+          "read_only": true,
+          "bind": {}
+        }
+      ],
+      "depends_on": {
+        "admin": {
+          "condition": "service_started",
+          "required": true
+        }
+      }
+    },
+    "database": {
+      "command": null,
+      "entrypoint": null,
+      "image": "postgres:18.6",
+      "networks": {
+        "admin_db": null,
+        "public_db": null
+      },
+      "secrets": [
+        {
+          "source": "database_password",
+          "target": "/run/secrets/database_password"
+        }
+      ],
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "publication-data",
+          "target": "/var/lib/postgresql",
+          "volume": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/010_queue_capability_roles.sql",
+          "target": "/docker-entrypoint-initdb.d/010_queue_capability_roles.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/020_feed_scheduler_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/030_feed_poll_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/040_article_persist_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/040_article_persist_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/050_article_inventory_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/050_article_inventory_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/060_public_projection_roles.sql",
+          "target": "/docker-entrypoint-initdb.d/060_public_projection_roles.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/070_publication_writer_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/070_publication_writer_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/080_source_health_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/080_source_health_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/090_editorial_read_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/090_editorial_read_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/100_admin_session_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/100_admin_session_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/110_publication_decision_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/120_retention_cleanup_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/120_retention_cleanup_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/130_job_health_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/130_job_health_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/140_source_control_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/140_source_control_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${FIXTURE}/bootstrap-logins.sql",
+          "target": "/docker-entrypoint-initdb.d/900_local_logins.sql",
+          "read_only": true,
+          "bind": {}
+        }
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready --host=127.0.0.1 --username=$${POSTGRES_USER} --dbname=$${POSTGRES_DB}"
+        ],
+        "timeout": "3s",
+        "interval": "5s",
+        "retries": 10
+      }
+    },
+    "migrate": {
+      "restart": "no",
+      "cap_drop": [
+        "ALL"
+      ],
+      "command": [
+        "sh",
+        "-ec",
+        "python -c \"from primary_signal.db import DatabaseSettings, create_database_engine; from primary_signal.entrypoints.sample_seed import assert_test_database; settings = DatabaseSettings(); engine = create_database_engine(settings); connection = engine.connect(); assert_test_database(connection, settings.expected_role); connection.close(); engine.dispose()\"\nalembic upgrade head\n"
+      ],
+      "entrypoint": null,
+      "image": "primary-signal-publication-smoke:contract",
+      "init": true,
+      "networks": {
+        "admin_db": null
+      },
+      "pids_limit": 64,
+      "pull_policy": "never",
+      "read_only": true,
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=16m"
+      ],
+      "depends_on": {
+        "database": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      }
+    },
+    "public": {
+      "cap_drop": [
+        "ALL"
+      ],
+      "command": [
+        "primary-signal-web",
+        "--surface",
+        "public",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
+      "entrypoint": null,
+      "image": "primary-signal-publication-smoke:contract",
+      "init": true,
+      "networks": {
+        "public_db": null,
+        "public_ingress": null
+      },
+      "pids_limit": 64,
+      "pull_policy": "never",
+      "read_only": true,
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=16m"
+      ],
+      "depends_on": {
+        "seed": {
+          "condition": "service_completed_successfully",
+          "required": true
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2).close()"
+        ],
+        "timeout": "3s",
+        "interval": "10s",
+        "retries": 5
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 8000,
+          "published": "18002",
+          "protocol": "tcp"
+        }
+      ]
+    },
+    "seed": {
+      "restart": "no",
+      "cap_drop": [
+        "ALL"
+      ],
+      "command": [
+        "primary-signal-sample-seed"
+      ],
+      "entrypoint": null,
+      "image": "primary-signal-publication-smoke:contract",
+      "init": true,
+      "networks": {
+        "admin_db": null
+      },
+      "pids_limit": 64,
+      "pull_policy": "never",
+      "read_only": true,
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=16m"
+      ],
+      "depends_on": {
+        "migrate": {
+          "condition": "service_completed_successfully",
+          "required": true
+        }
+      }
+    }
+  },
+  "volumes": {
+    "publication-data": {
+      "name": "primary-signal-fixture-contract_publication-data"
+    }
+  },
+  "x-runtime": {
+    "build": {
+      "context": ".",
+      "target": "runtime"
+    },
+    "cap_drop": [
+      "ALL"
+    ],
+    "init": true,
+    "pids_limit": 64,
+    "read_only": true,
+    "security_opt": [
+      "no-new-privileges:true"
+    ],
+    "tmpfs": [
+      "/tmp:rw,noexec,nosuid,size=16m"
+    ]
+  }
+}

@@ -105,7 +105,7 @@
     {% if publication_controls is defined and publication_controls and not publication_controls.get('stale') %}
       {% if publication_controls.publish %}<dialog class="ps-desk-decision-dialog" id="decision-publish-dialog" aria-labelledby="decision-publish-title" aria-describedby="decision-publish-description"><h2 id="decision-publish-title">Publish revision {{ candidate.number }}?</h2><p id="decision-publish-description">{% if detail.current_revision and not detail.story.suppressed %}This replaces public revision {{ detail.current_revision.number }}.{% else %}This makes the story visible to readers.{% endif %} The decision will be checked against the current record before it takes effect.</p>{{ decision_form(publication_controls.publish, 'publish', 'dialog') }}</dialog>{% endif %}
       {% if publication_controls.suppress %}<dialog class="ps-desk-decision-dialog is-suppress" id="decision-suppress-dialog" aria-labelledby="decision-suppress-title" aria-describedby="decision-suppress-description"><h2 id="decision-suppress-title">Suppress public revision {{ detail.current_revision.number }}?</h2><p id="decision-suppress-description">Readers will no longer see this story. The revision remains in the publication history.</p>{{ decision_form(publication_controls.suppress, 'suppress', 'dialog') }}</dialog>{% endif %}
-      <script src="{{ url_for('admin-assets', path='/decision-dialog.js') }}" defer></script>
+      <script src="{{ url_for('admin-assets', path='/decision-dialog.js').path }}" defer></script>
     {% endif %}
     {% else %}<div class="ps-desk-empty ps-desk-empty-detail"><h2>Select a story</h2><p>Choose an item from the inventory to inspect its candidate and source trail.</p></div>{% endif %}
   </div>

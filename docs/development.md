@@ -60,6 +60,11 @@ command creates one fictional source, article, fetch, content version and draft;
 rerunning it verifies the existing lineage without duplicating the draft. The
 full disposable gate in `scripts/dev_test_env.sh` exercises this path.
 
+For the database-backed container and browser exercise, see the
+[disposable publication guide](disposable-publication.md). Its synthetic mode
+uses temporary fixture configuration and verifies publish, read and suppress
+across restarts.
+
 The ledger at `/progress` calculates each percentage from versioned exit checks
 in `src/primary_signal/web/public/milestones.json`. At every substantive commit,
 review the checks against evidence, update their state and next action, and run

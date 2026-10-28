@@ -1,0 +1,142 @@
+# Disposable publication exercise using a published development image.
+# Requires operator-owned ignored files; see docs/disposable-publication.md.
+# Never use this project with live data.
+name: primary-signal-publication-test
+
+x-runtime: &runtime
+  image: ${PRIMARY_SIGNAL_PUBLICATION_IMAGE:?Set PRIMARY_SIGNAL_PUBLICATION_IMAGE to the GHCR development image digest}
+  pull_policy: always
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=16m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 64
+  init: true
+
+services:
+  database:
+    image: postgres:18.6
+    env_file: .env.publication.database
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_password
+    secrets:
+      - database_password
+    volumes:
+      - publication-data:/var/lib/postgresql
+      - ./deploy/postgres/initdb/010_queue_capability_roles.sql:/docker-entrypoint-initdb.d/010_queue_capability_roles.sql:ro
+      - ./deploy/postgres/initdb/020_feed_scheduler_capability_role.sql:/docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql:ro
+      - ./deploy/postgres/initdb/030_feed_poll_capability_role.sql:/docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql:ro
+      - ./deploy/postgres/initdb/040_article_persist_capability_role.sql:/docker-entrypoint-initdb.d/040_article_persist_capability_role.sql:ro
+      - ./deploy/postgres/initdb/050_article_inventory_capability_role.sql:/docker-entrypoint-initdb.d/050_article_inventory_capability_role.sql:ro
+      - ./deploy/postgres/initdb/060_public_projection_roles.sql:/docker-entrypoint-initdb.d/060_public_projection_roles.sql:ro
+      - ./deploy/postgres/initdb/070_publication_writer_capability_role.sql:/docker-entrypoint-initdb.d/070_publication_writer_capability_role.sql:ro
+      - ./deploy/postgres/initdb/080_source_health_capability_role.sql:/docker-entrypoint-initdb.d/080_source_health_capability_role.sql:ro
+      - ./deploy/postgres/initdb/090_editorial_read_capability_role.sql:/docker-entrypoint-initdb.d/090_editorial_read_capability_role.sql:ro
+      - ./deploy/postgres/initdb/100_admin_session_capability_role.sql:/docker-entrypoint-initdb.d/100_admin_session_capability_role.sql:ro
+      - ./deploy/postgres/initdb/110_publication_decision_capability_role.sql:/docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql:ro
+      - ./deploy/postgres/initdb/120_retention_cleanup_capability_role.sql:/docker-entrypoint-initdb.d/120_retention_cleanup_capability_role.sql:ro
+      - ./deploy/postgres/initdb/130_job_health_capability_role.sql:/docker-entrypoint-initdb.d/130_job_health_capability_role.sql:ro
+      - ./deploy/postgres/initdb/140_source_control_capability_role.sql:/docker-entrypoint-initdb.d/140_source_control_capability_role.sql:ro
+      - ./.secrets/publication/local_logins.sql:/docker-entrypoint-initdb.d/900_local_logins.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --host=127.0.0.1 --username=$${POSTGRES_USER} --dbname=$${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [public_db, admin_db]
+
+  migrate:
+    <<: *runtime
+    env_file: .env.publication.migrate
+    command:
+      - sh
+      - -ec
+      - |
+        python -c "from primary_signal.db import DatabaseSettings, create_database_engine; from primary_signal.entrypoints.sample_seed import assert_test_database; settings = DatabaseSettings(); engine = create_database_engine(settings); connection = engine.connect(); assert_test_database(connection, settings.expected_role); connection.close(); engine.dispose()"
+        alembic upgrade head
+    depends_on:
+      database:
+        condition: service_healthy
+    networks: [admin_db]
+    restart: "no"
+
+  seed:
+    <<: *runtime
+    env_file: .env.publication.seed
+    command: ["primary-signal-sample-seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [admin_db]
+    restart: "no"
+
+  public:
+    <<: *runtime
+    env_file: .env.publication.public
+    command: ["primary-signal-web", "--surface", "public", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${PRIMARY_SIGNAL_PUBLICATION_PUBLIC_PORT:-8002}:8000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [public_db, public_ingress]
+
+  admin:
+    <<: *runtime
+    env_file: .env.publication.admin
+    command: ["primary-signal-web", "--surface", "admin", "--host", "127.0.0.1", "--port", "8001"]
+    ports:
+      - "127.0.0.1:${PRIMARY_SIGNAL_PUBLICATION_ADMIN_PORT:-8443}:8443"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    networks: [admin_db, admin_ingress]
+
+  admin_tls:
+    image: nginx:1.29-alpine
+    user: "101:101"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    init: true
+    network_mode: service:admin
+    volumes:
+      - ./deploy/publication/admin-nginx.conf:/etc/nginx/nginx.conf:ro
+    secrets:
+      - admin_tls_certificate
+      - admin_tls_key
+    depends_on:
+      - admin
+
+networks:
+  public_db:
+    internal: true
+  admin_db:
+    internal: true
+  public_ingress:
+    driver: bridge
+  admin_ingress:
+    driver: bridge
+
+volumes:
+  publication-data:
+
+secrets:
+  database_password:
+    file: .secrets/publication/database_password
+  admin_tls_certificate:
+    file: .secrets/publication/admin_tls_certificate.pem
+  admin_tls_key:
+    file: .secrets/publication/admin_tls_key.pem
