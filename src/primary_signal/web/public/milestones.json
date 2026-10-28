@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-28",
-  "reviewed_against": "M2 real Compose/browser smoke passed 2026-10-28: publish/read/suppress persisted across two runtime restarts; synthetic resources cleaned; deployment and live-ingestion checks remain open",
+  "reviewed_against": "M3 article-worker container recovery smoke passed 2026-10-28: SIGKILL during fetch, same-container/database-volume restart, no partial data, restricted stale-owner fencing and one searchable version; feed-container, live-source and deployment checks remain open",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
@@ -30,12 +30,12 @@
     {
       "id": "M3",
       "title": "Live source ingestion",
-      "next": "Verify container restart and deployment egress controls, then test three varied public sources; confirm retention operation and backup policy on the target deployment.",
+      "next": "Verify feed-container recovery and deployment egress controls, then test three varied public sources; confirm retention operation and backup policy on the target deployment.",
       "checks": [
         {"title": "RSS/Atom parsing, retrieval and durable jobs have synthetic tests", "done": true, "evidence": "Feed, article and job test suites; metadata-only job-health command adds queue counts and bounded lifecycle diagnostics through a dedicated read-only capability; local source pause/resume uses an audited execute-only capability and shared scheduler eligibility locks"},
         {"title": "Production-safe processor and retriever runtime bindings are ready", "done": false, "evidence": "Local-only startup checks retriever protocol and queue-specific capability before lease recovery or claims; production bindings and target-deployment readiness remain unverified"},
         {"title": "Three varied source classes ingest into the article inventory", "done": false, "evidence": "Synthetic advisory RSS, research Atom and journal RDF pass end to end; three real public sources remain unverified"},
-        {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Synthetic re-poll dedupe and timeout retry pass; test_processor_entrypoint_postgres.py kills actual processors during feed and article fetches, verifies no partial observations, recovers expired leases and fences old owners; recovered content is searchable and identical content reuses its version; container restart remains unverified"},
+        {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": false, "evidence": "Synthetic re-poll dedupe and timeout retry pass; test_processor_entrypoint_postgres.py kills actual processors during feed and article fetches, verifies no partial observations, recovers expired leases and fences old owners; recovered content is searchable and identical content reuses its version; scripts/smoke_ingestion_recovery.py passed real article-worker SIGKILL, same worker/database-container and volume restart, zero partial observations, stale fencing and exactly one searchable version on 2026-10-28; feed-container restart remains unverified"},
         {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Source-disable serialization and fixed-policy 90-day extracted-text cleanup have isolated PostgreSQL tests; deployment egress probes, target retention operation and backup retention remain unverified"}
       ]
     },

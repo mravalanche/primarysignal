@@ -466,7 +466,10 @@ opt-in. Its disposable PostgreSQL test runs the processor in separate OS
 processes, recovers an expired lease and rejects stale lease completion. Next,
 ingest three varied public sources after deployment controls are ready. An
 actual processor killed during a synthetic feed or article fetch now has an
-end-to-end recovery test; container restart remains open.
+end-to-end recovery test. The article-worker container now also passes a real
+mid-fetch SIGKILL and same-container/database-volume recovery smoke with stale
+fencing and exactly one searchable version. Feed-container recovery remains
+open.
 The local processor now checks retriever protocol and queue capability before
 recovering leases or claiming jobs. Production retrieval remains unbound. Before
 unattended live polling, verify deployment egress controls and service readiness

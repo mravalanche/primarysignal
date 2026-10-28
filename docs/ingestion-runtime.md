@@ -142,8 +142,46 @@ bash scripts/dev_test_env.sh --skip-apt --offline
 The gate creates and removes its own database. The crash test requires
 `PRIMARY_SIGNAL_TEST_DATABASE_DISPOSABLE=true` as well as the test database
 settings. It uses no live feeds or production services. This verifies process
-termination during feed and article fetches; container restart and production
-network isolation remain separate checks.
+termination during feed and article fetches. The optional smoke below verifies
+article-worker container recovery separately; production network isolation
+remains unverified.
+
+## Container crash recovery smoke
+
+With Docker and the development environment installed, run:
+
+```sh
+uv run --locked --offline poe ingestion-recovery-smoke
+```
+
+This optional smoke builds the packaged runtime from tracked inputs and creates
+its own disposable PostgreSQL volume. A credential-free synthetic retriever
+holds an article response while the runner kills the exact worker container.
+The worker uses only the queue-consume and article-persist capabilities. A
+separate fixture setup login seeds the synthetic job and advances only its
+expired lease and retry time.
+
+The runner checks that the interrupted fetch committed no observation, content
+version, current-version pointer or searchable result. It restarts the same
+database and worker containers, checks the database and volume identities,
+rejects the abandoned lease through the restricted queue API, and requires one
+searchable content version after recovery.
+
+The retriever fixture owns the worker's network namespace and exposes only a
+literal loopback endpoint. The disposable network is internal and has no host
+ports. It is a controlled fake responder, not the production retriever. The
+smoke does not verify live-source retrieval or production network isolation.
+It reads no operator configuration and removes only its own containers,
+network, volume, image and temporary files.
+
+The real smoke passed on 2026-10-28 with local runtime image
+`sha256:35bfd9d0da8c83de1ca6887b4002986dfe4992de8aa1acf11a2096bd6f933a4d`.
+It observed SIGKILL exit 137, no partial state, recovery history
+`lease_expired` then `succeeded`, rejected the old lease before and after
+completion, and verified exactly one searchable content version. The same
+database container, volume and database system identity survived restart; the
+retriever namespace owner remained running. All owned resources were removed.
+Feed-container recovery and deployment egress verification remain open.
 
 ## Queue and job health
 
