@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-28",
-  "reviewed_against": "Fixed development/test fixture RPC profile reviewed with exact reserved endpoint, mutually exclusive opt-ins, pre-startup environment validation and unchanged target policy; 229 focused tests pass; M3 production, live-source and deployment checks remain open",
+  "reviewed_against": "Synthetic isolated-retrieval smoke passed 2026-10-28: capability-free real retriever and separate processors, namespace nft allow/deny counters and sink evidence, fixed DNS, searchable persistence and managed policy restart; no transit Internet, live-source or production readiness claimed; corresponding exit checks remain open",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
@@ -30,13 +30,13 @@
     {
       "id": "M3",
       "title": "Live source ingestion",
-      "next": "Prepare separate processor/retriever runtime bindings and verify deployment egress controls, then test three varied public sources; confirm target retention operation and backup policy.",
+      "next": "Verify transit egress and approved public DNS with separated runtime bindings, then test three varied public sources; confirm production readiness, target retention operation and backup policy.",
       "checks": [
         {"title": "RSS/Atom parsing, retrieval and durable jobs have synthetic tests", "done": true, "evidence": "Feed, article and job test suites; metadata-only job-health command adds queue counts and bounded lifecycle diagnostics through a dedicated read-only capability; local source pause/resume uses an audited execute-only capability and shared scheduler eligibility locks"},
-        {"title": "Production-safe processor and retriever runtime bindings are ready", "done": false, "evidence": "Local and fixed fixture RPC profiles check retriever protocol and queue-specific capability before lease recovery or claims; fixture mode accepts only the reserved development/test endpoint and enables separate namespaces, not network-policy attestation; production startup remains closed and production bindings/target readiness remain unverified"},
+        {"title": "Production-safe processor and retriever runtime bindings are ready", "done": false, "evidence": "Local/fixed fixture RPC profiles check protocol and queue capability before recovery or claims; scripts/smoke_isolated_retrieval.py passed actual separate retriever and processor namespaces with no retriever DB network/credentials, constrained fixture DNS, real parsing/pinning and searchable persistence; this verifies synthetic development wiring only, production startup stays closed and production bindings/target readiness remain unverified"},
         {"title": "Three varied source classes ingest into the article inventory", "done": false, "evidence": "Synthetic advisory RSS, research Atom and journal RDF pass end to end; three real public sources remain unverified"},
         {"title": "Re-poll, failure, retry and restart behavior pass end-to-end checks", "done": true, "evidence": "test_ingestion_end_to_end_postgres.py proves controlled synthetic re-poll dedupe, persisted timeout failure, retry and searchable recovery; test_processor_entrypoint_postgres.py proves feed/article process crash recovery and content-version reuse; uv run --locked --offline poe ingestion-recovery-smoke passed both real container cases 2026-10-28: mid-fetch SIGKILL, zero partial data, same worker/database containers and volume, stale fencing, exactly one searchable article version or atomic feed discovery with one untouched retrieval job; docs/ingestion-runtime.md records images and cleanup; this does not establish live-source or production readiness"},
-        {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Source-disable serialization and fixed-policy 90-day extracted-text cleanup have isolated PostgreSQL tests; deployment egress probes, target retention operation and backup retention remain unverified"}
+        {"title": "Network boundaries and extracted-text retention are verified", "done": false, "evidence": "Source-disable serialization and fixed-policy 90-day extracted-text cleanup have isolated PostgreSQL tests; isolated-retrieval smoke passed namespace-local default-deny nft rules, IPv6 denial, independent TCP/UDP counter/sink probes and managed policy restart on 2026-10-28; transit egress, target deployment controls, retention operation and backup retention remain unverified"}
       ]
     },
     {

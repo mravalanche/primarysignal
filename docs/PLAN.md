@@ -476,8 +476,10 @@ exit check. Live-source ingestion and deployment controls remain open.
 The local processor now checks retriever protocol and queue capability before
 recovering leases or claiming jobs. Production retrieval remains unbound. A fixed development/test RPC profile
 now permits separate fixture namespaces at one reserved endpoint without
-changing retrieval-target policy. It supplies wiring only; isolated egress
-controls and actual allowed/forbidden-edge probes remain the next step. Before
+changing retrieval-target policy. A synthetic namespace smoke now verifies actual nftables allow/deny rules,
+fixture DNS, separate real retriever/processor data flow and managed policy
+restart. The endpoints are namespace-local aliases: public transit egress and
+approved external DNS remain the next verification step. Before
 unattended live polling, verify deployment egress controls and service readiness
 on the target deployment. Source-disable serialization and fixed-policy
 extracted-text cleanup have isolated PostgreSQL tests; verify their operation
