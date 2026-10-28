@@ -28,6 +28,7 @@ RUNTIME_ROLES = {
     "publication_decision_test": "primary_signal_cap_publication_decision",
 }
 RUNTIME_SERVICES = ("migrate", "seed", "public", "admin")
+NETWORKS = ("public_db", "admin_db", "public_ingress", "admin_ingress")
 SERVICES = {"database", *RUNTIME_SERVICES, "admin_tls"}
 ENV_SERVICES = ("database", *RUNTIME_SERVICES)
 INIT_FILES = (
@@ -257,12 +258,16 @@ def create_fixture(
             overlay.append(f'    ports: !override ["127.0.0.1:{port}:{target}"]\n')
         if name == "database":
             overlay.extend(
-                (
-                    "    volumes: !override\n",
-                    "      - publication-data:/var/lib/postgresql\n",
-                    f"      - {json.dumps(str(root / 'deploy/postgres/initdb') + ':/docker-entrypoint-initdb.d:ro')}\n",
-                    f"      - {json.dumps(str(directory / 'bootstrap-logins.sql') + ':/docker-entrypoint-initdb.d/900_local_logins.sql:ro')}\n",
+                ("    volumes: !override\n", "      - publication-data:/var/lib/postgresql\n")
+            )
+            for filename in INIT_FILES:
+                binding = (
+                    str(root / "deploy/postgres/initdb" / filename)
+                    + f":/docker-entrypoint-initdb.d/{filename}:ro"
                 )
+                overlay.append(f"      - {json.dumps(binding)}\n")
+            overlay.append(
+                f"      - {json.dumps(str(directory / 'bootstrap-logins.sql') + ':/docker-entrypoint-initdb.d/900_local_logins.sql:ro')}\n"
             )
     overlay.append("secrets:\n")
     for key, filename in (
@@ -303,19 +308,23 @@ def create_fixture(
 
 
 def approved_assets(root: Path) -> set[Path]:
+    root = root.resolve()
     init = root / "deploy/postgres/initdb"
+    require(init.resolve().is_relative_to(root), "tracked bootstrap mount escapes the checkout")
     require(init.is_dir() and not init.is_symlink(), "invalid tracked PostgreSQL bootstrap mount")
+    scripts = {(init / name).resolve() for name in INIT_FILES}
     require(
-        {path.name for path in init.iterdir()} == set(INIT_FILES),
-        "unexpected file in PostgreSQL bootstrap mount",
+        all(path.is_relative_to(root) for path in scripts),
+        "tracked bootstrap file escapes the checkout",
     )
     require(
         all((init / name).is_file() and not (init / name).is_symlink() for name in INIT_FILES),
         "invalid PostgreSQL bootstrap file",
     )
     nginx = root / "deploy/publication/admin-nginx.conf"
+    require(nginx.resolve().is_relative_to(root), "tracked nginx mount escapes the checkout")
     require(nginx.is_file() and not nginx.is_symlink(), "invalid tracked nginx mount")
-    return {init.resolve(), nginx.resolve()}
+    return scripts | {nginx.resolve()}
 
 
 def _fixture_path(
@@ -383,10 +392,10 @@ def validate_resolved_model(fixture: PublicationSmokeFixture, model: dict[str, A
     validate_unresolved_model(fixture, model, resolved=True)
     services = model["services"]
     networks = model.get("networks", {})
-    require(set(networks) == {"public_db", "admin_db"}, "synthetic network set changed")
+    require(set(networks) == set(NETWORKS), "synthetic network set changed")
     require(
         all(
-            value.get("internal") is True
+            bool(value.get("internal", False)) == (name in {"public_db", "admin_db"})
             and not value.get("external")
             and value.get("driver") in {None, "bridge"}
             and not value.get("driver_opts")
@@ -394,7 +403,7 @@ def validate_resolved_model(fixture: PublicationSmokeFixture, model: dict[str, A
             and value.get("name") == f"{fixture.project}_{name}"
             for name, value in networks.items()
         ),
-        "synthetic networks must be private and internal",
+        "synthetic network isolation changed",
     )
     volumes = model.get("volumes", {})
     require(set(volumes) == {"publication-data"}, "synthetic volume set changed")
@@ -468,8 +477,10 @@ def validate_resolved_model(fixture: PublicationSmokeFixture, model: dict[str, A
         expected_networks = (
             {"public_db", "admin_db"}
             if name == "database"
-            else {"public_db"}
+            else {"public_db", "public_ingress"}
             if name == "public"
+            else {"admin_db", "admin_ingress"}
+            if name == "admin"
             else {"admin_db"}
         )
         if name == "admin_tls":
@@ -523,15 +534,18 @@ def validate_resolved_model(fixture: PublicationSmokeFixture, model: dict[str, A
                 ("volume", "publication-data", "/var/lib/postgresql", False),
                 (
                     "bind",
-                    str((fixture.root / "deploy/postgres/initdb").resolve()),
-                    "/docker-entrypoint-initdb.d",
-                    True,
-                ),
-                (
-                    "bind",
                     str(fixture.directory / "bootstrap-logins.sql"),
                     "/docker-entrypoint-initdb.d/900_local_logins.sql",
                     True,
+                ),
+                *(
+                    (
+                        "bind",
+                        str((fixture.root / "deploy/postgres/initdb" / filename).resolve()),
+                        f"/docker-entrypoint-initdb.d/{filename}",
+                        True,
+                    )
+                    for filename in INIT_FILES
                 ),
             }
         elif name == "admin_tls":

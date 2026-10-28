@@ -6,8 +6,13 @@ Both are disposable M2 exercises. They use a separate
 PostgreSQL volume and a database whose name must end in `_test`. The public
 HTTP and admin HTTPS ports bind to host loopback only. The database has no
 published port. Public and admin use separate internal database networks, with
-PostgreSQL attached to both. Migration checks the connected database name
-before changing its schema. This file is not a production deployment definition.
+PostgreSQL attached to both. Each web namespace also has its own ingress bridge
+for loopback port publishing; the public and admin surfaces share no network.
+Migration checks the connected database name before changing its schema.
+
+These disposable ingress bridges permit web egress. Production egress policy
+and deployment network probes remain release work; this exercise does not
+establish production network isolation.
 
 ## Synthetic browser smoke
 
@@ -38,6 +43,24 @@ their application settings. Temporary configuration, TLS material, browser
 state, containers and the project volume are removed after the run. The
 summary reports checks rather than environment values or database contents.
 
+## Verified milestone evidence
+
+On 2026-10-28, `uv run --locked --offline poe publication-smoke` passed
+against the reviewed M2 source changes based on `cafce41`. The local image
+content ID was
+`sha256:35da4cc8089bb37d4b52e0d1b00dcb73f5c0982c9b3a5a909c0bd8bddc0cec28`.
+The runner removed this image after verification.
+
+The run proved clean startup, restricted migration to schema head
+`20261028_20`, real HTTPS login with the browser's natural Origin, HTML
+publication, public provenance, and suppression through the existing dialog.
+Publication and suppression survived separate restarts of the same runtime
+containers and volume. Migration and seed did not rerun. The final audit
+history retained draft, validation, publication and suppression events. All
+owned containers, networks, the volume and temporary fixture files were
+removed. This closes M2; production deployment and egress verification remain
+open.
+
 ## Operator setup
 
 Copy each `.env.publication.*.example` file to the corresponding ignored file
@@ -67,6 +90,13 @@ then this operator-owned login script. The migration login owns the private
 schema; the bootstrap superuser is kept out of all app services. No migration
 or publication-writer credential is present in either web service. Never use
 the fixed login values from the test-role helper here.
+
+The bootstrap scripts and login SQL are mounted as separate read-only files.
+Keep `.secrets/publication` private to its owner. Its bound login SQL must be
+readable by the PostgreSQL container user, and its TLS files by the TLS sidecar
+user. Local Compose preserves host file permissions for these binds. Read-only
+leaves beneath a `0700` parent directory retain host privacy while allowing the
+intended containers to read their explicit mounts.
 
 Provide an operator-owned Argon2id PHC password hash and a hex session key
 of at least 32 bytes through `.env.publication.admin`. Keep the PHC value

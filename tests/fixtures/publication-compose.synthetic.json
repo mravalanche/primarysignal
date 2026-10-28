@@ -6,10 +6,20 @@
       "ipam": {},
       "internal": true
     },
+    "admin_ingress": {
+      "name": "primary-signal-fixture-contract_admin_ingress",
+      "driver": "bridge",
+      "ipam": {}
+    },
     "public_db": {
       "name": "primary-signal-fixture-contract_public_db",
       "ipam": {},
       "internal": true
+    },
+    "public_ingress": {
+      "name": "primary-signal-fixture-contract_public_ingress",
+      "driver": "bridge",
+      "ipam": {}
     }
   },
   "secrets": {
@@ -44,7 +54,8 @@
       "image": "primary-signal-publication-smoke:contract",
       "init": true,
       "networks": {
-        "admin_db": null
+        "admin_db": null,
+        "admin_ingress": null
       },
       "pids_limit": 64,
       "pull_policy": "never",
@@ -138,8 +149,99 @@
         },
         {
           "type": "bind",
-          "source": "${CHECKOUT}/deploy/postgres/initdb",
-          "target": "/docker-entrypoint-initdb.d",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/010_queue_capability_roles.sql",
+          "target": "/docker-entrypoint-initdb.d/010_queue_capability_roles.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/020_feed_scheduler_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/030_feed_poll_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/040_article_persist_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/040_article_persist_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/050_article_inventory_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/050_article_inventory_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/060_public_projection_roles.sql",
+          "target": "/docker-entrypoint-initdb.d/060_public_projection_roles.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/070_publication_writer_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/070_publication_writer_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/080_source_health_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/080_source_health_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/090_editorial_read_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/090_editorial_read_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/100_admin_session_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/100_admin_session_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/110_publication_decision_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/120_retention_cleanup_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/120_retention_cleanup_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/130_job_health_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/130_job_health_capability_role.sql",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "${CHECKOUT}/deploy/postgres/initdb/140_source_control_capability_role.sql",
+          "target": "/docker-entrypoint-initdb.d/140_source_control_capability_role.sql",
           "read_only": true,
           "bind": {}
         },
@@ -210,7 +312,8 @@
       "image": "primary-signal-publication-smoke:contract",
       "init": true,
       "networks": {
-        "public_db": null
+        "public_db": null,
+        "public_ingress": null
       },
       "pids_limit": 64,
       "pull_policy": "never",

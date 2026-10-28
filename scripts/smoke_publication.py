@@ -14,11 +14,14 @@ import uuid
 from collections.abc import Sequence
 from contextlib import ExitStack, suppress
 from pathlib import Path
+from time import monotonic, sleep
+from typing import cast
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from scripts.publication_smoke_fixture import (
+    NETWORKS,
     FixtureBoundaryError,
     PublicationSmokeFixture,
     create_fixture,
@@ -150,7 +153,7 @@ def _fresh(fixture: PublicationSmokeFixture) -> None:
         or _exists(fixture, "volume", f"{fixture.project}_publication-data")
     ):
         raise SmokeFailure("fresh project")
-    for name in ("public_db", "admin_db"):
+    for name in NETWORKS:
         if _exists(fixture, "network", f"{fixture.project}_{name}"):
             raise SmokeFailure("fresh project")
 
@@ -333,17 +336,22 @@ def _restart(fixture: PublicationSmokeFixture) -> None:
         stage="runtime restart",
         timeout=60,
     )
-    for services in (("database",), ("public", "admin"), ("admin_tls",)):
-        _compose(
-            fixture,
-            "start",
-            "--wait",
-            "--wait-timeout",
-            "90",
-            *services,
-            stage="runtime restart",
-            timeout=120,
-        )
+    # Compose start can start completed dependencies. Address only the captured
+    # runtime containers so migration and seed cannot run again.
+    _docker(fixture, "start", before["database"][0], stage="runtime restart", timeout=30)
+    _wait_runtime(fixture, before["database"][0], require_health=True)
+    _docker(
+        fixture,
+        "start",
+        before["public"][0],
+        before["admin"][0],
+        stage="runtime restart",
+        timeout=30,
+    )
+    _wait_runtime(fixture, before["public"][0], require_health=True)
+    _wait_runtime(fixture, before["admin"][0], require_health=False)
+    _docker(fixture, "start", before["admin_tls"][0], stage="runtime restart", timeout=30)
+    _wait_runtime(fixture, before["admin_tls"][0], require_health=False)
     after = _containers(fixture)
     if _volume(fixture) != volume or any(after[name][0] != before[name][0] for name in before):
         raise SmokeFailure("restart persistence")
@@ -355,6 +363,77 @@ def _restart(fixture: PublicationSmokeFixture) -> None:
         for name in RUNTIME
     ):
         raise SmokeFailure("runtime services did not restart")
+    _runtime_bindings(fixture, after)
+
+
+def _wait_runtime(
+    fixture: PublicationSmokeFixture, identifier: str, *, require_health: bool, timeout: float = 90
+) -> None:
+    deadline = monotonic() + timeout
+    while True:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise SmokeFailure("runtime readiness")
+        state = _docker(
+            fixture,
+            "inspect",
+            "--format",
+            "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}",
+            identifier,
+            stage="runtime readiness",
+            timeout=max(1, min(10, int(remaining))),
+        ).stdout.strip()
+        status, separator, health = state.partition("|")
+        if (
+            not separator
+            or status not in {"created", "running", "restarting"}
+            or health == "unhealthy"
+        ):
+            raise SmokeFailure("runtime readiness")
+        if status == "running" and (not require_health or health == "healthy"):
+            return
+        if status == "running" and require_health and not health:
+            raise SmokeFailure("runtime readiness")
+        sleep(min(0.25, max(0, deadline - monotonic())))
+
+
+def _runtime_bindings(
+    fixture: PublicationSmokeFixture, containers: dict[str, tuple[str, str]]
+) -> None:
+    """Check effective bindings; requested HostConfig ports alone are insufficient."""
+
+    expected = {
+        "public": {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": str(fixture.public_port)}]},
+        "admin": {"8443/tcp": [{"HostIp": "127.0.0.1", "HostPort": str(fixture.admin_port)}]},
+        "database": {},
+    }
+    for service, wanted in expected.items():
+        raw = _docker(
+            fixture,
+            "inspect",
+            "--format",
+            "{{json .NetworkSettings.Ports}}",
+            containers[service][0],
+            stage="published runtime ports",
+        ).stdout
+        try:
+            ports = json.loads(raw)
+        except ValueError, TypeError:
+            raise SmokeFailure("published runtime ports") from None
+        if ports is None:
+            ports = {}
+        if not isinstance(ports, dict):
+            raise SmokeFailure("published runtime ports")
+        port_values = cast(dict[str, object], ports)
+        # Image EXPOSE declarations can legitimately retain null entries. Only
+        # actual nonempty host bindings belong in the comparison.
+        effective = {
+            port: bindings
+            for port, bindings in port_values.items()
+            if bindings is not None and bindings != []
+        }
+        if effective != wanted:
+            raise SmokeFailure("published runtime ports")
 
 
 def _database(fixture: PublicationSmokeFixture, query: str) -> str:
@@ -381,7 +460,8 @@ def _database(fixture: PublicationSmokeFixture, query: str) -> str:
 
 
 def _runtime(fixture: PublicationSmokeFixture) -> None:
-    _containers(fixture)
+    containers = _containers(fixture)
+    _runtime_bindings(fixture, containers)
     head = ScriptDirectory.from_config(Config(str(fixture.root / "alembic.ini"))).get_current_head()
     if (
         not head
@@ -443,7 +523,7 @@ def _cleanup(fixture: PublicationSmokeFixture) -> None:
             _docker(fixture, "image", "rm", fixture.image, stage="cleanup", timeout=60)
         if _exists(fixture, "volume", f"{fixture.project}_publication-data"):
             failed = True
-        for name in ("public_db", "admin_db"):
+        for name in NETWORKS:
             if _exists(fixture, "network", f"{fixture.project}_{name}"):
                 failed = True
         remaining = _docker(

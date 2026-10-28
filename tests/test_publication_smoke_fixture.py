@@ -124,9 +124,9 @@ def test_unresolved_guard_rejects_symlink_escape(
 @pytest.mark.parametrize(
     ("target", "key", "value", "message"),
     [
-        ("network", "external", True, "private and internal"),
-        ("network", "name", "another-project_public_db", "private and internal"),
-        ("network", "driver", "host", "private and internal"),
+        ("network", "external", True, "network isolation changed"),
+        ("network", "name", "another-project_public_db", "network isolation changed"),
+        ("network", "driver", "host", "network isolation changed"),
         ("volume", "external", True, "belong to this project"),
         ("volume", "name", "another-project_database", "belong to this project"),
         (
@@ -266,3 +266,146 @@ def test_checker_uses_private_placeholders_and_ignores_host_inputs(
     assert "COMPOSE_FILE" not in environment and "COMPOSE_ENV_FILES" not in environment
     assert environment["PRIMARY_SIGNAL_PUBLICATION_IMAGE"] == checker.IMAGE_DIGEST
     assert environment["DOCKER_CONFIG"] == str(tmp_path / "docker-config")
+
+
+def test_bootstrap_files_are_individual_readonly_binds(
+    fixture: fixtures.PublicationSmokeFixture,
+) -> None:
+    assert stat.S_IMODE((fixture.directory / "bootstrap-logins.sql").stat().st_mode) == 0o444
+    config = model(fixture)
+    mounts = config["services"]["database"]["volumes"]
+    scripts = [mount for mount in mounts if mount.get("type") == "bind"]
+    assert len(scripts) == 15
+    assert all(mount["read_only"] is True for mount in scripts)
+    assert "/docker-entrypoint-initdb.d" not in {mount["target"] for mount in scripts}
+    for filename in ("compose.publication.yaml", "compose.publication.image.yaml"):
+        source = (ROOT / filename).read_text()
+        assert "./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro" not in source
+        assert sum("- ./deploy/postgres/initdb/" in line for line in source.splitlines()) == 14
+        for script in fixtures.INIT_FILES:
+            assert (
+                f"./deploy/postgres/initdb/{script}:/docker-entrypoint-initdb.d/{script}:ro"
+                in source
+            )
+
+
+def test_readonly_parent_directory_regression_is_rejected(
+    fixture: fixtures.PublicationSmokeFixture,
+) -> None:
+    config = model(fixture, unresolved=True)
+    config["services"]["database"]["volumes"][1]["source"] = str(
+        fixture.root / "deploy/postgres/initdb"
+    )
+    config["services"]["database"]["volumes"][1]["target"] = "/docker-entrypoint-initdb.d"
+    with pytest.raises(fixtures.FixtureBoundaryError, match="escapes the synthetic fixture"):
+        fixtures.validate_unresolved_model(fixture, config)
+    # The ordinary operator model checker must also catch this failed design.
+    with pytest.raises(SystemExit, match="individual approved bootstrap files"):
+        checker.check_boundaries(cast(checker.ComposeConfig, config), fixture.root)
+
+
+@pytest.mark.parametrize("change", ["writable", "wrong-target", "unknown-script"])
+def test_bootstrap_exact_file_contract_rejects_changes(
+    fixture: fixtures.PublicationSmokeFixture, change: str
+) -> None:
+    config = model(fixture)
+    mount = config["services"]["database"]["volumes"][1]
+    if change == "writable":
+        mount["read_only"] = False
+    elif change == "wrong-target":
+        mount["target"] = "/docker-entrypoint-initdb.d/901_unreviewed.sql"
+    else:
+        mount["source"] = str(fixture.directory / "901_unreviewed.sql")
+    with pytest.raises(fixtures.FixtureBoundaryError, match="mount set changed"):
+        fixtures.validate_resolved_model(fixture, config)
+
+
+def test_asset_allowlist_never_includes_parent_directory_or_unknown_sql(tmp_path: Path) -> None:
+    init = tmp_path / "deploy/postgres/initdb"
+    init.mkdir(parents=True)
+    for name in fixtures.INIT_FILES:
+        (init / name).write_text("-- synthetic tracked file placeholder\n")
+    unexpected = init / "999_untracked.sql"
+    unexpected.write_text("-- synthetic untracked file placeholder\n")
+    nginx = tmp_path / "deploy/publication/admin-nginx.conf"
+    nginx.parent.mkdir()
+    nginx.write_text("# synthetic nginx placeholder\n")
+    approved = fixtures.approved_assets(tmp_path)
+    assert len(approved) == 15
+    assert init not in approved and unexpected not in approved
+
+
+def test_asset_allowlist_rejects_a_symlinked_parent_outside_checkout(tmp_path: Path) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    init = outside / "deploy/postgres/initdb"
+    init.mkdir(parents=True)
+    for name in fixtures.INIT_FILES:
+        (init / name).write_text("-- synthetic outside bootstrap placeholder\n")
+    nginx = outside / "deploy/publication/admin-nginx.conf"
+    nginx.parent.mkdir()
+    nginx.write_text("# synthetic outside nginx placeholder\n")
+    (root / "deploy").symlink_to(outside / "deploy", target_is_directory=True)
+    with pytest.raises(fixtures.FixtureBoundaryError, match="escapes the checkout"):
+        fixtures.approved_assets(root)
+
+
+@pytest.mark.parametrize(
+    ("network", "key", "value"),
+    [
+        ("public_db", "internal", False),
+        ("admin_db", "internal", False),
+        ("public_ingress", "internal", True),
+        ("admin_ingress", "external", True),
+        ("public_ingress", "name", "another-project_public_ingress"),
+        ("admin_ingress", "driver", "host"),
+        ("public_ingress", "driver_opts", {"com.docker.network.bridge.name": "synthetic0"}),
+        ("admin_ingress", "ipam", {"config": [{"subnet": "192.0.2.0/24"}]}),
+    ],
+)
+def test_database_and_ingress_network_boundaries_are_distinct(
+    fixture: fixtures.PublicationSmokeFixture, network: str, key: str, value: object
+) -> None:
+    config = model(fixture)
+    config["networks"][network][key] = value
+    with pytest.raises(fixtures.FixtureBoundaryError, match="network isolation changed"):
+        fixtures.validate_resolved_model(fixture, config)
+
+
+@pytest.mark.parametrize(
+    ("service", "networks"),
+    [
+        ("database", {"public_db": None, "admin_db": None, "public_ingress": None}),
+        ("migrate", {"public_db": None}),
+        ("seed", {"admin_db": None, "admin_ingress": None}),
+        ("public", {"public_db": None, "public_ingress": None, "admin_ingress": None}),
+        ("admin", {"admin_db": None, "public_ingress": None}),
+        ("admin_tls", {"admin_ingress": None}),
+    ],
+)
+def test_shared_ingress_and_incorrect_network_membership_are_rejected(
+    fixture: fixtures.PublicationSmokeFixture, service: str, networks: dict[str, None]
+) -> None:
+    config = model(fixture)
+    config["services"][service]["networks"] = networks
+    with pytest.raises(fixtures.FixtureBoundaryError, match=r"network changed|namespace"):
+        fixtures.validate_resolved_model(fixture, config)
+
+
+def test_disposable_ingress_keeps_database_internal_and_web_namespaces_separate(
+    fixture: fixtures.PublicationSmokeFixture,
+) -> None:
+    config = model(fixture)
+    assert fixtures.NETWORKS == ("public_db", "admin_db", "public_ingress", "admin_ingress")
+    assert set(config["networks"]) == set(fixtures.NETWORKS)
+    assert config["networks"]["public_db"]["internal"] is True
+    assert config["networks"]["admin_db"]["internal"] is True
+    for name in ("public_ingress", "admin_ingress"):
+        assert config["networks"][name]["driver"] == "bridge"
+        assert not config["networks"][name].get("internal", False)
+    public = set(config["services"]["public"]["networks"])
+    admin = set(config["services"]["admin"]["networks"])
+    assert not public & admin
+    assert set(config["services"]["database"]["networks"]) == {"public_db", "admin_db"}
+    fixtures.validate_resolved_model(fixture, config)

@@ -448,10 +448,11 @@ backlog item, not a v1 milestone check.
 
 The synthetic reading pages and local Docker smoke have passed. The development
 image has been published to GHCR and its digest verified. The disposable
-PostgreSQL publication stack has an isolated synthetic smoke mode under
-verification. Its browser publish/read/suppress and restart checks must pass
-before the remaining M2 exit checks can close. Operator-owned configuration
-remains a separate path for manual use. The restricted
+PostgreSQL publication stack passed its isolated synthetic browser smoke on
+2026-10-28. Real HTTPS login, publication, public provenance and suppression
+persist across two runtime-container restarts without rerunning migration or
+seed. M2 is complete. Operator-owned configuration remains a separate path for
+manual use; production deployment controls remain open. The restricted
 public reader, Latest and story pages, authenticated Reading desk, and
 database-backed publish/suppress decisions already have isolated tests.
 

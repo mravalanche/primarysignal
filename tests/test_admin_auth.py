@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 import pytest
 from argon2 import PasswordHasher, Type
 from httpx import ASGITransport, AsyncClient
+from starlette.types import Receive, Scope, Send
 
 from primary_signal.config import RuntimeEnvironment, Settings
 from primary_signal.publication.editorial_reader import (
@@ -196,9 +197,14 @@ def test_admin_http_boundary_and_cookie() -> None:
     async def exercise() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
             assert (await client.get("/admin/auth/session")).status_code == 401
-            assert (
-                await client.post("/admin/auth/login", json={"password": PASSWORD})
-            ).status_code == 403
+            for origin in (None, "null", "https://wrong.example.test"):
+                assert (
+                    await client.post(
+                        "/admin/auth/login",
+                        json={"password": PASSWORD},
+                        headers={"Origin": origin} if origin is not None else {},
+                    )
+                ).status_code == 403
             malformed = await client.post(
                 "/admin/auth/login",
                 json={"password": PASSWORD * 300},
@@ -248,11 +254,11 @@ def test_admin_http_boundary_and_cookie() -> None:
             assert (
                 await client.post("/admin/auth/logout", headers={"Origin": ORIGIN})
             ).status_code == 403
-            assert (
-                await client.post(
-                    "/admin/auth/logout", headers={"x-csrf-token": login.json()["csrf_token"]}
-                )
-            ).status_code == 403
+            for origin in (None, "null", "https://wrong.example.test"):
+                headers = {"x-csrf-token": login.json()["csrf_token"]}
+                if origin is not None:
+                    headers["Origin"] = origin
+                assert (await client.post("/admin/auth/logout", headers=headers)).status_code == 403
             logout = await client.post(
                 "/admin/auth/logout",
                 headers={"Origin": ORIGIN, "x-csrf-token": login.json()["csrf_token"]},
@@ -269,7 +275,8 @@ def test_admin_http_boundary_and_cookie() -> None:
     asyncio.run(exercise())
 
 
-def test_browser_publication_forms_require_reviewed_values_and_csrf() -> None:
+@pytest.mark.parametrize("root_path", ["", "/editorial"])
+def test_browser_publication_forms_require_reviewed_values_and_csrf(root_path: str) -> None:
     auth = auth_service()
     reader = MagicMock()
     writer = MagicMock()
@@ -339,8 +346,14 @@ def test_browser_publication_forms_require_reviewed_values_and_csrf() -> None:
         decision_writer=writer,
     )
 
+    async def http_backend(scope: Scope, receive: Receive, send: Send) -> None:
+        # Model the HTTP hop behind TLS without trusting forwarding headers.
+        await app({**scope, "scheme": "http"}, receive, send)
+
     async def exercise() -> None:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=http_backend, root_path=root_path), base_url=ORIGIN
+        ) as client:
             path = "/admin/desk/stories/synthetic-story"
             assert (await client.post(f"{path}/publish")).status_code == 401
             assert (await client.get("/assets/admin/decision-dialog.js")).status_code == 401
@@ -358,7 +371,14 @@ def test_browser_publication_forms_require_reviewed_values_and_csrf() -> None:
             }
             page = await client.get(path)
             assert page.status_code == 200
-            assert (await client.get("/assets/admin/decision-dialog.js")).status_code == 200
+            assert f'href="{root_path}/assets/admin/admin.css"' in page.text
+            assert f'src="{root_path}/assets/common/htmx.min.js"' in page.text
+            assert f'src="{root_path}/assets/admin/decision-dialog.js"' in page.text
+            assert 'src="http://' not in page.text
+            assert 'href="http://' not in page.text
+            assert (
+                await client.get(f"{root_path}/assets/admin/decision-dialog.js")
+            ).status_code == 200
             assert 'name="evidence_fingerprint"' in page.text
             assert "a" * 64 in page.text
             forged = await client.get(f"{path}?decision=published")
@@ -369,12 +389,17 @@ def test_browser_publication_forms_require_reviewed_values_and_csrf() -> None:
             assert 'name="evidence_fingerprint"' not in truncated.text
             assert "Publish revision" not in truncated.text
             reader.get_story.return_value = complete_detail
-            assert (await client.post(f"{path}/publish", data=fields)).status_code == 403
-            assert (
-                await client.post(
-                    f"{path}/publish", data=fields, headers={"Origin": "https://wrong.example.test"}
-                )
-            ).status_code == 403
+            for origin in (None, "null", "https://wrong.example.test"):
+                for action in ("publish", "suppress"):
+                    assert (
+                        await client.post(
+                            f"{path}/{action}",
+                            data=fields,
+                            headers={"Origin": origin} if origin is not None else {},
+                        )
+                    ).status_code == 403
+            writer.publish_reviewed.assert_not_called()
+            writer.suppress.assert_not_called()
             assert (
                 await client.post(
                     f"{path}/publish",
@@ -517,14 +542,20 @@ def test_browser_login_form_uses_same_boundary_and_rate_limit() -> None:
             page = await client.get("/admin/login")
             assert page.status_code == 200
             assert page.headers["cache-control"] == "no-store"
+            assert page.headers["referrer-policy"] == "same-origin"
             assert '<form action="/admin/login" method="post"' in page.text
             assert PASSWORD not in page.text
             assert (await client.get("/assets/admin/admin.css")).status_code == 200
             assert (await client.get("/assets/common/htmx.min.js")).status_code == 200
             assert (await client.get("/assets/admin/private.css")).status_code == 401
-            assert (
-                await client.post("/admin/login", data={"password": PASSWORD})
-            ).status_code == 403
+            for origin in (None, "null", "https://wrong.example.test"):
+                assert (
+                    await client.post(
+                        "/admin/login",
+                        data={"password": PASSWORD},
+                        headers={"Origin": origin} if origin is not None else {},
+                    )
+                ).status_code == 403
             for payload in ("password=", "password=x&extra=y", "password=%FF"):
                 invalid = await client.post(
                     "/admin/login",
@@ -671,7 +702,7 @@ def test_live_reading_desk_requires_session_and_renders_untrusted_metadata_inert
             page = await client.get("/admin/desk/stories/synthetic-story")
             assert page.status_code == 200
             assert page.headers["cache-control"] == "no-store"
-            assert page.headers["referrer-policy"] == "no-referrer"
+            assert page.headers["referrer-policy"] == "same-origin"
             assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
             assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
             assert "<script>alert(1)</script>" not in page.text
@@ -690,9 +721,14 @@ def test_live_reading_desk_requires_session_and_renders_untrusted_metadata_inert
                     "/admin/logout", data={"csrf_token": "00" * 32}, headers={"Origin": ORIGIN}
                 )
             ).status_code == 403
-            assert (
-                await client.post("/admin/logout", data={"csrf_token": token.csrf_secret.hex()})
-            ).status_code == 403
+            for origin in (None, "null", "https://wrong.example.test"):
+                assert (
+                    await client.post(
+                        "/admin/logout",
+                        data={"csrf_token": token.csrf_secret.hex()},
+                        headers={"Origin": origin} if origin is not None else {},
+                    )
+                ).status_code == 403
             assert (
                 await client.post(
                     "/admin/logout",

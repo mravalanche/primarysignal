@@ -10,10 +10,16 @@ from typing import Any, TypedDict, cast
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.publication_smoke_fixture import approved_assets, local_docker_context
+from scripts.publication_smoke_fixture import (
+    INIT_FILES,
+    NETWORKS,
+    approved_assets,
+    local_docker_context,
+)
 
 
 class ComposeConfig(TypedDict):
+    name: str
     services: dict[str, dict[str, Any]]
     networks: dict[str, dict[str, Any]]
 
@@ -113,6 +119,31 @@ def render_model(root: Path, filename: str, directory: Path) -> ComposeConfig:
 
 def check_boundaries(config: ComposeConfig, root: Path) -> None:
     services = config["services"]
+    database_mounts = services["database"].get("volumes", [])
+    init_mounts = {
+        mount["target"]: mount for mount in database_mounts if mount.get("type") == "bind"
+    }
+    expected_targets = {f"/docker-entrypoint-initdb.d/{name}" for name in INIT_FILES} | {
+        "/docker-entrypoint-initdb.d/900_local_logins.sql"
+    }
+    require(
+        set(init_mounts) == expected_targets,
+        "database must mount individual approved bootstrap files",
+    )
+    for filename in INIT_FILES:
+        mount = init_mounts[f"/docker-entrypoint-initdb.d/{filename}"]
+        require(
+            mount.get("read_only") is True
+            and Path(mount["source"]).resolve()
+            == (root / "deploy/postgres/initdb" / filename).resolve(),
+            "PostgreSQL bootstrap file mount changed",
+        )
+    login_mount = init_mounts["/docker-entrypoint-initdb.d/900_local_logins.sql"]
+    require(
+        login_mount.get("read_only") is True
+        and Path(login_mount["source"]).name == "example_logins.sql",
+        "placeholder login mount changed",
+    )
     for name in ("database", "migrate", "seed", "admin_tls"):
         require(not services[name].get("ports"), f"{name} must have no published port")
     for name in ("public", "admin"):
@@ -143,19 +174,26 @@ def check_boundaries(config: ComposeConfig, root: Path) -> None:
             services[name]["depends_on"]["seed"]["condition"] == "service_completed_successfully",
             f"{name} must wait for seed",
         )
-    require(
-        all(network["internal"] for network in config["networks"].values()),
-        "networks must be internal",
-    )
+    require(set(config["networks"]) == set(NETWORKS), "publication network set changed")
+    for name, network in config["networks"].items():
+        require(
+            bool(network.get("internal", False)) == (name in {"public_db", "admin_db"})
+            and not network.get("external")
+            and network.get("driver") in {None, "bridge"}
+            and not network.get("driver_opts")
+            and not network.get("ipam")
+            and network.get("name") == f"{config['name']}_{name}",
+            "publication network isolation changed",
+        )
     public_networks = set(services["public"]["networks"])
     admin_networks = set(services["admin"]["networks"])
     database_networks = set(services["database"]["networks"])
     require(not public_networks & admin_networks, "web services must not share a network")
-    require(public_networks | admin_networks == database_networks, "database network links changed")
-    require(public_networks == {"public_db"}, "public database network changed")
-    require(admin_networks == {"admin_db"}, "admin database network changed")
+    require(database_networks == {"public_db", "admin_db"}, "database network links changed")
+    require(public_networks == {"public_db", "public_ingress"}, "public network membership changed")
+    require(admin_networks == {"admin_db", "admin_ingress"}, "admin network membership changed")
     for name in ("migrate", "seed"):
-        require(set(services[name]["networks"]) == admin_networks, f"{name} network changed")
+        require(set(services[name]["networks"]) == {"admin_db"}, f"{name} network changed")
     migration_example = (root / ".env.publication.migrate.example").read_text(encoding="utf-8")
     seed_example = (root / ".env.publication.seed.example").read_text(encoding="utf-8")
     require(

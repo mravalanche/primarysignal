@@ -38,7 +38,7 @@ async function visit(page, url, expectedStatus = 200) {
     try {
       const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 5000 });
       assert.equal(response?.status(), expectedStatus);
-      return;
+      return response;
     } catch {
       if (Date.now() >= deadline) throw new Error('Local publication endpoint unavailable');
       await delay(250);
@@ -48,9 +48,18 @@ async function visit(page, url, expectedStatus = 200) {
 
 async function login(context, config) {
   const page = await context.newPage();
-  await visit(page, `${config.adminOrigin}/admin/login`);
+  const loginPage = await visit(page, `${config.adminOrigin}/admin/login`);
+  assert.equal(loginPage.headers()['referrer-policy'], 'same-origin');
   await page.getByLabel('Password', { exact: true }).fill(config.adminPassword);
   await Promise.all([
+    page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === config.adminOrigin && url.pathname === '/admin/login'
+        && response.request().method() === 'POST';
+    }).then((response) => {
+      assert.equal(response.status(), 303);
+      assert.equal(response.request().headers().origin, config.adminOrigin);
+    }),
     page.waitForURL((url) => url.origin === config.adminOrigin && url.pathname === '/admin/desk'),
     page.getByRole('button', { name: 'Sign in', exact: true }).click(),
   ]);

@@ -4,11 +4,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from starlette.datastructures import URL
+
 from primary_signal.web.common.templates import TemplateSurface, create_templates
 
 
-def _url_for(name: str, path: str) -> str:
-    return f"/assets/{name}/{path.lstrip('/')}"
+def _url_for(name: str, path: str) -> URL:
+    return URL(
+        f"http://internal.example.test/assets/{name.removesuffix('-assets')}/{path.lstrip('/')}"
+    )
 
 
 def _context() -> dict[str, Any]:

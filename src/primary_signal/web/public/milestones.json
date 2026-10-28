@@ -1,6 +1,6 @@
 {
   "reviewed_on": "2026-10-28",
-  "reviewed_against": "Synthetic publication fixture, browser orchestration and isolation guards reviewed; 38 focused safety tests pass; real container/browser/restart evidence pending; M2 exit checks remain open",
+  "reviewed_against": "M2 real Compose/browser smoke passed 2026-10-28: publish/read/suppress persisted across two runtime restarts; synthetic resources cleaned; deployment and live-ingestion checks remain open",
   "method": "Each percentage is completed exit checks divided by all listed exit checks. A check is complete only when its stated evidence exists.",
   "milestones": [
     {
@@ -19,12 +19,12 @@
     {
       "id": "M2",
       "title": "Containerised publication with test data",
-      "next": "Run the isolated synthetic Compose and browser smoke, including publish/read/suppress across restarts.",
+      "next": "Complete production-safe ingestion bindings and deployment controls before the live-source proof in M3.",
       "checks": [
         {"title": "Database-backed publish and suppress flow works in tests", "done": true, "evidence": "tests/test_publication_browser_flow_postgres.py"},
-        {"title": "Disposable Compose stack runs migration, public site and private admin", "done": false, "evidence": "Draft Compose and GHCR development image are prepared; operator-owned local configuration and running-stack evidence remain open"},
+        {"title": "Disposable Compose stack runs migration, public site and private admin", "done": true, "evidence": "scripts/smoke_publication.py passed 2026-10-28: six services, restricted migration login, schema head 20261028_20, nonroot web services, separate loopback ingress and no published database port; docs/disposable-publication.md"},
         {"title": "Synthetic seed creates stories and source trails in PostgreSQL", "done": true, "evidence": "sample_seed CLI and idempotent PostgreSQL integration test; full offline gate passed 2026-10-17"},
-        {"title": "Clean-start browser smoke proves publish, read and suppress", "done": false, "evidence": "Pending"}
+        {"title": "Clean-start browser smoke proves publish, read and suppress", "done": true, "evidence": "uv run --locked --offline poe publication-smoke passed 2026-10-28: real Chromium HTTPS login, HTML publication, public provenance, dialog suppression, two same-volume/runtime-container restarts, immutable audit history and exact cleanup; local image sha256:35da4cc8089bb37d4b52e0d1b00dcb73f5c0982c9b3a5a909c0bd8bddc0cec28"}
       ]
     },
     {

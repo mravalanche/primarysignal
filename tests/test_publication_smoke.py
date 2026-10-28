@@ -1,5 +1,6 @@
 """Boundary and persistence guards for the real disposable publication smoke."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -23,6 +24,8 @@ def _fixture(root: Path, directory: Path) -> PublicationSmokeFixture:
             project="synthetic-project",
             image="synthetic-project:local",
             docker_args=("docker",),
+            public_port=18002,
+            admin_port=18443,
         ),
     )
 
@@ -97,6 +100,8 @@ def test_restart_requires_new_runtime_start_times_and_retains_one_shots(
         for name, (identifier, state) in before.items()
     }
     snapshots = iter((before, after))
+    commands: list[tuple[str, ...]] = []
+    waits: list[tuple[str, bool]] = []
 
     def containers(_fixture: PublicationSmokeFixture) -> dict[str, tuple[str, str]]:
         return next(snapshots)
@@ -104,17 +109,165 @@ def test_restart_requires_new_runtime_start_times_and_retains_one_shots(
     def volume(_fixture: PublicationSmokeFixture) -> str:
         return "same-volume"
 
-    def compose(_fixture: PublicationSmokeFixture, *_args: str, **_kwargs: object) -> str:
+    def compose(_fixture: PublicationSmokeFixture, *args: str, **_kwargs: object) -> str:
+        assert args[0] == "stop", "Compose must not start completed dependencies"
         return ""
+
+    def docker(
+        _fixture: PublicationSmokeFixture, *args: str, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(args)
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    def wait_runtime(
+        _fixture: PublicationSmokeFixture, identifier: str, *, require_health: bool
+    ) -> None:
+        waits.append((identifier, require_health))
+
+    def runtime_bindings(
+        _fixture: PublicationSmokeFixture, _containers: dict[str, tuple[str, str]]
+    ) -> None:
+        return None
 
     monkeypatch.setattr(smoke, "_containers", containers)
     monkeypatch.setattr(smoke, "_volume", volume)
     monkeypatch.setattr(smoke, "_compose", compose)
+    monkeypatch.setattr(smoke, "_docker", docker)
+    monkeypatch.setattr(smoke, "_wait_runtime", wait_runtime)
+    monkeypatch.setattr(smoke, "_runtime_bindings", runtime_bindings)
     if unchanged:
         with pytest.raises(smoke.SmokeFailure, match="runtime services did not restart"):
             smoke._restart(fixture)  # pyright: ignore[reportPrivateUsage]
     else:
         smoke._restart(fixture)  # pyright: ignore[reportPrivateUsage]
+    assert commands == [("start", "database"), ("start", "public", "admin"), ("start", "admin_tls")]
+    assert waits == [("database", True), ("public", True), ("admin", False), ("admin_tls", False)]
+
+
+def test_runtime_health_wait_is_bounded_without_starting_dependencies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fixture = _fixture(tmp_path, tmp_path)
+    now = [0.0]
+    probes: list[str] = []
+    monkeypatch.setattr(smoke, "monotonic", lambda: now[0])
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    def docker(
+        _fixture: PublicationSmokeFixture, *args: str, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert args[:3] == (
+            "inspect",
+            "--format",
+            "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}",
+        )
+        assert kwargs["timeout"] == 1
+        probes.append(args[3])
+        return subprocess.CompletedProcess([], 0, "running|starting", "")
+
+    monkeypatch.setattr(smoke, "sleep", sleep)
+    monkeypatch.setattr(smoke, "_docker", docker)
+    with pytest.raises(smoke.SmokeFailure, match="runtime readiness"):
+        smoke._wait_runtime(fixture, "owned-container", require_health=True, timeout=1)  # pyright: ignore[reportPrivateUsage]
+    assert now[0] == 1
+    assert probes == ["owned-container"] * 4
+
+
+@pytest.mark.parametrize(
+    ("service", "ports"),
+    [
+        ("public", None),
+        ("public", {"8000/tcp": None}),
+        ("public", {"8000/tcp": [{"HostIp": "0.0.0.0", "HostPort": "18002"}]}),  # noqa: S104 - rejected fixture, no actual listener.
+        ("public", {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "19002"}]}),
+        (
+            "public",
+            {
+                "8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18002"}],
+                "9000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "19000"}],
+            },
+        ),
+        ("admin", {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18443"}]}),
+        ("database", {"5432/tcp": [{"HostIp": "127.0.0.1", "HostPort": "15432"}]}),
+    ],
+)
+def test_runtime_checks_effective_missing_misbound_and_unexpected_ports(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, service: str, ports: object
+) -> None:
+    fixture = _fixture(tmp_path, tmp_path)
+    models: dict[str, object] = {
+        "public": {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18002"}]},
+        "admin": {"8443/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18443"}]},
+        "database": {"5432/tcp": None},
+    }
+    models[service] = ports
+
+    def docker(
+        _fixture: PublicationSmokeFixture, *args: str, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert args[:3] == ("inspect", "--format", "{{json .NetworkSettings.Ports}}")
+        return subprocess.CompletedProcess([], 0, json.dumps(models[args[3]]), "")
+
+    monkeypatch.setattr(smoke, "_docker", docker)
+    containers = {name: (name, "started|running|0") for name in models}
+    with pytest.raises(smoke.SmokeFailure, match="published runtime ports"):
+        smoke._runtime_bindings(fixture, containers)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_runtime_allows_null_image_expose_entries_without_publishing_database(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fixture = _fixture(tmp_path, tmp_path)
+    models = {
+        "public": {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18002"}], "8001/tcp": None},
+        "admin": {"8000/tcp": None, "8443/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18443"}]},
+        "database": {"5432/tcp": None},
+    }
+
+    def docker(
+        _fixture: PublicationSmokeFixture, *args: str, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert args[:3] == ("inspect", "--format", "{{json .NetworkSettings.Ports}}")
+        return subprocess.CompletedProcess([], 0, json.dumps(models[args[3]]), "")
+
+    monkeypatch.setattr(smoke, "_docker", docker)
+    containers = {name: (name, "started|running|0") for name in models}
+    smoke._runtime_bindings(fixture, containers)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("phase", ["fresh", "cleanup"])
+def test_resource_guards_cover_all_four_project_networks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: str
+) -> None:
+    fixture = _fixture(tmp_path, tmp_path)
+    networks: set[str] = set()
+
+    def exists(_fixture: PublicationSmokeFixture, kind: str, name: str) -> bool:
+        if kind == "network":
+            networks.add(name)
+        return False
+
+    def docker(
+        _fixture: PublicationSmokeFixture, *args: str, **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 0, "1.53" if args[0] == "version" else "", "")
+
+    def compose(*_args: object, **_kwargs: object) -> str:
+        return ""
+
+    monkeypatch.setattr(smoke, "_exists", exists)
+    monkeypatch.setattr(smoke, "_docker", docker)
+    monkeypatch.setattr(smoke, "_compose", compose)
+    if phase == "fresh":
+        smoke._fresh(fixture)  # pyright: ignore[reportPrivateUsage]
+    else:
+        smoke._cleanup(fixture)  # pyright: ignore[reportPrivateUsage]
+    assert networks == {
+        f"synthetic-project_{name}"
+        for name in ("public_db", "admin_db", "public_ingress", "admin_ingress")
+    }
 
 
 def test_failed_cleanup_is_not_reported_as_success(

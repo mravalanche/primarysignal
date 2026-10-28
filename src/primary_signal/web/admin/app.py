@@ -67,7 +67,9 @@ def create_admin_app(
 
     def private_headers(response: Response) -> Response:
         response.headers["Cache-Control"] = "no-store"
-        response.headers["Referrer-Policy"] = "no-referrer"
+        # Preserve the Origin on ordinary same-origin forms without sending
+        # private page referrers to external destinations.
+        response.headers["Referrer-Policy"] = "same-origin"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = (
             "default-src 'none'; script-src 'self'; style-src 'self'; "

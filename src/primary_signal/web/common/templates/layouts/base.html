@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark">
     <title>{% block title %}Primary Signal{% endblock %}</title>
     {% block styles %}{% endblock %}
-    {% if static_tour is not defined or not static_tour %}<script src="{{ url_for('common-assets', path='/htmx.min.js') }}" defer></script>{% endif %}
+    {% if static_tour is not defined or not static_tour %}<script src="{{ url_for('common-assets', path='/htmx.min.js').path }}" defer></script>{% endif %}
   </head>
   <body class="bg-base-100 text-base-content antialiased">
     <a class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-base-100 focus:p-3" href="#main-content">Skip to content</a>

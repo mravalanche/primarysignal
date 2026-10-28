@@ -26,7 +26,20 @@ services:
       - database_password
     volumes:
       - publication-data:/var/lib/postgresql
-      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - ./deploy/postgres/initdb/010_queue_capability_roles.sql:/docker-entrypoint-initdb.d/010_queue_capability_roles.sql:ro
+      - ./deploy/postgres/initdb/020_feed_scheduler_capability_role.sql:/docker-entrypoint-initdb.d/020_feed_scheduler_capability_role.sql:ro
+      - ./deploy/postgres/initdb/030_feed_poll_capability_role.sql:/docker-entrypoint-initdb.d/030_feed_poll_capability_role.sql:ro
+      - ./deploy/postgres/initdb/040_article_persist_capability_role.sql:/docker-entrypoint-initdb.d/040_article_persist_capability_role.sql:ro
+      - ./deploy/postgres/initdb/050_article_inventory_capability_role.sql:/docker-entrypoint-initdb.d/050_article_inventory_capability_role.sql:ro
+      - ./deploy/postgres/initdb/060_public_projection_roles.sql:/docker-entrypoint-initdb.d/060_public_projection_roles.sql:ro
+      - ./deploy/postgres/initdb/070_publication_writer_capability_role.sql:/docker-entrypoint-initdb.d/070_publication_writer_capability_role.sql:ro
+      - ./deploy/postgres/initdb/080_source_health_capability_role.sql:/docker-entrypoint-initdb.d/080_source_health_capability_role.sql:ro
+      - ./deploy/postgres/initdb/090_editorial_read_capability_role.sql:/docker-entrypoint-initdb.d/090_editorial_read_capability_role.sql:ro
+      - ./deploy/postgres/initdb/100_admin_session_capability_role.sql:/docker-entrypoint-initdb.d/100_admin_session_capability_role.sql:ro
+      - ./deploy/postgres/initdb/110_publication_decision_capability_role.sql:/docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql:ro
+      - ./deploy/postgres/initdb/120_retention_cleanup_capability_role.sql:/docker-entrypoint-initdb.d/120_retention_cleanup_capability_role.sql:ro
+      - ./deploy/postgres/initdb/130_job_health_capability_role.sql:/docker-entrypoint-initdb.d/130_job_health_capability_role.sql:ro
+      - ./deploy/postgres/initdb/140_source_control_capability_role.sql:/docker-entrypoint-initdb.d/140_source_control_capability_role.sql:ro
       - ./.secrets/publication/local_logins.sql:/docker-entrypoint-initdb.d/900_local_logins.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready --host=127.0.0.1 --username=$${POSTGRES_USER} --dbname=$${POSTGRES_DB}"]
@@ -74,7 +87,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-    networks: [public_db]
+    networks: [public_db, public_ingress]
 
   admin:
     <<: *runtime
@@ -85,7 +98,7 @@ services:
     depends_on:
       seed:
         condition: service_completed_successfully
-    networks: [admin_db]
+    networks: [admin_db, admin_ingress]
 
   admin_tls:
     image: nginx:1.29-alpine
@@ -112,6 +125,10 @@ networks:
     internal: true
   admin_db:
     internal: true
+  public_ingress:
+    driver: bridge
+  admin_ingress:
+    driver: bridge
 
 volumes:
   publication-data:
