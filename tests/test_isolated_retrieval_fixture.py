@@ -27,9 +27,16 @@ def fixture(tmp_path: Path) -> isolated.IsolatedRetrievalFixture:
     )
 
 
-def _readback() -> dict[str, Any]:
+def _readback(*, transit: bool = False) -> dict[str, Any]:
     entries = [
-        next(iter(command.values())) for command in json.loads(isolated.rules_source())["nftables"]
+        next(iter(command.values()))
+        for command in json.loads(
+            isolated.rules_source(
+                transit_example=transit,
+                rpc_interface="eth0" if transit else None,
+                egress_interface="eth1" if transit else None,
+            )
+        )["nftables"]
     ]
     for entry in entries:
         if "rule" in entry:
@@ -161,9 +168,12 @@ def test_changed_generated_files_fail_before_compose_reads(
     execute.assert_not_called()
 
 
-def _server() -> dict[str, Any]:
+def _server(*, transit: bool = False) -> dict[str, Any]:
     namespace: dict[str, Any] = {"__name__": "synthetic_test_only"}
-    exec(compile(isolated.server_source(), "synthetic_source.py", "exec"), namespace)  # noqa: S102 - generated fixed test code, not input.
+    exec(  # noqa: S102 - generated fixed fixture code only.
+        compile(isolated.server_source(transit_example=transit), "synthetic_source.py", "exec"),
+        namespace,
+    )
     return namespace
 
 
@@ -294,3 +304,187 @@ def test_owned_synthetic_tcp_listener_can_rebind_after_connection_closes() -> No
         thread.join(timeout=2)
     with server_type(address, namespace["Forbidden"]) as rebound:
         assert rebound.server_address == address
+
+
+def test_transit_is_explicit_and_only_owner_joins_egress(tmp_path: Path) -> None:
+    fixture = isolated.create_fixture(
+        ROOT,
+        tmp_path / "fixture",
+        "synthetic-transit",
+        image="synthetic-app:local",
+        policy_image="synthetic-policy:local",
+        transit_example=True,
+    )
+    assert fixture.network_names == (*isolated.NETWORKS, isolated.EGRESS_NETWORK)
+    assert fixture.expected_compose["networks"][isolated.EGRESS_NETWORK]["internal"] is False
+    for name, service in fixture.expected_compose["services"].items():
+        assert (isolated.EGRESS_NETWORK in service.get("networks", {})) is (name == "policy")
+    namespace = _server(transit=True)
+    assert namespace["STATE"]["upstream_udp_queries"] == 0
+    assert namespace["STATE"]["upstream_tcp_queries"] == 0
+    assert namespace["STATE"]["upstream_failures"] == 0
+    assert "upstream_udp_queries" not in _server()["STATE"]
+
+
+@pytest.mark.parametrize("value", [1, "true", None])
+def test_transit_profile_rejects_implicit_truthiness(tmp_path: Path, value: Any) -> None:
+    with pytest.raises(FixtureBoundaryError, match="invalid transit fixture profile"):
+        isolated.create_fixture(
+            ROOT,
+            tmp_path / "absent",
+            "synthetic-transit",
+            image="synthetic-app:local",
+            policy_image="synthetic-policy:local",
+            transit_example=value,
+        )
+    assert not (tmp_path / "absent").exists()
+
+
+def test_transit_policy_requires_verified_distinct_interfaces_and_established_replies() -> None:
+    value = _readback(transit=True)
+    counters = isolated.validate_policy_readback(
+        value, transit_example=True, rpc_interface="eth0", egress_interface="eth1"
+    )
+    assert {
+        "output_upstream_dns_udp",
+        "output_upstream_dns_tcp",
+        "input_public_reply",
+    } <= counters.keys()
+    for rpc, egress in ((None, None), ("eth0", "eth0"), ("eth0", "lo"), ("eth0", "eth1;accept")):
+        with pytest.raises(FixtureBoundaryError):
+            isolated.validate_policy_readback(
+                value, transit_example=True, rpc_interface=rpc, egress_interface=egress
+            )
+    rules = {
+        entry["rule"]["comment"]: entry["rule"] for entry in value["nftables"] if "rule" in entry
+    }
+    assert rules["input_rpc"]["expr"][0]["match"]["right"] == "eth0"
+    assert rules["input_public_reply"]["expr"][0]["match"]["right"] == "eth1"
+    established = {"match": {"op": "==", "left": {"ct": {"key": "state"}}, "right": "established"}}
+    assert established in rules["input_public_reply"]["expr"]
+    rules["input_public_reply"]["expr"].remove(established)
+    with pytest.raises(FixtureBoundaryError, match="policy rules changed"):
+        isolated.validate_policy_readback(
+            value, transit_example=True, rpc_interface="eth0", egress_interface="eth1"
+        )
+
+
+@pytest.mark.parametrize("tcp", [False, True])
+@pytest.mark.parametrize("kind", [1, 28])
+def test_transit_dns_forwards_all_answers_verbatim_to_one_connected_peer(
+    tcp: bool, kind: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    namespace = _server(transit=True)
+    query = _question(isolated.TRANSIT_HOST, kind)
+    # Multiple answers, including an unfiltered private address, must be preserved.
+    addresses = (
+        [socket.inet_aton("8.8.8.8"), socket.inet_aton("10.23.45.67")]
+        if kind == 1
+        else [
+            socket.inet_pton(socket.AF_INET6, "2001:db8::1"),
+            socket.inet_pton(socket.AF_INET6, "::1"),
+        ]
+    )
+    records = b"".join(
+        b"\xc0\x0c" + struct.pack("!HHIH", kind, 1, 17, len(address)) + address
+        for address in addresses
+    )
+    response = query[:2] + struct.pack("!5H", 0x8180, 1, 2, 0, 0) + query[12:] + records
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.recv.side_effect = (
+        [struct.pack("!H", len(response)), response] if tcp else [response]
+    )
+    factory = MagicMock(return_value=connection)
+    monkeypatch.setattr(namespace["socket"], "socket", factory)
+    assert namespace["answer"](query, tcp=tcp) == response
+    connection.connect.assert_called_once_with(("1.1.1.1", 53))
+    factory.assert_called_once_with(
+        socket.AF_INET, socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM
+    )
+    assert namespace["STATE"]["upstream_tcp_queries" if tcp else "upstream_udp_queries"] == 1
+    assert namespace["STATE"]["upstream_failures"] == 0
+
+
+@pytest.mark.parametrize(
+    "change", ["wrong-id", "wrong-question", "wrong-opcode", "not-response", "oversize", "timeout"]
+)
+def test_transit_dns_rejects_unmatched_or_unbounded_upstream_without_fallback(
+    change: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    namespace = _server(transit=True)
+    query = _question(isolated.TRANSIT_HOST)
+    response = query[:2] + struct.pack("!5H", 0x8180, 1, 0, 0, 0) + query[12:]
+    if change == "wrong-id":
+        response = b"xx" + response[2:]
+    elif change == "wrong-question":
+        response = response[:-1] + b"x"
+    elif change == "wrong-opcode":
+        response = response[:2] + struct.pack("!H", 0x8980) + response[4:]
+    elif change == "not-response":
+        response = query
+    elif change == "oversize":
+        response += b"x" * 4097
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    if change == "timeout":
+        connection.recv.side_effect = TimeoutError()
+    else:
+        connection.recv.return_value = response
+    factory = MagicMock(return_value=connection)
+    monkeypatch.setattr(namespace["socket"], "socket", factory)
+    result = namespace["answer"](query)
+    assert struct.unpack("!6H", result[:12])[1] & 15 == 2
+    assert namespace["STATE"]["upstream_failures"] == 1
+    assert factory.call_count == 1
+
+
+def test_transit_dns_unknown_hosts_and_types_never_open_upstream_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = _server(transit=True)
+    factory = MagicMock(side_effect=AssertionError("unexpected upstream query"))
+    monkeypatch.setattr(namespace["socket"], "socket", factory)
+    for host, kind in (
+        ("unknown.example.test", 1),
+        (isolated.TRANSIT_HOST, 15),
+        (isolated.PUBLIC_HOST, 1),
+    ):
+        namespace["answer"](_question(host, kind))
+    factory.assert_not_called()
+    assert namespace["STATE"]["upstream_udp_queries"] == 0
+
+
+def test_transit_public_replies_reject_special_source_even_when_established() -> None:
+    value = _readback(transit=True)
+    rule = next(
+        entry["rule"]
+        for entry in value["nftables"]
+        if "rule" in entry and entry["rule"]["comment"] == "input_public_reply"
+    )
+    denial = {
+        "match": {
+            "op": "!=",
+            "left": {"payload": {"protocol": "ip", "field": "saddr"}},
+            "right": "@denied_v4",
+        }
+    }
+    assert denial in rule["expr"]
+    rule["expr"].remove(denial)
+    with pytest.raises(FixtureBoundaryError, match="policy rules changed"):
+        isolated.validate_policy_readback(
+            value, transit_example=True, rpc_interface="eth0", egress_interface="eth1"
+        )
+
+
+def test_transit_dns_rejects_nonquery_opcode_before_upstream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = _server(transit=True)
+    factory = MagicMock(side_effect=AssertionError("unexpected upstream query"))
+    monkeypatch.setattr(namespace["socket"], "socket", factory)
+    question = _question(isolated.TRANSIT_HOST)
+    question = question[:2] + struct.pack("!H", 0x0900) + question[4:]
+    assert namespace["answer"](question) is None
+    factory.assert_not_called()
+    assert namespace["STATE"]["upstream_udp_queries"] == 0

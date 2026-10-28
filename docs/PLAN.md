@@ -478,8 +478,11 @@ recovering leases or claiming jobs. Production retrieval remains unbound. A fixe
 now permits separate fixture namespaces at one reserved endpoint without
 changing retrieval-target policy. A synthetic namespace smoke now verifies actual nftables allow/deny rules,
 fixture DNS, separate real retriever/processor data flow and managed policy
-restart. The endpoints are namespace-local aliases: public transit egress and
-approved external DNS remain the next verification step. Before
+restart. The baseline endpoints remain namespace-local aliases. A separate bounded
+transit task has now verified public DNS over UDP/TCP, faithful A/AAAA answers,
+actual egress routes and HTTPS with normal TLS/pinning, after the synthetic
+checks. The next step is bounded ingestion from three public source classes
+through this isolated development topology; production readiness remains open. Before
 unattended live polling, verify deployment egress controls and service readiness
 on the target deployment. Source-disable serialization and fixed-policy
 extracted-text cleanup have isolated PostgreSQL tests; verify their operation

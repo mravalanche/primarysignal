@@ -117,6 +117,7 @@ publication-compose-check = { cmd = "python -m scripts.check_publication_compose
 publication-smoke = { cmd = "python -m scripts.smoke_publication", help = "Run the isolated synthetic container and browser publication smoke" }
 ingestion-recovery-smoke = { cmd = "python -m scripts.smoke_ingestion_recovery --mode all", help = "Verify synthetic feed and article worker container crash recovery" }
 isolated-retrieval-smoke = { cmd = "python -m scripts.smoke_isolated_retrieval", help = "Verify synthetic retrieval namespace policy and separated RPC" }
+retrieval-transit-smoke = { cmd = "python -m scripts.smoke_isolated_retrieval --transit-example", help = "Verify bounded public DNS and HTTPS through the isolated retriever" }
 assets-install = { cmd = "npm ci --ignore-scripts", help = "Install the locked frontend build toolchain without lifecycle scripts" }
 assets-build = { cmd = "npm run build", help = "Build self-hosted CSS and JavaScript assets" }
 assets-test = { cmd = "npm test", help = "Check generated frontend assets" }
