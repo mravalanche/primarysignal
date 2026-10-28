@@ -29,7 +29,10 @@ def fixture(tmp_path: Path) -> IsolatedRetrievalFixture:
             docker_args=("docker",),
             compose_args=("compose",),
             transit_example=False,
+            live_three_sources=False,
             network_names=smoke.NETWORKS,
+            database_name="synthetic_boundary_test",
+            migration_role="synthetic_migration_test",
         ),
     )
 
@@ -849,3 +852,419 @@ def test_upstream_packet_counters_must_be_zero_before_transit(
     monkeypatch.setattr(smoke, "_policy", counters)
     with pytest.raises(smoke.SmokeFailure, match="upstream counters before transit phase"):
         smoke._no_upstream(transit_fixture(tmp_path))
+
+
+def test_live_probe_references_only_real_model_attributes() -> None:
+    import ast
+
+    from primary_signal.ingestion import models as ingestion
+    from primary_signal.jobs import models as jobs
+    from primary_signal.sources import models as sources
+
+    models = {
+        name: getattr(module, name)
+        for module, names in (
+            (sources, ("Source", "Feed")),
+            (jobs, ("Job", "JobAttempt")),
+            (
+                ingestion,
+                (
+                    "Article",
+                    "ArticleUrl",
+                    "FeedEntry",
+                    "FeedPollRun",
+                    "FetchAttempt",
+                    "ContentVersion",
+                ),
+            ),
+        )
+        for name in names
+    }
+    for node in ast.walk(ast.parse(smoke.LIVE_DATABASE_PROBE)):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in models
+        ):
+            assert hasattr(models[node.value.id], node.attr), (node.value.id, node.attr)
+    compile(smoke.LIVE_DATABASE_PROBE, "private live probe", "exec")
+
+
+def private_live_function(name: str) -> Any:
+    import ast
+
+    tree = ast.parse(smoke.LIVE_DATABASE_PROBE)
+    node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
+    namespace: dict[str, Any] = {}
+    exec(  # noqa: S102 - execute only one function parsed from our trusted fixture program.
+        compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])), name, "exec"),
+        namespace,
+    )
+    return namespace[name]
+
+
+@pytest.mark.parametrize(
+    "title,body",
+    [
+        ("Just a moment...", "Checking your browser"),
+        ("Access denied", "A request was blocked"),
+        ("Article", "Please enable JavaScript and cookies to continue"),
+        (None, "Forbidden"),
+        ("Article", "Please sign in to continue"),
+        ("Consent required", "Choose consent to continue"),
+    ],
+)
+def test_private_live_challenge_pages_never_pass_as_articles(title: str | None, body: str) -> None:
+    assert private_live_function("content_allowed")(title, body) is False
+
+
+def test_legitimate_security_research_can_discuss_challenges() -> None:
+    assert (
+        private_live_function("content_allowed")(
+            "Testing browser security",
+            "This report examines CAPTCHA challenges and access denied responses in depth.",
+        )
+        is True
+    )
+
+
+def test_challenge_html_is_rejected_after_real_extraction() -> None:
+    from primary_signal.retrieval.extract import extract_article_html
+
+    result = extract_article_html(
+        b"<html><title>Just a moment...</title><article>Verify you are human before continuing.</article></html>",
+        "text/html",
+    )
+    assert private_live_function("content_allowed")(result.title, result.text) is False
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("feed_attempts", 4),
+        ("article_attempts", 4),
+        ("feed_attempts", True),
+        ("article_attempts", -1),
+    ],
+)
+def test_live_attempt_totals_are_bounded(key: str, value: Any) -> None:
+    values = {"feed_attempts": 3, "article_attempts": 3} | {key: value}
+    with pytest.raises(smoke.SmokeFailure, match="attempt bound"):
+        smoke._live_counts(values, {})
+
+
+def mock_live_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, fail_mode: str | None = None
+) -> tuple[IsolatedRetrievalFixture, dict[str, int], list[str]]:
+    f = transit_fixture(tmp_path)
+    object.__setattr__(f, "live_three_sources", True)
+    counts = {
+        "feed_attempts": 0,
+        "article_attempts": 0,
+        "source_classes_passed": 0,
+        "fulltext_search_checks": 0,
+        "cleanup_passes": 0,
+    }
+    actual = {"feed_attempts": 0, "article_attempts": 0}
+    events: list[str] = []
+    selected = [
+        {
+            "class_key": source.class_key,
+            "job_id": str(__import__("uuid").uuid4()),
+            "article_id": str(__import__("uuid").uuid4()),
+            "url_id": str(__import__("uuid").uuid4()),
+        }
+        for source in smoke.LIVE_SOURCES
+    ]
+
+    def probe(
+        _fixture: Any,
+        mode: str,
+        sources: list[dict[str, str]],
+        _selected: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        events.append(mode)
+        assert len(sources) == 3 and len({s["source_id"] for s in sources}) == 3
+        if mode == fail_mode:
+            raise smoke.SmokeFailure("synthetic controlled failure")
+        if mode == "seed":
+            return {"seeded": 3}
+        if mode.startswith("activate_"):
+            return {"activated": 1}
+        if mode == "poll":
+            return {"poll_passed": 1}
+        if mode == "select":
+            assert actual == {"feed_attempts": 3, "article_attempts": 0}
+            return {"selected": selected}
+        if mode == "verify_article":
+            return {"article_passed": 1, "search_passed": 1}
+        if mode == "complete":
+            return {
+                "feed_attempts": 3,
+                "article_attempts": 3,
+                "classes_passed": 3,
+                "search_checks": 3,
+            }
+        assert mode == "counts"
+        return actual
+
+    def worker(_fixture: Any, service: str, _owner: Any) -> None:
+        events.append(service)
+        actual["feed_attempts" if service == "feed_processor" else "article_attempts"] += 1
+
+    def topology(*_args: Any) -> dict[str, Any]:
+        return state()
+
+    def unchanged(*_args: Any) -> None:
+        return None
+
+    monkeypatch.setattr(smoke, "_live_probe", probe)
+    monkeypatch.setattr(smoke, "_worker", worker)
+    monkeypatch.setattr(smoke, "_topology", topology)
+    monkeypatch.setattr(smoke, "_owner_unchanged", unchanged)
+    return f, counts, events
+
+
+def test_live_selection_is_fixed_after_three_polls_before_three_article_attempts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    f, counts, events = mock_live_run(monkeypatch, tmp_path)
+    smoke._live_sources(f, counts)
+    assert (
+        counts["feed_attempts"]
+        == counts["article_attempts"]
+        == counts["source_classes_passed"]
+        == counts["fulltext_search_checks"]
+        == 3
+    )
+    assert events.count("feed_processor") == events.count("article_processor") == 3
+    assert events.index("select") > max(
+        i for i, event in enumerate(events) if event == "feed_processor"
+    )
+    assert events.index("select") < events.index("article_processor")
+    assert events.count("select") == 1
+
+
+@pytest.mark.parametrize(
+    "failure,feeds,articles", [("poll", 1, 0), ("select", 3, 0), ("verify_article", 3, 1)]
+)
+def test_live_failure_stops_without_retry_or_substitute(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str, feeds: int, articles: int
+) -> None:
+    f, counts, events = mock_live_run(monkeypatch, tmp_path, fail_mode=failure)
+    with pytest.raises(smoke.SmokeFailure, match="controlled failure"):
+        smoke._live_sources(f, counts)
+    assert counts["feed_attempts"] == feeds and counts["article_attempts"] == articles
+    assert events.count("select") <= 1 and events[-1] == "counts"
+    assert events.count("article_processor") == articles
+
+
+@pytest.mark.parametrize(
+    "failure", [None, "controlled", "unexpected", "cleanup", "cleanup_unexpected"]
+)
+def test_live_cli_emits_only_aggregate_counts_on_every_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    failure: str | None,
+) -> None:
+    canary = "PRIVATE-CANARY https://private.example.test/article fixture-id content hash history"
+    f = transit_fixture(tmp_path)
+    object.__setattr__(f, "live_three_sources", True)
+
+    def create(*_args: Any, **kwargs: Any) -> IsolatedRetrievalFixture:
+        assert kwargs["transit_example"] is True and kwargs["live_three_sources"] is True
+        return f
+
+    def noop(*_args: Any) -> None:
+        return None
+
+    def exercise(_fixture: Any, counts: dict[str, int]) -> None:
+        smoke._progress(canary)
+        counts.update(
+            feed_attempts=3, article_attempts=3, source_classes_passed=3, fulltext_search_checks=3
+        )
+        if failure == "controlled":
+            raise smoke.SmokeFailure(canary)
+        if failure == "unexpected":
+            raise RuntimeError(canary)
+
+    def cleanup(*_args: Any) -> None:
+        smoke._progress(canary)
+        if failure == "cleanup":
+            raise smoke.SmokeFailure(canary)
+        if failure == "cleanup_unexpected":
+            raise ValueError(canary)
+
+    monkeypatch.setattr(smoke, "_live_output", False)
+    monkeypatch.setattr(smoke, "create_fixture", create)
+    monkeypatch.setattr(smoke, "validate_fixture_models", noop)
+    monkeypatch.setattr(smoke, "_fresh", noop)
+    monkeypatch.setattr(smoke, "_exercise", exercise)
+    monkeypatch.setattr(smoke, "_cleanup", cleanup)
+    result = smoke.main(["--live-three-sources"])
+    output = capsys.readouterr()
+    assert result == (0 if failure is None else 1)
+    assert canary not in output.out + output.err
+    assert len(output.out.splitlines()) == 1
+    summary = json.loads(output.out)
+    assert set(summary) == {
+        "feed_attempts",
+        "article_attempts",
+        "source_classes_passed",
+        "fulltext_search_checks",
+        "cleanup_passes",
+        *{"failure_" + category for category in smoke.FAILURE_CATEGORIES},
+    }
+    assert all(type(count) is int for count in summary.values())
+    assert sum(summary["failure_" + category] for category in smoke.FAILURE_CATEGORIES) == (
+        0 if failure is None else 1
+    )
+    assert summary["cleanup_passes"] == (0 if failure in ("cleanup", "cleanup_unexpected") else 1)
+
+
+def test_live_temp_directory_exit_failure_cannot_report_success(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    canary = "PRIVATE exit failure content history"
+    f = transit_fixture(tmp_path)
+    object.__setattr__(f, "live_three_sources", True)
+
+    class Directory:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> str:
+            return str(tmp_path)
+
+        def __exit__(self, *_args: Any) -> None:
+            raise RuntimeError(canary)
+
+    def create(*_args: Any, **_kwargs: Any) -> IsolatedRetrievalFixture:
+        return f
+
+    def noop(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(smoke, "_live_output", False)
+    monkeypatch.setattr(smoke.tempfile, "TemporaryDirectory", Directory)
+    monkeypatch.setattr(smoke, "create_fixture", create)
+    for name in ("validate_fixture_models", "_fresh", "_exercise", "_cleanup"):
+        monkeypatch.setattr(smoke, name, noop)
+    assert smoke.main(["--live-three-sources"]) == 1
+    output = capsys.readouterr()
+    assert canary not in output.out + output.err
+    assert json.loads(output.out)["cleanup_passes"] == 0
+
+
+@pytest.mark.parametrize("category", smoke.FAILURE_CATEGORIES)
+def test_private_category_response_is_strict_and_stops(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, category: str
+) -> None:
+    import subprocess
+
+    def run(*_args: Any, **kwargs: Any) -> Any:
+        assert kwargs["check"] is False
+        return subprocess.CompletedProcess(
+            [], 1, json.dumps({"failure": category}), "PRIVATE diagnostics are never forwarded"
+        )
+
+    monkeypatch.setattr(smoke, "_run", run)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_probe(transit_fixture(tmp_path), "verify_article", [], [])
+    assert failure.value.category == category
+    assert "PRIVATE" not in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "returncode,payload",
+    [
+        (0, {"failure": "fetch"}),
+        (1, {"failure": "other"}),
+        (1, {"failure": "search", "body": "PRIVATE"}),
+        (1, {"failure": True}),
+        (1, {"unexpected": "PRIVATE"}),
+    ],
+)
+def test_unknown_or_success_marked_failure_is_unexpected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, returncode: int, payload: dict[str, Any]
+) -> None:
+    import subprocess
+
+    def run(*_args: Any, **_kwargs: Any) -> Any:
+        return subprocess.CompletedProcess([], returncode, json.dumps(payload), "PRIVATE")
+
+    monkeypatch.setattr(smoke, "_run", run)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_probe(transit_fixture(tmp_path), "verify_article", [], [])
+    assert failure.value.category == "unexpected"
+    assert "PRIVATE" not in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "payload", ["not JSON", '{"failure":"fetch"}\n{"failure":"search"}', '["PRIVATE"]']
+)
+def test_private_failure_parser_never_exposes_invalid_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, payload: str
+) -> None:
+    import subprocess
+
+    def run(*_args: Any, **_kwargs: Any) -> Any:
+        return subprocess.CompletedProcess([], 1, payload, "PRIVATE")
+
+    monkeypatch.setattr(smoke, "_run", run)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_probe(transit_fixture(tmp_path), "verify_article", [], [])
+    assert failure.value.category == "unexpected"
+
+
+def test_only_first_failure_category_is_recorded() -> None:
+    counts: dict[str, int] = {}
+    smoke._record_live_failure(counts, "search")
+    smoke._record_live_failure(counts, "unexpected")
+    assert counts == {
+        "failure_" + category: int(category == "search") for category in smoke.FAILURE_CATEGORIES
+    }
+
+
+@pytest.mark.parametrize("value", [True, -1, 2, "1"])
+def test_failure_counts_reject_boolean_and_unbounded_values(value: Any) -> None:
+    with pytest.raises(smoke.SmokeFailure, match="aggregate failure counter"):
+        smoke._record_live_failure({"failure_fetch": value}, "search")
+
+
+def test_controlled_failure_survives_final_count_collection_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    f, counts, _events = mock_live_run(monkeypatch, tmp_path)
+    original = smoke._live_probe
+
+    def probe(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        if args[1] == "verify_article":
+            raise smoke.LiveProofFailure("search")
+        if args[1] == "counts":
+            raise smoke.LiveProofFailure("unexpected")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(smoke, "_live_probe", probe)
+    with pytest.raises(smoke.LiveProofFailure) as failure:
+        smoke._live_sources(f, counts)
+    assert failure.value.category == "search"
+    assert counts["failure_search"] == 1 and counts["failure_unexpected"] == 0
+
+
+def test_bad_private_mode_emits_only_unexpected_json(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(  # noqa: S603 - execute our fixed private program, never a shell.
+        [sys.executable, "-c", smoke.LIVE_DATABASE_PROBE],
+        input=json.dumps({"mode": "PRIVATE canary"}),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert result.stdout.strip() == json.dumps({"failure": "unexpected"})
+    assert result.stderr == ""

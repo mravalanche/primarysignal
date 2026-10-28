@@ -22,6 +22,7 @@ from scripts.isolated_retrieval_fixture import (
     EXPECTED_NORMALIZED_HASH,
     EXPECTED_TITLE,
     FEED_URL,
+    LIVE_SOURCES,
     MIXED_HOST,
     NETWORKS,
     POLICY_TABLE,
@@ -48,6 +49,15 @@ UPSTREAM_KEYS = {"upstream_udp_queries", "upstream_tcp_queries", "upstream_failu
 SOURCE_ID = "10000000-0000-4000-8000-000000000001"
 FEED_ID = "10000000-0000-4000-8000-000000000002"
 JOB_ID = "10000000-0000-4000-8000-000000000003"
+_live_output = False
+FAILURE_CATEGORIES = ("fetch", "content", "provenance", "search", "selection", "unexpected")
+
+
+class LiveProofFailure(SmokeFailure):
+    def __init__(self, category: str) -> None:
+        self.category = category if category in FAILURE_CATEGORIES else "unexpected"
+        super().__init__("private live proof failed")
+
 
 # Private stdin carries synthetic parameters. Only bounded booleans/counts return.
 DATABASE_PROBE = r"""
@@ -214,6 +224,194 @@ except urllib.error.HTTPError as error:
     code=json.loads(body).get('error')
     result={'api_status':error.code,'error':code if isinstance(code,str) and re.fullmatch('[a-z_]{1,50}',code) else 'withheld'}
 print(json.dumps(result))
+"""
+
+
+# Live URLs and extracted content stay inside the disposable database/process.
+LIVE_DATABASE_PROBE = r"""
+import json, sys
+CATEGORIES = ('fetch','content','provenance','search','selection','unexpected')
+class ProbeFailure(Exception):
+    def __init__(self, category):
+        self.category = category if category in CATEGORIES else 'unexpected'
+def require(condition, category):
+    if not condition:
+        raise ProbeFailure(category)
+p = None
+try:
+    import ipaddress, json, re, sys, uuid
+    from urllib.parse import urlsplit
+    from sqlalchemy import select, insert, update, func, text, cast, Text
+    from primary_signal.db import DatabaseSettings, create_database_engine
+    from primary_signal.identity.urls import identify_url
+    from primary_signal.sources.models import Source, Feed
+    from primary_signal.jobs.models import Job, JobAttempt
+    from primary_signal.ingestion.models import Article, ArticleUrl, FeedEntry, FeedPollRun, FetchAttempt, ContentVersion
+    from primary_signal.ingestion.inventory import ArticleInventoryRepository, ArticleListQuery
+    p=json.load(sys.stdin)
+    assert p['mode'] in ('seed','activate_feed','poll','select','activate_article','verify_article','counts','complete')
+    assert len(p['sources'])==3 and {s['class_key'] for s in p['sources']}=={'authority','vendor','research'}
+    contexts=p['sources']
+    for s in contexts:
+        for key in ('source_id','feed_id','feed_job_id'):s[key]=uuid.UUID(s[key])
+    sids=[s['source_id'] for s in contexts]
+    fids=[s['feed_id'] for s in contexts]
+    fjobs=[s['feed_job_id'] for s in contexts]
+    selected=p.get('selected',[])
+    engine=create_database_engine(DatabaseSettings(statement_timeout_ms=5000,lock_timeout_ms=1000))
+    def eligible(url,host,*,allow_root=False):
+        try:
+            parsed=urlsplit(url)
+            return parsed.scheme=='https' and parsed.hostname==host and parsed.username is None and parsed.password is None and parsed.port in (None,443) and parsed.netloc in (host,host+':443') and bool(parsed.path) and (allow_root or parsed.path!='/')
+        except ValueError:
+            return False
+    def unclaimed(job_id,job_type,queue):
+        return (Job.id==job_id,Job.job_type==job_type,Job.payload_version==1,Job.queue==queue,Job.status=='queued',Job.attempt_count==0,Job.worker_id.is_(None),Job.lease_token.is_(None),Job.lease_expires_at.is_(None),Job.heartbeat_at.is_(None))
+    def source_for(key):
+        return next(s for s in contexts if s['class_key']==key)
+    def selected_for(key):
+        return next(s for s in selected if s['class_key']==key)
+    def content_allowed(title,body):
+        if not isinstance(body,str) or not body.strip():
+            return False
+        heading=' '.join((title or '').casefold().split())
+        sample=' '.join(body[:8192].casefold().split())
+        headings=('access denied','just a moment','attention required','verify you are human','checking your browser','403 forbidden','forbidden','request blocked','service unavailable','consent required','sign in to continue','login required')
+        prompts=('please enable javascript','enable javascript and cookies','verify you are human','checking your browser','this site requires javascript','access to this page has been denied','you have been blocked','please complete the security check','before you continue','sign in to continue','please sign in to continue','please accept cookies to continue')
+        return not heading.startswith(headings) and not sample.startswith(prompts) and sample not in headings
+    def verify_article(c,item):
+        s=source_for(item['class_key'])
+        aid,uid,jid=(uuid.UUID(item[k]) for k in ('article_id','url_id','job_id'))
+        job=c.execute(select(Job.status,Job.attempt_count,Job.payload).where(Job.id==jid)).one()
+        require(job.status=='succeeded' and job.attempt_count==1,'fetch')
+        require(job.payload=={'article_id':str(aid),'article_url_id':str(uid)},'provenance')
+        attempts=c.execute(select(JobAttempt.status).where(JobAttempt.job_id==jid)).scalars().all()
+        require(attempts==['succeeded'],'fetch')
+        article=c.execute(select(Article.source_id,Article.current_canonical_url_id,Article.current_content_version_id).where(Article.id==aid)).one()
+        assert article.source_id==s['source_id']
+        assert c.execute(select(func.count()).select_from(FeedEntry).where(FeedEntry.feed_id==s['feed_id'],FeedEntry.article_id==aid)).scalar_one()>=1
+        requested=c.execute(select(ArticleUrl.normalized_url).where(ArticleUrl.id==uid,ArticleUrl.article_id==aid)).scalar_one()
+        assert eligible(requested,s['article_host'])
+        canonical=c.execute(select(ArticleUrl.normalized_url).where(ArticleUrl.id==article.current_canonical_url_id,ArticleUrl.article_id==aid)).scalar_one()
+        assert eligible(canonical,s['article_host'])
+        fetches=c.execute(select(FetchAttempt.id,FetchAttempt.status,FetchAttempt.job_id,FetchAttempt.requested_url,FetchAttempt.final_url,FetchAttempt.redirect_chain,FetchAttempt.resulting_content_version_id).where(FetchAttempt.article_id==aid)).all()
+        require(len(fetches)==1,'fetch')
+        fetch=fetches[0]
+        require(fetch.status=='fetched','fetch')
+        require(fetch.job_id==jid and identify_url(fetch.requested_url).normalized_url==requested,'provenance')
+        assert eligible(fetch.final_url,s['article_host']) and all(eligible(hop['url'],s['article_host'],allow_root=True) for hop in fetch.redirect_chain)
+        versions=c.execute(select(ContentVersion.id,ContentVersion.origin_fetch_attempt_id,ContentVersion.raw_response_hash,ContentVersion.normalized_content_hash,ContentVersion.extracted_title,ContentVersion.extracted_text,ContentVersion.word_count,ContentVersion.fetched_at).where(ContentVersion.article_id==aid)).all()
+        assert len(versions)==1
+        version=versions[0]
+        assert version.id==article.current_content_version_id==fetch.resulting_content_version_id and version.origin_fetch_attempt_id==fetch.id and len(version.raw_response_hash)==64
+        require(content_allowed(version.extracted_title,version.extracted_text) and type(version.word_count) is int and version.word_count>0 and len(version.normalized_content_hash)==64,'content')
+        # Terms come strictly from persisted extracted text, never title or feed listing.
+        lexemes=c.execute(text("SELECT t FROM unnest(tsvector_to_array(to_tsvector('english'::regconfig,:body))) AS t WHERE t ~ '^[a-z][a-z0-9]{2,31}$' AND NOT (t=ANY(tsvector_to_array(to_tsvector('english'::regconfig,:title)))) ORDER BY t LIMIT 32"),{'body':version.extracted_text,'title':version.extracted_title or ''}).scalars().all()
+        require(bool(lexemes),'search')
+        repository=ArticleInventoryRepository(c)
+        found=False
+        for term in lexemes:
+            page=repository.list_articles(ArticleListQuery(search=term,source_key=s['source_key'],limit=50))
+            if any(row.article_id==aid and row.source_key==s['source_key'] and row.canonical_url==canonical and row.fetched_at==version.fetched_at for row in page.items):
+                found=True;break
+        require(found,'search')
+    try:
+        with engine.begin() as c:
+            require(p['database'].endswith('_test') and c.execute(text('SELECT current_database()')).scalar_one()==p['database'],'unexpected')
+            require(c.execute(text('SELECT current_user')).scalar_one()==p['migration_role'],'unexpected')
+            require(c.execute(text('SELECT rolsuper FROM pg_roles WHERE rolname=current_user')).scalar_one() is False,'unexpected')
+            now=c.execute(select(func.clock_timestamp())).scalar_one()
+            if p['mode']=='seed':
+                assert c.execute(select(func.count()).select_from(Source).where(Source.id.in_(sids))).scalar_one()==0
+                for s in contexts:
+                    identity=identify_url(s['feed_url'])
+                    assert eligible(s['feed_url'],s['article_host'])
+                    c.execute(insert(Source).values(id=s['source_id'],source_key=s['source_key'],name=s['name'],homepage_url='https://'+s['article_host']+'/'))
+                    c.execute(insert(Feed).values(id=s['feed_id'],source_id=s['source_id'],name=s['name'],configured_url=s['feed_url'],normalized_url=identity.normalized_url,url_hash=identity.url_hash,url_normalization_version=identity.normalization_version,next_poll_at=now))
+                    c.execute(insert(Job).values(id=s['feed_job_id'],job_type='feeds.poll',payload_version=1,payload={'feed_id':str(s['feed_id'])},queue='ingestion',priority=100,run_after=func.clock_timestamp()+text("interval '1 day'"),max_attempts=1))
+                result={'seeded':3}
+            elif p['mode']=='activate_feed':
+                s=source_for(p['class_key'])
+                assert c.execute(select(Feed.source_id).where(Feed.id==s['feed_id'])).scalar_one()==s['source_id']
+                assert c.execute(select(Job.payload).where(Job.id==s['feed_job_id'])).scalar_one()=={'feed_id':str(s['feed_id'])}
+                assert c.execute(select(func.count()).select_from(JobAttempt).where(JobAttempt.job_id==s['feed_job_id'])).scalar_one()==0
+                assert c.execute(update(Job).where(*unclaimed(s['feed_job_id'],'feeds.poll','ingestion')).values(run_after=func.clock_timestamp()-text("interval '1 second'"))).rowcount==1
+                assert c.execute(select(Job.id).where(Job.queue=='ingestion',Job.status=='queued',Job.run_after<=func.clock_timestamp())).scalars().all()==[s['feed_job_id']]
+                result={'activated':1}
+            elif p['mode']=='poll':
+                s=source_for(p['class_key'])
+                job=c.execute(select(Job.status,Job.attempt_count).where(Job.id==s['feed_job_id'])).one()
+                assert job.status=='succeeded' and job.attempt_count==1
+                assert c.execute(select(JobAttempt.status).where(JobAttempt.job_id==s['feed_job_id'])).scalars().all()==['succeeded']
+                polls=c.execute(select(FeedPollRun.status,FeedPollRun.requested_url,FeedPollRun.job_id).where(FeedPollRun.feed_id==s['feed_id'])).all()
+                assert len(polls)==1 and polls[0].status=='succeeded' and polls[0].requested_url==s['feed_url'] and polls[0].job_id==s['feed_job_id']
+                assert c.execute(select(func.count()).select_from(FeedEntry).join(Article,Article.id==FeedEntry.article_id).where(FeedEntry.feed_id==s['feed_id'],Article.source_id==s['source_id'])).scalar_one()>0
+                result={'poll_passed':1}
+            elif p['mode']=='select':
+                items=[]
+                for s in contexts:
+                    rows=c.execute(select(FeedEntry.reported_url,Article.id.label('article_id'),ArticleUrl.id.label('url_id'),ArticleUrl.normalized_url,Job.id.label('job_id'),Job.payload,Job.status,Job.attempt_count,Job.worker_id,Job.lease_token,Job.lease_expires_at,Job.heartbeat_at).select_from(FeedEntry).join(Article,Article.id==FeedEntry.article_id).join(ArticleUrl,(ArticleUrl.id==Article.current_canonical_url_id)&(ArticleUrl.article_id==Article.id)).join(Job,(Job.payload['article_id'].astext==cast(Article.id,Text))&(Job.payload['article_url_id'].astext==cast(ArticleUrl.id,Text))).where(FeedEntry.feed_id==s['feed_id'],Article.source_id==s['source_id'],Job.job_type=='articles.retrieve',Job.payload_version==1,Job.queue=='retrieval').order_by(FeedEntry.reported_published_at.desc().nulls_last(),ArticleUrl.normalized_url,Job.id)).all()
+                    candidates=[r for r in rows if eligible(r.normalized_url,s['article_host']) and r.reported_url and identify_url(r.reported_url).normalized_url==r.normalized_url and r.status=='queued' and r.attempt_count==0 and all(value is None for value in (r.worker_id,r.lease_token,r.lease_expires_at,r.heartbeat_at))]
+                    assert candidates
+                    row=candidates[0]
+                    assert row.payload=={'article_id':str(row.article_id),'article_url_id':str(row.url_id)}
+                    assert c.execute(select(func.count()).select_from(FetchAttempt).where(FetchAttempt.article_id==row.article_id)).scalar_one()==0
+                    assert c.execute(select(func.count()).select_from(ContentVersion).where(ContentVersion.article_id==row.article_id)).scalar_one()==0
+                    items.append({'class_key':s['class_key'],'article_id':str(row.article_id),'url_id':str(row.url_id),'job_id':str(row.job_id)})
+                chosen={uuid.UUID(item['job_id']) for item in items}
+                assert len(chosen)==3
+                articles=c.execute(select(Article.id).where(Article.source_id.in_(sids))).scalars().all()
+                owned=c.execute(select(Job.id,Job.status,Job.attempt_count,Job.worker_id,Job.lease_token,Job.lease_expires_at,Job.heartbeat_at).where(Job.job_type=='articles.retrieve',Job.queue=='retrieval',Job.payload['article_id'].astext.in_([str(aid) for aid in articles]))).all()
+                assert len(owned)>=3 and all(row.status=='queued' and row.attempt_count==0 and all(value is None for value in (row.worker_id,row.lease_token,row.lease_expires_at,row.heartbeat_at)) for row in owned)
+                owned_ids=[row.id for row in owned]
+                assert c.execute(select(func.count()).select_from(JobAttempt).where(JobAttempt.job_id.in_(owned_ids))).scalar_one()==0
+                # Hold the fixed selections until individually activated; defer only this fixture's other successors.
+                assert c.execute(update(Job).where(Job.id.in_(owned_ids),Job.job_type=='articles.retrieve',Job.payload_version==1,Job.queue=='retrieval',Job.status=='queued',Job.attempt_count==0,Job.worker_id.is_(None),Job.lease_token.is_(None),Job.lease_expires_at.is_(None),Job.heartbeat_at.is_(None)).values(run_after=func.clock_timestamp()+text("interval '1 day'"))).rowcount==len(owned_ids)
+                assert c.execute(update(Job).where(Job.id.in_(chosen),Job.status=='queued',Job.attempt_count==0).values(max_attempts=1)).rowcount==3
+                result={'selected':items}
+            elif p['mode']=='activate_article':
+                item=selected_for(p['class_key']);s=source_for(p['class_key'])
+                aid,uid,jid=(uuid.UUID(item[k]) for k in ('article_id','url_id','job_id'))
+                assert c.execute(select(Article.source_id).where(Article.id==aid,Article.current_canonical_url_id==uid)).scalar_one()==s['source_id']
+                assert c.execute(select(Job.payload).where(Job.id==jid)).scalar_one()=={'article_id':str(aid),'article_url_id':str(uid)}
+                assert c.execute(select(func.count()).select_from(JobAttempt).where(JobAttempt.job_id==jid)).scalar_one()==0
+                assert c.execute(update(Job).where(*unclaimed(jid,'articles.retrieve','retrieval')).values(run_after=func.clock_timestamp()-text("interval '1 second'"))).rowcount==1
+                assert c.execute(select(Job.id).where(Job.queue=='retrieval',Job.status=='queued',Job.run_after<=func.clock_timestamp())).scalars().all()==[jid]
+                result={'activated':1}
+            elif p['mode']=='verify_article':
+                verify_article(c,selected_for(p['class_key']))
+                result={'article_passed':1,'search_passed':1}
+            else:
+                articles=c.execute(select(Article.id).where(Article.source_id.in_(sids))).scalars().all()
+                jobs=c.execute(select(Job.id).where(Job.job_type=='articles.retrieve',Job.queue=='retrieval',Job.payload['article_id'].astext.in_([str(aid) for aid in articles]))).scalars().all()
+                feed_attempts=c.execute(select(func.count()).select_from(JobAttempt).where(JobAttempt.job_id.in_(fjobs))).scalar_one()
+                article_attempts=c.execute(select(func.count()).select_from(JobAttempt).where(JobAttempt.job_id.in_(jobs))).scalar_one()
+                result={'feed_attempts':feed_attempts,'article_attempts':article_attempts}
+                if p['mode']=='complete':
+                    assert feed_attempts==article_attempts==3 and len(selected)==3
+                    for item in selected:verify_article(c,item)
+                    chosen=[uuid.UUID(item['job_id']) for item in selected]
+                    unselected=[jid for jid in jobs if jid not in chosen]
+                    pending=c.execute(select(Job.status,Job.attempt_count,Job.run_after,Job.worker_id,Job.lease_token,Job.lease_expires_at,Job.heartbeat_at).where(Job.id.in_(unselected))).all()
+                    assert all(row.status=='queued' and row.attempt_count==0 and row.run_after>now and all(value is None for value in (row.worker_id,row.lease_token,row.lease_expires_at,row.heartbeat_at)) for row in pending)
+                    assert c.execute(select(func.count()).select_from(JobAttempt).where(JobAttempt.job_id.in_(unselected))).scalar_one()==0
+                    assert c.execute(select(func.count()).select_from(FetchAttempt).where(FetchAttempt.article_id.in_(articles))).scalar_one()==3
+                    assert c.execute(select(func.count()).select_from(ContentVersion).where(ContentVersion.article_id.in_(articles))).scalar_one()==3
+                    result.update(classes_passed=3,search_checks=3)
+    finally:
+        engine.dispose()
+    print(json.dumps(result))
+
+except ProbeFailure as error:
+    print(json.dumps({'failure':error.category}))
+    sys.exit(1)
+except AssertionError:
+    category = {'seed':'selection','activate_feed':'selection','poll':'fetch','select':'selection','activate_article':'selection','verify_article':'provenance','complete':'provenance'}.get(p.get('mode'),'unexpected') if isinstance(p,dict) else 'unexpected'
+    print(json.dumps({'failure':category}))
+    sys.exit(1)
+except Exception:
+    print(json.dumps({'failure':'unexpected'}))
+    sys.exit(1)
 """
 
 
@@ -978,6 +1176,161 @@ def _transit(fixture: IsolatedRetrievalFixture) -> None:
     )
 
 
+def _live_probe(
+    fixture: IsolatedRetrievalFixture,
+    mode: str,
+    sources: list[dict[str, str]],
+    selected: list[dict[str, str]],
+    *,
+    class_key: str | None = None,
+) -> dict[str, Any]:
+    parameters = {
+        "mode": mode,
+        "database": fixture.database_name,
+        "migration_role": fixture.migration_role,
+        "sources": sources,
+        "selected": selected,
+        "class_key": class_key,
+    }
+    result = _run(
+        fixture,
+        (
+            *fixture.docker_args,
+            *fixture.compose_args,
+            "run",
+            "--rm",
+            "--no-deps",
+            "-T",
+            "setup",
+            "python",
+            "-c",
+            LIVE_DATABASE_PROBE,
+        ),
+        input_text=json.dumps(parameters),
+        stage="private live database proof",
+        timeout=60,
+        check=False,
+    )
+    try:
+        value = _json(result.stdout, "private live database proof")
+    except SmokeFailure, ValueError, TypeError:
+        raise LiveProofFailure("unexpected") from None
+    if result.returncode != 0:
+        category = value.get("failure")
+        if (
+            set(value) == {"failure"}
+            and isinstance(category, str)
+            and category in FAILURE_CATEGORIES
+        ):
+            raise LiveProofFailure(category)
+        raise LiveProofFailure("unexpected")
+    if "failure" in value:
+        raise LiveProofFailure("unexpected")
+    return value
+
+
+def _live_counts(value: dict[str, Any], counts: dict[str, int]) -> None:
+    if set(value) != {"feed_attempts", "article_attempts"} or any(
+        type(value[key]) is not int or not 0 <= value[key] <= 3
+        for key in ("feed_attempts", "article_attempts")
+    ):
+        raise SmokeFailure("live attempt bound")
+    counts.update(value)
+
+
+def _record_live_failure(counts: dict[str, int], category: str) -> None:
+    if category not in FAILURE_CATEGORIES:
+        category = "unexpected"
+    for key in FAILURE_CATEGORIES:
+        value = counts.setdefault("failure_" + key, 0)
+        if type(value) is not int or value not in (0, 1):
+            raise SmokeFailure("invalid aggregate failure counter")
+    if not any(counts["failure_" + key] for key in FAILURE_CATEGORIES):
+        counts["failure_" + category] = 1
+
+
+def _live_sources(fixture: IsolatedRetrievalFixture, counts: dict[str, int]) -> None:
+    sources = [
+        {
+            "class_key": s.class_key,
+            "source_key": s.source_key,
+            "name": s.name,
+            "feed_url": s.feed_url,
+            "article_host": s.article_host,
+            "source_id": str(uuid.uuid4()),
+            "feed_id": str(uuid.uuid4()),
+            "feed_job_id": str(uuid.uuid4()),
+        }
+        for s in LIVE_SOURCES
+    ]
+    selected: list[dict[str, str]] = []
+    owner = _topology(fixture)
+    try:
+        if _live_probe(fixture, "seed", sources, selected) != {"seeded": 3}:
+            raise SmokeFailure("live source seed")
+        for source in sources:
+            _owner_unchanged(fixture, owner)
+            if _live_probe(
+                fixture, "activate_feed", sources, selected, class_key=source["class_key"]
+            ) != {"activated": 1}:
+                raise SmokeFailure("live feed activation")
+            _worker(fixture, "feed_processor", owner)
+            if _live_probe(fixture, "poll", sources, selected, class_key=source["class_key"]) != {
+                "poll_passed": 1
+            }:
+                raise SmokeFailure("live feed proof")
+        result = _live_probe(fixture, "select", sources, selected)
+        items = result.get("selected")
+        if (
+            set(result) != {"selected"}
+            or not isinstance(items, list)
+            or len(cast(list[object], items)) != 3
+        ):
+            raise SmokeFailure("live fixed selection")
+        selected = cast(list[dict[str, str]], items)
+        if {item.get("class_key") for item in selected} != {
+            source["class_key"] for source in sources
+        } or len({item.get("job_id") for item in selected}) != 3:
+            raise SmokeFailure("live selection ownership")
+        for source in sources:
+            if _live_probe(
+                fixture, "activate_article", sources, selected, class_key=source["class_key"]
+            ) != {"activated": 1}:
+                raise SmokeFailure("live article activation")
+            _worker(fixture, "article_processor", owner)
+            if _live_probe(
+                fixture, "verify_article", sources, selected, class_key=source["class_key"]
+            ) != {"article_passed": 1, "search_passed": 1}:
+                raise SmokeFailure("live article provenance and search")
+            counts["source_classes_passed"] += 1
+            counts["fulltext_search_checks"] += 1
+        result = _live_probe(fixture, "complete", sources, selected)
+        if result != {
+            "feed_attempts": 3,
+            "article_attempts": 3,
+            "classes_passed": 3,
+            "search_checks": 3,
+        }:
+            raise SmokeFailure("live complete proof")
+        _owner_unchanged(fixture, owner)
+    except LiveProofFailure as error:
+        _record_live_failure(counts, error.category)
+        raise
+    except Exception:
+        _record_live_failure(counts, "unexpected")
+        raise
+    finally:
+        try:
+            _live_counts(_live_probe(fixture, "counts", sources, selected), counts)
+        except Exception:
+            already_failed = any(
+                counts.get("failure_" + category, 0) for category in FAILURE_CATEGORIES
+            )
+            _record_live_failure(counts, "unexpected")
+            if not already_failed:
+                raise LiveProofFailure("unexpected") from None
+
+
 def _exists(fixture: IsolatedRetrievalFixture, kind: str, name: str) -> bool:
     return publication._exists(_shared(fixture), kind, name)  # pyright: ignore[reportPrivateUsage]
 
@@ -1047,10 +1400,12 @@ def _cleanup(fixture: IsolatedRetrievalFixture) -> None:
 
 
 def _progress(message: str) -> None:
+    if _live_output:
+        return
     print("Synthetic isolated retrieval: " + message + ".", flush=True)
 
 
-def _exercise(fixture: IsolatedRetrievalFixture) -> None:
+def _exercise(fixture: IsolatedRetrievalFixture, live_counts: dict[str, int] | None = None) -> None:
     _progress("building tracked runtime and narrow policy tooling")
     context = publication._build_context(_shared(fixture))  # pyright: ignore[reportPrivateUsage]
     _docker(
@@ -1209,6 +1564,8 @@ def _exercise(fixture: IsolatedRetrievalFixture) -> None:
     _no_upstream(fixture)
     if fixture.transit_example:
         _transit(fixture)
+    if fixture.live_three_sources:
+        _live_sources(fixture, live_counts if live_counts is not None else {})
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1218,7 +1575,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Also verify fixed public DNS and one example.com HTTPS response",
     )
+    parser.add_argument(
+        "--live-three-sources",
+        action="store_true",
+        help="Also verify the three fixed public source classes; print aggregate counts only",
+    )
     args = parser.parse_args(argv)
+    global _live_output
+    _live_output = args.live_three_sources
+    counts = {
+        "feed_attempts": 0,
+        "article_attempts": 0,
+        "source_classes_passed": 0,
+        "fulltext_search_checks": 0,
+        "cleanup_passes": 0,
+    }
+    if args.live_three_sources:
+        counts.update({"failure_" + category: 0 for category in FAILURE_CATEGORIES})
     root = Path(__file__).resolve().parents[1]
     status = 1
     try:
@@ -1230,29 +1603,56 @@ def main(argv: Sequence[str] | None = None) -> int:
                 project,
                 image=project + ":local",
                 policy_image=project + ":policy",
-                transit_example=args.transit_example,
+                transit_example=args.transit_example or args.live_three_sources,
+                live_three_sources=args.live_three_sources,
             )
             owned = False
             try:
                 validate_fixture_models(fixture)
                 _fresh(fixture)
                 owned = True
-                _exercise(fixture)
+                _exercise(fixture, counts)
                 status = 0
             except SmokeFailure as error:
+                if args.live_three_sources:
+                    _record_live_failure(counts, "unexpected")
                 _progress(f"failed during {error}; command output and fixture data withheld")
             except FixtureBoundaryError, OSError, ValueError, subprocess.SubprocessError:
+                if args.live_three_sources:
+                    _record_live_failure(counts, "unexpected")
                 _progress("failed; command output and fixture data withheld")
+            except Exception:
+                status = 1
+                if args.live_three_sources:
+                    _record_live_failure(counts, "unexpected")
+                if not args.live_three_sources:
+                    raise
             finally:
                 if owned:
                     try:
                         _cleanup(fixture)
+                        counts["cleanup_passes"] = 1
                         _progress("removed only this run containers, networks, volume and images")
                     except SmokeFailure, OSError, subprocess.SubprocessError:
                         status = 1
+                        if args.live_three_sources:
+                            _record_live_failure(counts, "unexpected")
                         _progress("cleanup failed")
     except FixtureBoundaryError, OSError, ValueError, subprocess.SubprocessError:
+        status = 1
+        counts["cleanup_passes"] = 0
+        if args.live_three_sources:
+            _record_live_failure(counts, "unexpected")
         _progress("fixture preparation failed")
+    except Exception:
+        status = 1
+        counts["cleanup_passes"] = 0
+        if args.live_three_sources:
+            _record_live_failure(counts, "unexpected")
+        if not args.live_three_sources:
+            raise
+    if args.live_three_sources:
+        print(json.dumps(counts, sort_keys=True), flush=True)
     return status
 
 
