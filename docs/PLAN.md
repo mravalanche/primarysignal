@@ -475,7 +475,10 @@ opt-in is not a production deployment configuration.
 
 The local metadata-only job-health command reports queue counts, retries,
 expired leases and dead jobs through a separate read-only capability. It aids
-diagnosis without exposing job payloads or changing queue state.
+diagnosis without exposing job payloads or changing queue state. A local
+source-control command pauses or resumes one exact source key through an
+audited database transition. Scheduling rechecks source eligibility under the
+shared lock before enqueueing or advancing a feed.
 
 ## 18. V1 security baseline
 

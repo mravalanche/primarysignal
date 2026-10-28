@@ -56,6 +56,7 @@ def main() -> int:
         "db/migrations/versions/20261009_17_retention_preconditions.py",
         "db/migrations/versions/20261009_18_retention_cleanup.py",
         "db/migrations/versions/20261009_19_job_health.py",
+        "db/migrations/versions/20261028_20_source_control.py",
         "web/admin/templates/login.html",
         "web/admin/templates/reading_desk_live.html",
         "web/admin/templates/decision_conflict.html",
@@ -72,7 +73,7 @@ def main() -> int:
         "missing=[path for path in required if not root.joinpath(path).is_file()]; "
         "assert not missing, f'missing packaged UI resources: {missing}'; "
         "assert migration_config_path().is_file(); "
-        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261009_19'; "
+        "assert ScriptDirectory.from_config(Config(migration_config_path())).get_current_head() == '20261028_20'; "
         "assert create_admin_app().title; "
         "assert create_public_app().title"
     )

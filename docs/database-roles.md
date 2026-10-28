@@ -24,9 +24,10 @@ docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POST
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/110_publication_decision_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/120_retention_cleanup_capability_role.sql'
 docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/130_job_health_capability_role.sql'
+docker compose exec database sh -c 'psql --set ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --file /docker-entrypoint-initdb.d/140_source_control_capability_role.sql'
 ```
 
-Run all thirteen commands before applying migrations. The migrations grant
+Run all fourteen commands before applying migrations. The migrations grant
 access to the exact queue and feed columns each capability needs; they do not create login
 roles or grant role membership. Each bootstrap fails closed if its cluster-wide
 role name is already in use, owns objects, has direct access, or has any
@@ -49,3 +50,12 @@ columns from `jobs`; payloads, errors, worker identities, lease tokens and
 attempt history remain inaccessible. It grants no queue mutations or access to
 article and publication records. Provision its login and membership outside the
 repository. Public and administration web processes do not need this capability.
+
+The source-control command uses a separate login with only
+`primary_signal_cap_source_control`. This capability executes the fixed
+`set_source_enabled` function; it has no direct access to source settings,
+feeds, jobs, content or audit history. The function derives the audit actor
+from the authenticated session and records actual state transitions atomically.
+The scheduler can execute the existing shared source-eligibility lock helper,
+so a committed pause also stops subsequent scheduling. Runtime login creation
+and membership remain outside the repository.
