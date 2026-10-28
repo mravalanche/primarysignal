@@ -115,6 +115,7 @@ precision = 2
 [tool.poe.tasks]
 publication-compose-check = { cmd = "python -m scripts.check_publication_compose", help = "Check disposable publication Compose boundaries without operator files" }
 publication-smoke = { cmd = "python -m scripts.smoke_publication", help = "Run the isolated synthetic container and browser publication smoke" }
+ingestion-recovery-smoke = { cmd = "python -m scripts.smoke_ingestion_recovery", help = "Verify synthetic article-worker container crash recovery" }
 assets-install = { cmd = "npm ci --ignore-scripts", help = "Install the locked frontend build toolchain without lifecycle scripts" }
 assets-build = { cmd = "npm run build", help = "Build self-hosted CSS and JavaScript assets" }
 assets-test = { cmd = "npm test", help = "Check generated frontend assets" }
